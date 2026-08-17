@@ -1,0 +1,117 @@
+"use client";
+
+import Link from "next/link";
+import { useOptimistic, useTransition } from "react";
+import { CalendarDays, Clock3, Dumbbell, Edit3, Play, Plus, Trash2 } from "lucide-react";
+import { deleteWorkoutAction } from "@/actions/workouts";
+
+type Item = {
+  id: number;
+  title: string;
+  date: string;
+  durationMinutes: number;
+  status: string;
+  exerciseCount: number;
+  totalSets: number;
+  volume: number;
+};
+
+export function WorkoutList({ workouts }: { workouts: Item[] }) {
+  const [optimistic, removeOptimistic] = useOptimistic(workouts, (items, id: number) =>
+    items.filter((item) => item.id !== id),
+  );
+  const [, startTransition] = useTransition();
+  function remove(id: number) {
+    if (!window.confirm("Usunąć ten trening? Tej operacji nie można cofnąć.")) return;
+    startTransition(async () => {
+      removeOptimistic(id);
+      await deleteWorkoutAction(id);
+    });
+  }
+  if (!optimistic.length)
+    return (
+      <div className="empty-state">
+        <span className="empty-icon">
+          <Dumbbell size={30} />
+        </span>
+        <h3>Jeszcze bez treningów</h3>
+        <p>Dodaj pierwszą sesję i zacznij budować historię progresu.</p>
+        <Link href="/workouts/new" className="button-primary">
+          <Plus size={17} /> Dodaj trening
+        </Link>
+      </div>
+    );
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      {optimistic.map((item) => {
+        const active = item.status !== "completed";
+        return (
+          <article
+            key={item.id}
+            className="panel group p-5 transition duration-300 hover:-translate-y-0.5 hover:border-lime-400/20"
+          >
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-4">
+                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-lime-400/10 text-lime-400">
+                  <Dumbbell size={22} />
+                </span>
+                <div className="min-w-0">
+                  <div className="mb-1 flex items-center gap-2">
+                    <h3 className="truncate font-extrabold text-white">{item.title}</h3>
+                    <span
+                      className={`status ${
+                        item.status === "completed"
+                          ? "status-done"
+                          : item.status === "in_progress"
+                            ? "status-progress"
+                            : "status-planned"
+                      }`}
+                    >
+                      {item.status === "completed"
+                        ? "Ukończony"
+                        : item.status === "in_progress"
+                          ? "W trakcie"
+                          : "Plan"}
+                    </span>
+                  </div>
+                  <p className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <CalendarDays size={14} /> {item.date}{" "}
+                    <span className="mx-1">•</span>
+                    <Clock3 size={14} /> {item.durationMinutes} min
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <Link href={`/workouts/${item.id}/edit`} className="icon-button">
+                  <Edit3 size={17} />
+                </Link>
+                <button onClick={() => remove(item.id)} className="icon-button hover:!text-rose-300">
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            </div>
+            <div className="mb-4 grid grid-cols-3 divide-x divide-white/[.06] rounded-xl bg-black/20 px-2 py-3 text-center">
+              <div>
+                <b className="block text-sm text-white">{item.exerciseCount}</b>
+                <span className="text-[10px] uppercase tracking-wider text-slate-600">ćwiczeń</span>
+              </div>
+              <div>
+                <b className="block text-sm text-white">{item.totalSets}</b>
+                <span className="text-[10px] uppercase tracking-wider text-slate-600">serii</span>
+              </div>
+              <div>
+                <b className="block text-sm text-white">{item.volume.toLocaleString("pl-PL")} kg</b>
+                <span className="text-[10px] uppercase tracking-wider text-slate-600">objętości</span>
+              </div>
+            </div>
+            {active && (
+              <Link href={`/workouts/${item.id}/session`} className="button-primary w-full justify-center text-sm">
+                <Play size={16} /> Otwórz trening
+              </Link>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}

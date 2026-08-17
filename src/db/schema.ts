@@ -1,117 +1,172 @@
-import { pgTable, serial, text, integer, timestamp, real, boolean, numeric } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import {
+  index,
+  integer,
+  pgTable,
+  serial,
+  timestamp,
+  uniqueIndex,
+  varchar,
+  text,
+} from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  name: text("name").notNull(),
-  passwordHash: text("password_hash").notNull(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  name: varchar("name", { length: 120 }).notNull(),
+  password: varchar("password", { length: 255 }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const exercises = pgTable("exercises", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
-  name: text("name").notNull(),
-  category: text("category").notNull(),
-  description: text("description"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const sessions = pgTable(
+  "sessions",
+  {
+    token: varchar("token", { length: 64 }).primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("sessions_user_idx").on(table.userId)],
+);
 
-export const workouts = pgTable("workouts", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  title: text("title").notNull(),
-  notes: text("notes"),
-  date: timestamp("date").notNull().defaultNow(),
-  durationMinutes: integer("duration_minutes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const exerciseDefinitions = pgTable(
+  "exercise_definitions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    muscleGroup: varchar("muscle_group", { length: 60 }).notNull(),
+    equipment: varchar("equipment", { length: 80 }).notNull().default("Inne"),
+    isCustom: integer("is_custom").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("exercise_definitions_user_idx").on(table.userId),
+    uniqueIndex("exercise_definitions_user_name_idx").on(table.userId, table.name),
+  ],
+);
 
-export const workoutExercises = pgTable("workout_exercises", {
-  id: serial("id").primaryKey(),
-  workoutId: integer("workout_id").notNull().references(() => workouts.id, { onDelete: "cascade" }),
-  exerciseId: integer("exercise_id").notNull().references(() => exercises.id),
-  orderIndex: integer("order_index").notNull(),
-});
+export const workoutPrograms = pgTable(
+  "workout_programs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 160 }).notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("workout_programs_user_idx").on(table.userId)],
+);
 
-export const sets = pgTable("sets", {
-  id: serial("id").primaryKey(),
-  workoutExerciseId: integer("workout_exercise_id").notNull().references(() => workoutExercises.id, { onDelete: "cascade" }),
-  reps: integer("reps").notNull(),
-  weight: real("weight").notNull(),
-  rir: integer("rir"),
-  completed: boolean("completed").notNull().default(true),
-});
+export const programExercises = pgTable(
+  "program_exercises",
+  {
+    id: serial("id").primaryKey(),
+    programId: integer("program_id")
+      .notNull()
+      .references(() => workoutPrograms.id, { onDelete: "cascade" }),
+    exerciseDefinitionId: integer("exercise_definition_id").references(
+      () => exerciseDefinitions.id,
+      { onDelete: "set null" },
+    ),
+    name: varchar("name", { length: 255 }).notNull(),
+    position: integer("position").notNull().default(0),
+    targetSets: integer("target_sets").notNull().default(3),
+    targetReps: integer("target_reps").notNull().default(10),
+    targetWeight: integer("target_weight").notNull().default(0),
+    restSeconds: integer("rest_seconds").notNull().default(90),
+  },
+  (table) => [index("program_exercises_program_idx").on(table.programId)],
+);
 
-export const programs = pgTable("programs", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  description: text("description"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const workouts = pgTable(
+  "workouts",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    programId: integer("program_id").references(() => workoutPrograms.id, {
+      onDelete: "set null",
+    }),
+    title: varchar("title", { length: 255 }).notNull(),
+    date: timestamp("date").notNull().defaultNow(),
+    notes: text("notes"),
+    durationMinutes: integer("duration_minutes").notNull().default(60),
+    status: varchar("status", { length: 24 }).notNull().default("completed"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("workouts_user_date_idx").on(table.userId, table.date)],
+);
 
-export const programExercises = pgTable("program_exercises", {
-  id: serial("id").primaryKey(),
-  programId: integer("program_id").notNull().references(() => programs.id, { onDelete: "cascade" }),
-  exerciseId: integer("exercise_id").notNull().references(() => exercises.id, { onDelete: "cascade" }),
-  orderIndex: integer("order_index").notNull(),
-});
+export const exercises = pgTable(
+  "exercises",
+  {
+    id: serial("id").primaryKey(),
+    workoutId: integer("workout_id")
+      .notNull()
+      .references(() => workouts.id, { onDelete: "cascade" }),
+    exerciseDefinitionId: integer("exercise_definition_id").references(
+      () => exerciseDefinitions.id,
+      { onDelete: "set null" },
+    ),
+    name: varchar("name", { length: 255 }).notNull(),
+    position: integer("position").notNull().default(0),
+    sets: integer("sets").notNull(),
+    reps: integer("reps").notNull(),
+    weight: integer("weight").notNull().default(0),
+    restSeconds: integer("rest_seconds").notNull().default(90),
+  },
+  (table) => [index("exercises_workout_idx").on(table.workoutId)],
+);
+
+export const exerciseSets = pgTable(
+  "exercise_sets",
+  {
+    id: serial("id").primaryKey(),
+    exerciseId: integer("exercise_id")
+      .notNull()
+      .references(() => exercises.id, { onDelete: "cascade" }),
+    setNumber: integer("set_number").notNull(),
+    reps: integer("reps").notNull().default(0),
+    weight: integer("weight").notNull().default(0),
+    rir: integer("rir"),
+    completed: integer("completed").notNull().default(0),
+  },
+  (table) => [
+    index("exercise_sets_exercise_idx").on(table.exerciseId),
+    uniqueIndex("exercise_sets_number_idx").on(table.exerciseId, table.setNumber),
+  ],
+);
+
+export type User = typeof users.$inferSelect;
+export type Workout = typeof workouts.$inferSelect;
+export type WorkoutExercise = typeof exercises.$inferSelect;
+export type WorkoutSet = typeof exerciseSets.$inferSelect;
+export type ExerciseDefinition = typeof exerciseDefinitions.$inferSelect;
+export type WorkoutProgram = typeof workoutPrograms.$inferSelect;
+export type ProgramExercise = typeof programExercises.$inferSelect;
 
 export const bodyMeasurements = pgTable("body_measurements", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  weightKg: numeric("weight_kg", { precision: 5, scale: 2 }),
-  heightCm: numeric("height_cm", { precision: 5, scale: 1 }),
-  chestCm: numeric("chest_cm", { precision: 5, scale: 1 }),
-  waistCm: numeric("waist_cm", { precision: 5, scale: 1 }),
-  hipCm: numeric("hip_cm", { precision: 5, scale: 1 }),
-  thighCm: numeric("thigh_cm", { precision: 5, scale: 1 }),
-  bicepsCm: numeric("biceps_cm", { precision: 5, scale: 1 }),
-  calfCm: numeric("calf_cm", { precision: 5, scale: 1 }),
+  weightKg: integer("weight_kg"),
+  heightCm: integer("height_cm"),
+  chestCm: integer("chest_cm"),
+  waistCm: integer("waist_cm"),
+  hipCm: integer("hip_cm"),
+  thighCm: integer("thigh_cm"),
+  bicepsCm: integer("biceps_cm"),
+  calfCm: integer("calf_cm"),
   date: timestamp("date").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [index("body_measurements_user_idx").on(table.userId)]);
 
-export const userRelations = relations(users, ({ many }) => ({
-  workouts: many(workouts),
-  exercises: many(exercises),
-  programs: many(programs),
-  bodyMeasurements: many(bodyMeasurements),
-}));
-
-export const workoutRelations = relations(workouts, ({ one, many }) => ({
-  user: one(users, { fields: [workouts.userId], references: [users.id] }),
-  workoutExercises: many(workoutExercises),
-}));
-
-export const exerciseRelations = relations(exercises, ({ one, many }) => ({
-  user: one(users, { fields: [exercises.userId], references: [users.id] }),
-  workoutExercises: many(workoutExercises),
-  programExercises: many(programExercises),
-}));
-
-export const workoutExerciseRelations = relations(workoutExercises, ({ one, many }) => ({
-  workout: one(workouts, { fields: [workoutExercises.workoutId], references: [workouts.id] }),
-  exercise: one(exercises, { fields: [workoutExercises.exerciseId], references: [exercises.id] }),
-  sets: many(sets),
-}));
-
-export const setRelations = relations(sets, ({ one }) => ({
-  workoutExercise: one(workoutExercises, { fields: [sets.workoutExerciseId], references: [workoutExercises.id] }),
-}));
-
-export const programRelations = relations(programs, ({ one, many }) => ({
-  user: one(users, { fields: [programs.userId], references: [users.id] }),
-  programExercises: many(programExercises),
-}));
-
-export const programExerciseRelations = relations(programExercises, ({ one }) => ({
-  program: one(programs, { fields: [programExercises.programId], references: [programs.id] }),
-  exercise: one(exercises, { fields: [programExercises.exerciseId], references: [exercises.id] }),
-}));
-
-export const bodyMeasurementRelations = relations(bodyMeasurements, ({ one }) => ({
-  user: one(users, { fields: [bodyMeasurements.userId], references: [users.id] }),
-}));
+export type BodyMeasurement = typeof bodyMeasurements.$inferSelect;

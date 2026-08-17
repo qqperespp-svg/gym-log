@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { CalendarDays, ChartNoAxesColumnIncreasing, Dumbbell, History, Layers3, LayoutDashboard, LibraryBig, LogOut, Menu, Plus, X } from "lucide-react";
+import { CalendarDays, ChartNoAxesColumnIncreasing, Dumbbell, History, Layers3, LayoutDashboard, LibraryBig, LogOut, Menu, Plus, Ruler, X } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
 
 const links = [
@@ -11,6 +11,7 @@ const links = [
   { href: "/workouts", label: "Treningi", icon: CalendarDays },
   { href: "/programs", label: "Programy", icon: Layers3 },
   { href: "/exercises", label: "Ćwiczenia", icon: LibraryBig },
+  { href: "/body", label: "Ciało", icon: Ruler },
   { href: "/history", label: "Historia", icon: History },
 ];
 

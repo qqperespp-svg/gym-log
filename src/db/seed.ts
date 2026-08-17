@@ -1,150 +1,93 @@
-import { asc, eq } from "drizzle-orm";
-import { db } from "@/db";
-import { EXERCISE_CATALOG } from "@/db/exercise-catalog";
-import {
-  exerciseDefinitions,
-  exercises,
-  exerciseSets,
-  programExercises,
-  users,
-  workoutPrograms,
-  workouts,
-} from "@/db/schema";
+import { sql } from "drizzle-orm";
+import { db } from "./index";
+import { users, exercises, workouts, workoutExercises, sets, programs, programExercises } from "./schema";
+import { EXERCISE_LIBRARY } from "./exercise-data";
 import { hashPassword } from "@/lib/auth";
 
-export async function ensureExerciseCatalog(userId: number) {
-  const existing = await db
-    .select({ name: exerciseDefinitions.name })
-    .from(exerciseDefinitions)
-    .where(eq(exerciseDefinitions.userId, userId));
-  const names = new Set(existing.map((item) => item.name.toLocaleLowerCase("pl")));
-  const missing = EXERCISE_CATALOG.filter((item) => {
-    const key = item.name.toLocaleLowerCase("pl");
-    if (names.has(key)) return false;
-    names.add(key);
-    return true;
+async function seed() {
+  await db.execute(sql`TRUNCATE TABLE sets, workout_exercises, workouts, program_exercises, programs, exercises, users RESTART IDENTITY CASCADE`);
+
+  const userId = 1;
+
+  await db.insert(users).values({
+    id: userId,
+    email: "rat@gym.com",
+    name: "Mike 'The Beast' Johnson",
+    passwordHash: hashPassword("gymrat99"),
   });
 
-  if (missing.length) {
-    await db
-      .insert(exerciseDefinitions)
-      .values(missing.map((item) => ({ userId, ...item, isCustom: 0 })))
-      .onConflictDoNothing();
-  }
+  // Global exercise library (available to every user)
+  const library = EXERCISE_LIBRARY.map((e, i) => ({
+    id: i + 1,
+    userId: null,
+    name: e.name,
+    category: e.category,
+    description: null,
+  }));
+  await db.insert(exercises).values(library);
 
-  return db
-    .select()
-    .from(exerciseDefinitions)
-    .where(eq(exerciseDefinitions.userId, userId))
-    .orderBy(asc(exerciseDefinitions.name));
-}
-
-export async function seedStarterData(userId: number) {
-  const library = await ensureExerciseCatalog(userId);
-  const byName = new Map(library.map((item) => [item.name, item]));
-  const bench = byName.get("Wyciskanie sztangi na ławce płaskiej")!;
-  const squat = byName.get("Przysiad ze sztangą high bar")!;
-  const deadlift = byName.get("Martwy ciąg klasyczny")!;
-  const pullup = byName.get("Podciąganie nachwytem")!;
-  const ohp = byName.get("Wyciskanie żołnierskie")!;
-  const curl = byName.get("Uginanie ramion z hantlami")!;
-
-  const [program] = await db
-    .insert(workoutPrograms)
-    .values({
-      userId,
-      name: "Upper Body — siła",
-      description: "Bazowy zestaw góry ciała z naciskiem na progres siłowy.",
-    })
-    .returning();
-  await db.insert(programExercises).values([
-    { programId: program.id, exerciseDefinitionId: bench.id, name: bench.name, position: 0, targetSets: 5, targetReps: 5, targetWeight: 100, restSeconds: 180 },
-    { programId: program.id, exerciseDefinitionId: pullup.id, name: pullup.name, position: 1, targetSets: 4, targetReps: 8, targetWeight: 0, restSeconds: 120 },
-    { programId: program.id, exerciseDefinitionId: ohp.id, name: ohp.name, position: 2, targetSets: 4, targetReps: 8, targetWeight: 50, restSeconds: 120 },
-    { programId: program.id, exerciseDefinitionId: curl.id, name: curl.name, position: 3, targetSets: 3, targetReps: 12, targetWeight: 16, restSeconds: 75 },
+  // A few personal, custom exercises for the demo user
+  await db.insert(exercises).values([
+    { id: 1000, userId, name: "My Custom Cable Row (home)", category: "Back", description: "Home cable tower" },
+    { id: 1001, userId, name: "Driveway Sled Drag", category: "Cardio", description: "Rogue sled in the garage" },
   ]);
 
-  const now = new Date();
-  const workoutRows = await db
-    .insert(workouts)
-    .values([
-      { userId, title: "Push — siła", date: new Date(now.getTime() - 2 * 86400000), notes: "Dobra energia, progres na ławce.", durationMinutes: 68, status: "completed" },
-      { userId, title: "Pull — objętość", date: new Date(now.getTime() - 5 * 86400000), notes: "Kontrolowane tempo w każdym powtórzeniu.", durationMinutes: 74, status: "completed" },
-      { userId, title: "Nogi — ciężko", date: new Date(now.getTime() - 8 * 86400000), notes: "Nowy rekord serii w przysiadzie.", durationMinutes: 82, status: "completed" },
-      { userId, programId: program.id, title: "Upper Body — siła", date: new Date(now.getTime() + 2 * 86400000), notes: "Plan na kolejny trening.", durationMinutes: 60, status: "planned" },
-    ])
-    .returning();
+  const idByName = new Map(EXERCISE_LIBRARY.map((e, i) => [e.name, i + 1]));
 
-  async function addExercise(workoutId: number, definitionId: number, name: string, position: number, setValues: Array<{ reps: number; weight: number; rir: number | null; completed?: number }>, restSeconds: number) {
-    const [exercise] = await db.insert(exercises).values({
-      workoutId,
-      exerciseDefinitionId: definitionId,
-      name,
-      position,
-      sets: setValues.length,
-      reps: setValues[0]?.reps ?? 0,
-      weight: setValues[0]?.weight ?? 0,
-      restSeconds,
-    }).returning();
-    await db.insert(exerciseSets).values(setValues.map((set, index) => ({
-      exerciseId: exercise.id,
-      setNumber: index + 1,
-      reps: set.reps,
-      weight: set.weight,
-      rir: set.rir,
-      completed: set.completed ?? 1,
-    })));
+  // Demo workouts
+  const workoutsData = [
+    { id: 1, userId, title: "Upper Power A", notes: "Heavy pressing", durationMinutes: 75, date: new Date("2025-11-10T08:00:00Z") },
+    { id: 2, userId, title: "Leg Day", notes: "Squat focus", durationMinutes: 90, date: new Date("2025-11-11T17:00:00Z") },
+    { id: 3, userId, title: "Pull & Push", notes: "Back and shoulders", durationMinutes: 80, date: new Date("2025-11-13T10:00:00Z") },
+  ];
+  await db.insert(workouts).values(workoutsData);
+
+  const weData = [
+    { id: 1, workoutId: 1, exerciseId: idByName.get("Barbell Bench Press")!, orderIndex: 0 },
+    { id: 2, workoutId: 1, exerciseId: idByName.get("Overhead Press")!, orderIndex: 1 },
+    { id: 3, workoutId: 1, exerciseId: idByName.get("Pull-Up")!, orderIndex: 2 },
+    { id: 4, workoutId: 2, exerciseId: idByName.get("Back Squat")!, orderIndex: 0 },
+    { id: 5, workoutId: 2, exerciseId: idByName.get("Conventional Deadlift")!, orderIndex: 1 },
+    { id: 6, workoutId: 3, exerciseId: idByName.get("Pull-Up")!, orderIndex: 0 },
+    { id: 7, workoutId: 3, exerciseId: idByName.get("Romanian Deadlift")!, orderIndex: 1 },
+  ];
+  await db.insert(workoutExercises).values(weData);
+
+  const setsData = [
+    { workoutExerciseId: 1, reps: 8, weight: 225, rir: 1 },
+    { workoutExerciseId: 1, reps: 6, weight: 245, rir: 0 },
+    { workoutExerciseId: 2, reps: 10, weight: 135, rir: 2 },
+    { workoutExerciseId: 3, reps: 10, weight: 0, rir: 3 },
+    { workoutExerciseId: 4, reps: 5, weight: 315, rir: 1 },
+    { workoutExerciseId: 5, reps: 8, weight: 185, rir: 1 },
+    { workoutExerciseId: 6, reps: 12, weight: 45, rir: 2 },
+    { workoutExerciseId: 7, reps: 10, weight: 95, rir: 1 },
+  ];
+  await db.insert(sets).values(setsData);
+
+  // Demo training programs (templates)
+  const programsData = [
+    { id: 1, userId, name: "Upper Power", description: "Heavy push + pull day" },
+    { id: 2, userId, name: "Leg Day", description: "Squats, hinges, calves" },
+    { id: 3, userId, name: "Push Pull", description: "Balanced upper body" },
+  ];
+  await db.insert(programs).values(programsData);
+
+  const programExerciseNames: Record<number, string[]> = {
+    1: ["Barbell Bench Press", "Overhead Press", "Pull-Up", "Barbell Row", "Dumbbell Lateral Raise"],
+    2: ["Back Squat", "Conventional Deadlift", "Leg Press", "Romanian Deadlift", "Standing Calf Raise"],
+    3: ["Barbell Bench Press", "Overhead Press", "Lat Pulldown", "Seated Cable Row"],
+  };
+
+  const peData: { programId: number; exerciseId: number; orderIndex: number }[] = [];
+  for (const [pid, names] of Object.entries(programExerciseNames)) {
+    names.forEach((name, i) => {
+      peData.push({ programId: Number(pid), exerciseId: idByName.get(name)!, orderIndex: i });
+    });
   }
+  await db.insert(programExercises).values(peData);
 
-  await addExercise(workoutRows[0].id, bench.id, bench.name, 0, [
-    { reps: 5, weight: 95, rir: 3 }, { reps: 5, weight: 100, rir: 2 }, { reps: 5, weight: 100, rir: 2 }, { reps: 5, weight: 100, rir: 1 }, { reps: 4, weight: 100, rir: 0 },
-  ], 180);
-  await addExercise(workoutRows[0].id, ohp.id, ohp.name, 1, [
-    { reps: 8, weight: 50, rir: 2 }, { reps: 8, weight: 50, rir: 2 }, { reps: 7, weight: 50, rir: 1 }, { reps: 7, weight: 50, rir: 0 },
-  ], 120);
-  await addExercise(workoutRows[1].id, deadlift.id, deadlift.name, 0, [
-    { reps: 6, weight: 130, rir: 3 }, { reps: 6, weight: 140, rir: 2 }, { reps: 6, weight: 140, rir: 1 }, { reps: 5, weight: 140, rir: 0 },
-  ], 180);
-  await addExercise(workoutRows[1].id, pullup.id, pullup.name, 1, [
-    { reps: 10, weight: 0, rir: 2 }, { reps: 9, weight: 0, rir: 1 }, { reps: 8, weight: 0, rir: 1 }, { reps: 7, weight: 0, rir: 0 },
-  ], 120);
-  await addExercise(workoutRows[1].id, curl.id, curl.name, 2, [
-    { reps: 12, weight: 16, rir: 2 }, { reps: 11, weight: 16, rir: 1 }, { reps: 10, weight: 16, rir: 0 },
-  ], 75);
-  await addExercise(workoutRows[2].id, squat.id, squat.name, 0, [
-    { reps: 5, weight: 115, rir: 3 }, { reps: 5, weight: 125, rir: 2 }, { reps: 5, weight: 125, rir: 2 }, { reps: 5, weight: 125, rir: 1 }, { reps: 4, weight: 125, rir: 0 },
-  ], 210);
-  await addExercise(workoutRows[2].id, deadlift.id, deadlift.name, 1, [
-    { reps: 8, weight: 105, rir: 3 }, { reps: 8, weight: 110, rir: 2 }, { reps: 8, weight: 110, rir: 1 },
-  ], 150);
-  await addExercise(workoutRows[3].id, bench.id, bench.name, 0, Array.from({ length: 5 }, () => ({ reps: 5, weight: 100, rir: 2, completed: 0 })), 180);
-  await addExercise(workoutRows[3].id, pullup.id, pullup.name, 1, Array.from({ length: 4 }, () => ({ reps: 8, weight: 0, rir: 2, completed: 0 })), 120);
-  await addExercise(workoutRows[3].id, ohp.id, ohp.name, 2, Array.from({ length: 4 }, () => ({ reps: 8, weight: 50, rir: 2, completed: 0 })), 120);
-  await addExercise(workoutRows[3].id, curl.id, curl.name, 3, Array.from({ length: 3 }, () => ({ reps: 12, weight: 16, rir: 2, completed: 0 })), 75);
+  console.log(`Seeded! ${library.length} exercises, ${programsData.length} programs, ${workoutsData.length} workouts.`);
 }
 
-export async function ensureDemoUser() {
-  const email = "demo@gymrat.pl";
-  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
-  if (existing) {
-    const library = await ensureExerciseCatalog(existing.id);
-    const [savedProgram] = await db.select({ id: workoutPrograms.id }).from(workoutPrograms).where(eq(workoutPrograms.userId, existing.id)).limit(1);
-    if (!savedProgram) {
-      const byName = new Map(library.map((item) => [item.name, item]));
-      const choices = [
-        byName.get("Wyciskanie sztangi na ławce płaskiej"),
-        byName.get("Podciąganie nachwytem"),
-        byName.get("Wyciskanie żołnierskie"),
-        byName.get("Uginanie ramion z hantlami"),
-      ].filter((item): item is NonNullable<typeof item> => Boolean(item));
-      const [program] = await db.insert(workoutPrograms).values({ userId: existing.id, name: "Upper Body — siła", description: "Bazowy zestaw góry ciała z naciskiem na progres siłowy." }).returning();
-      if (choices.length) await db.insert(programExercises).values(choices.map((item, position) => ({ programId: program.id, exerciseDefinitionId: item.id, name: item.name, position, targetSets: position === 0 ? 5 : position === 3 ? 3 : 4, targetReps: position === 0 ? 5 : position === 3 ? 12 : 8, targetWeight: position === 0 ? 100 : position === 2 ? 50 : position === 3 ? 16 : 0, restSeconds: position === 0 ? 180 : position === 3 ? 75 : 120 })));
-    }
-    return existing.id;
-  }
-
-  const password = await hashPassword("demo1234");
-  const [user] = await db.insert(users).values({ name: "Maks Kowalski", email, password }).returning();
-  await seedStarterData(user.id);
-  return user.id;
-}
+seed().catch(console.error);

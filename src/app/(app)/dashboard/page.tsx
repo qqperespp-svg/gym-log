@@ -7,6 +7,7 @@ import {
   Flame,
   Play,
   Plus,
+  Sofa,
   Target,
   TrendingDown,
   TrendingUp,
@@ -16,9 +17,10 @@ import {
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, startOfWeek } from "@/lib/diet";
+import { WEEKDAYS, startOfWeek, weekdayOf } from "@/lib/diet";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
 import { DashboardTiles } from "@/components/dashboard-tiles";
+import { MacroBar } from "@/components/macro-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -218,16 +220,23 @@ export default async function DashboardPage({
     db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)),
   ]);
   const goalByWeekday = new Map(goalRows.map((goal) => [goal.weekday, goal]));
-  const dietWeek = WEEKDAYS.map(({ n, label, short }) => {
-    const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + (n - 1));
-    const next = new Date(day.getTime() + 86400000);
-    const consumed = dietLogRows
-      .filter((log) => log.date >= day && log.date < next)
-      .reduce((sum, log) => sum + (log.kcal ?? 0), 0);
-    const goal = goalByWeekday.get(n)?.kcalGoal ?? null;
-    const training = goalByWeekday.get(n)?.trainingDay === 1;
-    return { n, label, short, consumed, goal, training };
-  });
+  // Spożycie dzisiejsze (makro + kcal) oraz cel dzienny z flagą treningowy/wolny.
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(todayStart.getTime() + 86400000);
+  const todayLogs = dietLogRows.filter((log) => log.date >= todayStart && log.date < tomorrow);
+  const todaySum = todayLogs.reduce(
+    (acc, log) => ({
+      protein: acc.protein + (log.protein ?? 0),
+      fat: acc.fat + (log.fat ?? 0),
+      carbs: acc.carbs + (log.carbs ?? 0),
+      kcal: acc.kcal + (log.kcal ?? 0),
+    }),
+    { protein: 0, fat: 0, carbs: 0, kcal: 0 },
+  );
+  const todayWeekday = weekdayOf(now);
+  const todayGoal = goalByWeekday.get(todayWeekday) ?? null;
+  const isTrainingDay = todayGoal?.trainingDay === 1;
   const anyDietData = dietLogRows.length > 0 || goalRows.length > 0;
 
   return (
@@ -345,36 +354,41 @@ export default async function DashboardPage({
                 </div>
                 <div className="flex h-48 items-end gap-2 sm:gap-3">
                   {weekDays.map((day, index) => {
-                    const pct = day.volume > 0 ? Math.max(8, Math.round((day.volume / maxDayVolume) * 100)) : 4;
+                    // Skala jak w Historii: najwyższa objętość = 100% słupka.
+                    const pct =
+                      day.volume > 0
+                        ? Math.max(8, Math.round((day.volume / maxDayVolume) * 100))
+                        : 4;
                     const empty = day.volume <= 0;
                     return (
                       <div
                         key={index}
-                        className="group relative flex flex-1 flex-col justify-end"
+                        className="group flex h-full min-w-0 flex-1 flex-col justify-end"
                         title={`${day.label}: ${day.volume.toLocaleString("pl-PL")} kg`}
                       >
-                        {day.volume > 0 && (
-                          <span className="pointer-events-none absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-lime-300 opacity-0 transition group-hover:opacity-100">
-                            {day.volume.toLocaleString("pl-PL")}
-                          </span>
-                        )}
                         <div
-                          className={`w-full min-h-2 rounded-t-lg transition ${
+                          className={`relative mx-auto w-full max-w-16 rounded-t-lg transition ${
                             empty
-                              ? "border-b border-dashed border-white/15 bg-white/[.05]"
+                              ? "min-h-2 border-b border-dashed border-white/15 bg-white/[.05]"
                               : day.isToday
                                 ? "bg-gradient-to-t from-lime-500 to-lime-200 shadow-[0_0_18px_rgba(163,230,53,.35)]"
                                 : "bg-gradient-to-t from-lime-600 to-lime-300"
                           }`}
                           style={{ height: `${pct}%` }}
-                        />
-                        <span
-                          className={`mt-1.5 truncate text-center text-[10px] font-bold ${
+                        >
+                          {day.volume > 0 && (
+                            <span className="absolute -top-7 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-black/80 px-2 py-0.5 text-[10px] font-bold text-lime-300 group-hover:block">
+                              {day.volume.toLocaleString("pl-PL")} kg
+                            </span>
+                          )}
+                        </div>
+                        <p
+                          className={`mt-2 truncate text-center text-[10px] font-bold ${
                             day.isToday ? "text-lime-300" : "text-slate-500"
                           }`}
                         >
                           {day.label}
-                        </span>
+                        </p>
                       </div>
                     );
                   })}
@@ -439,78 +453,64 @@ export default async function DashboardPage({
             defaultFull: true,
             node: (
               <div className="panel p-5 sm:p-6">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="flex items-center gap-2 font-extrabold text-white">
-                    <UtensilsCrossed size={19} className="text-lime-400" /> Micha
-                  </h2>
-                  <Link href="/micha" className="text-link">
-                    Otwórz Michę <ArrowUpRight size={15} />
-                  </Link>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <UtensilsCrossed size={19} className="text-lime-400" />
+                    <h2 className="font-extrabold text-white">
+                      Dzisiaj · {WEEKDAYS[todayWeekday - 1]?.label}
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
+                        isTrainingDay
+                          ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
+                          : "bg-white/[.04] text-slate-400 ring-white/10"
+                      }`}
+                    >
+                      {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
+                      {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
+                    </span>
+                    <Link href="/micha" className="text-link">
+                      Otwórz Michę <ArrowUpRight size={15} />
+                    </Link>
+                  </div>
                 </div>
                 {anyDietData ? (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
-                    {dietWeek.map((day) => {
-                      const pct = day.goal
-                        ? Math.min(100, Math.round((day.consumed / day.goal) * 100))
-                        : null;
-                      const status =
-                        pct == null
-                          ? "text-slate-500"
-                          : pct > 100
-                            ? "text-rose-300"
-                            : pct > 90
-                              ? "text-amber-300"
-                              : "text-lime-300";
-                      return (
-                        <div
-                          key={day.n}
-                          className="rounded-2xl border border-white/[.07] bg-black/15 p-3 text-center"
-                        >
-                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                            {day.short}
-                          </p>
-                          <p
-                            className={`mt-1 text-lg font-black ${status}`}
-                            title={
-                              day.training
-                                ? "Dzień treningowy"
-                                : "Dzień wolny"
-                            }
-                          >
-                            {day.consumed.toLocaleString("pl-PL")}
-                          </p>
-                          <p className="text-[10px] text-slate-600">
-                            kcal{day.goal ? ` / ${day.goal.toLocaleString("pl-PL")}` : ""}
-                          </p>
-                          <p
-                            className={`mt-1 inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider ${
-                              day.training ? "text-lime-400/80" : "text-slate-600"
-                            }`}
-                          >
-                            {day.training ? "🏋️ trening" : "🛋️ wolny"}
-                          </p>
-                          {pct != null && (
-                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.05]">
-                              <div
-                                className={`h-full rounded-full ${
-                                  pct > 100
-                                    ? "bg-rose-400"
-                                    : pct > 90
-                                      ? "bg-amber-400"
-                                      : "bg-lime-400"
-                                }`}
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <MacroBar
+                      label="Kalorie"
+                      consumed={todaySum.kcal}
+                      target={todayGoal?.kcalGoal ?? 0}
+                      unit="kcal"
+                      barClass="bg-lime-400"
+                    />
+                    <MacroBar
+                      label="Białko"
+                      consumed={todaySum.protein}
+                      target={todayGoal?.protein ?? 0}
+                      unit="g"
+                      barClass="bg-sky-400"
+                    />
+                    <MacroBar
+                      label="Tłuszcze"
+                      consumed={todaySum.fat}
+                      target={todayGoal?.fat ?? 0}
+                      unit="g"
+                      barClass="bg-amber-400"
+                    />
+                    <MacroBar
+                      label="Węglowodany"
+                      consumed={todaySum.carbs}
+                      target={todayGoal?.carbs ?? 0}
+                      unit="g"
+                      barClass="bg-rose-400"
+                    />
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500">
-                    Ustaw dzienne cele kcal (z białka, tłuszczy i węglowodanów) i loguj spożycie w
-                    zakładce <b>Micha</b>.
+                    Ustaw dzienne cele (białko, tłuszcze, węglowodany) i loguj spożycie w zakładce{" "}
+                    <b>Micha</b>.
                   </p>
                 )}
               </div>

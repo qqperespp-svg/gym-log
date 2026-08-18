@@ -122,6 +122,8 @@ export function BarcodeScanner() {
       const kcal =
         n["energy-kcal_100g"] ??
         (n["energy-kj_100g"] != null ? Math.round((n["energy-kj_100g"] / 4.184) * 10) / 10 : 0);
+      // Uwaga: Open Food Facts używa kluczy w liczbie mnogiej (proteins_100g,
+      // carbohydrates_100g) — obsługujemy też warianty pojedyncze jako fallback.
       setProduct({
         code: clean,
         name:
@@ -129,9 +131,9 @@ export function BarcodeScanner() {
           data.product.generic_name ||
           data.product.brands ||
           `Produkt (${clean})`,
-        protein: round1(n.protein_100g),
-        fat: round1(n.fat_100g),
-        carbs: round1(n.carbohydrates_100g),
+        protein: round1(n.proteins_100g ?? n.protein_100g),
+        fat: round1(n.fat_100g ?? n.fats_100g),
+        carbs: round1(n.carbohydrates_100g ?? n.carbs_100g),
         kcal: Math.round(Number(kcal) || 0),
       });
     } catch (e) {
@@ -153,24 +155,43 @@ export function BarcodeScanner() {
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        await video.play();
+        // Poczekaj, aż wideo będzie miało realne klatki (rozmiar) — inaczej
+        // ZXing nie wykryje żadnego kadru i skanowanie cicho nie zadziała.
+        if (video.videoWidth === 0) {
+          await new Promise<void>((resolve) => {
+            const done = () => {
+              video.removeEventListener("loadedmetadata", done);
+              resolve();
+            };
+            video.addEventListener("loadedmetadata", done);
+            // bezpiecznik na wypadek braku eventu
+            setTimeout(resolve, 3000);
+          });
+        }
       }
       const { BrowserMultiFormatReader } = await loadZxing();
       const reader = new BrowserMultiFormatReader();
       readerRef.current = reader;
       setScanning(true);
-      reader.decodeFromStream(stream, videoRef.current!, (result) => {
+      reader.decodeFromStream(stream, video!, (result) => {
         if (result) {
           const code = result.getText().trim();
           void stopCamera().then(() => lookup(code));
         }
       });
-    } catch {
-      setError(
-        "Nie udało się uruchomić aparatu — użyj „Wgraj zdjęcie kodu” albo wpisz kod ręcznie.",
-      );
+    } catch (e) {
+      const name = e instanceof DOMException ? e.name : "";
+      const hint =
+        name === "NotAllowedError" || name === "PermissionDeniedError"
+          ? "Brak zgody na aparat — odblokuj kamerę dla tej strony w ustawieniach przeglądarki."
+          : name === "NotFoundError"
+            ? "Nie znaleziono aparatu na tym urządzeniu."
+            : "Nie udało się uruchomić aparatu — użyj „Wgraj zdjęcie kodu” albo wpisz kod ręcznie.";
+      setError(hint);
       setScanning(false);
     }
   }
@@ -242,7 +263,6 @@ export function BarcodeScanner() {
           ref={fileRef}
           type="file"
           accept="image/*"
-          capture="environment"
           className="hidden"
           onChange={(event) => onFile(event.target.files?.[0] ?? null)}
         />

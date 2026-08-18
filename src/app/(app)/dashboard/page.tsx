@@ -9,14 +9,45 @@ import {
   Play,
   Plus,
   Target,
+  TrendingDown,
+  TrendingUp,
   Trophy,
 } from "lucide-react";
 import { db } from "@/db";
-import { exercises, exerciseSets, workouts } from "@/db/schema";
+import { bodyMeasurements, exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
 
 export const dynamic = "force-dynamic";
+
+function MeasurementTrend({
+  first,
+  latest,
+  unit,
+}: {
+  first: number | null;
+  latest: number | null;
+  unit: string;
+}) {
+  if (first == null || latest == null) return <span className="text-slate-600">—</span>;
+  const diff = latest - first;
+  if (Math.abs(diff) < 0.1) return <span className="text-xs font-extrabold text-slate-400">0</span>;
+  const isDown = diff < 0;
+  const sign = isDown ? "-" : "+";
+  const pct = Math.abs(Math.round((diff / Math.abs(first)) * 100));
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-xs font-extrabold ${
+        isDown ? "text-emerald-400" : "text-rose-300"
+      }`}
+    >
+      {isDown ? <TrendingDown size={13} /> : <TrendingUp size={13} />}
+      {sign}
+      {Math.abs(diff).toFixed(1)} {unit} ({sign}
+      {pct}%)
+    </span>
+  );
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -91,6 +122,66 @@ export default async function DashboardPage({
     .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
   const recent = completedSessions.slice(0, 4);
   const firstName = user.name.split(" ")[0];
+
+  const measurementRows = await db
+    .select()
+    .from(bodyMeasurements)
+    .where(eq(bodyMeasurements.userId, user.id))
+    .orderBy(desc(bodyMeasurements.date));
+  const firstMeasurement = measurementRows[measurementRows.length - 1] ?? null;
+  const latestMeasurement = measurementRows[0] ?? null;
+  const bodyMetrics = [
+    {
+      label: "Waga",
+      key: "weightKg",
+      first: firstMeasurement?.weightKg ?? null,
+      latest: latestMeasurement?.weightKg ?? null,
+      unit: "kg",
+    },
+    {
+      label: "Klatka",
+      key: "chestCm",
+      first: firstMeasurement?.chestCm ?? null,
+      latest: latestMeasurement?.chestCm ?? null,
+      unit: "cm",
+    },
+    {
+      label: "Talia",
+      key: "waistCm",
+      first: firstMeasurement?.waistCm ?? null,
+      latest: latestMeasurement?.waistCm ?? null,
+      unit: "cm",
+    },
+    {
+      label: "Biodra",
+      key: "hipCm",
+      first: firstMeasurement?.hipCm ?? null,
+      latest: latestMeasurement?.hipCm ?? null,
+      unit: "cm",
+    },
+    {
+      label: "Udo",
+      key: "thighCm",
+      first: firstMeasurement?.thighCm ?? null,
+      latest: latestMeasurement?.thighCm ?? null,
+      unit: "cm",
+    },
+    {
+      label: "Biceps",
+      key: "bicepsCm",
+      first: firstMeasurement?.bicepsCm ?? null,
+      latest: latestMeasurement?.bicepsCm ?? null,
+      unit: "cm",
+    },
+    {
+      label: "Łydka",
+      key: "calfCm",
+      first: firstMeasurement?.calfCm ?? null,
+      latest: latestMeasurement?.calfCm ?? null,
+      unit: "cm",
+    },
+  ];
+  const hasMeasurements = measurementRows.length > 0;
 
   return (
     <div className="space-y-7">
@@ -222,16 +313,40 @@ export default async function DashboardPage({
           )}
         </div>
         <div className="panel p-5 sm:p-6">
-          <h2 className="font-extrabold text-white mb-4">Wymiary ciała</h2>
-          <div className="flex items-center gap-3">
-            <Link href="/body" className="button-secondary text-sm">
-              Zobacz pomiary
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-extrabold text-white">Wymiary ciała</h2>
+            <Link href="/body" className="text-link">
+              Zobacz pomiary <ArrowUpRight size={15} />
             </Link>
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            Zapisuj wagę, wzrost i obwody w zakładce <b>Ciało</b>. Porównuj pierwszy i najnowszy
-            wpis.
-          </p>
+          {hasMeasurements ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {bodyMetrics.map((m) => (
+                <article
+                  key={m.key}
+                  className="rounded-2xl border border-white/[.07] bg-black/15 p-4"
+                >
+                  <p className="text-xs font-semibold text-slate-500">{m.label}</p>
+                  <div className="mt-2 flex items-baseline gap-1">
+                    <b className="text-xl font-black tracking-tight text-white">
+                      {m.latest != null ? m.latest.toFixed(1) : "—"}
+                    </b>
+                    <span className="text-[10px] font-semibold text-slate-500">
+                      {m.latest != null ? m.unit : ""}
+                    </span>
+                  </div>
+                  <div className="mt-2">
+                    <MeasurementTrend first={m.first} latest={m.latest} unit={m.unit} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">
+              Zapisuj wagę, wzrost i obwody w zakładce <b>Ciało</b>. Porównuj pierwszy i najnowszy
+              wpis.
+            </p>
+          )}
         </div>
       </section>
 

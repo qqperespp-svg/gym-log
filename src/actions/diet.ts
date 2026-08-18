@@ -65,3 +65,28 @@ export async function deleteDietLogAction(id: number): Promise<void> {
   revalidatePath("/micha");
   revalidatePath("/dashboard");
 }
+
+/** Dopisuje wpis spożycia z produktu zeskanowanego z kodu kreskowego.
+ *  Makro (i kcal) są już przeliczone na gramaturę po stronie klienta. */
+export async function logScannedEntryAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const dateStr = String(formData.get("date") ?? "").trim();
+  const protein = clamp(Number(formData.get("protein")) || 0, 0, 9999);
+  const fat = clamp(Number(formData.get("fat")) || 0, 0, 9999);
+  const carbs = clamp(Number(formData.get("carbs")) || 0, 0, 9999);
+  const kcal = kcalFromMacros(protein, fat, carbs);
+  const note = String(formData.get("note") ?? "").trim() || null;
+  if (!dateStr) redirect("/micha");
+  await db.insert(dietLogs).values({
+    userId: user.id,
+    date: new Date(`${dateStr}T12:00:00`),
+    protein,
+    fat,
+    carbs,
+    kcal,
+    note,
+  });
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+  redirect("/micha?saved=1");
+}

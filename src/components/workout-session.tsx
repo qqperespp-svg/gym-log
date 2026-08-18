@@ -142,8 +142,7 @@ export function WorkoutSession({
                         value={set.reps}
                         onChange={(event) =>
                           updateSet(exercise.id, set.id, { reps: Number(event.target.value) })
-                        }
-                      />
+                        } onFocus={(event) => event.target.select()} />
                     </td>
                     <td>
                       <input
@@ -154,8 +153,7 @@ export function WorkoutSession({
                         value={set.weight}
                         onChange={(event) =>
                           updateSet(exercise.id, set.id, { weight: Number(event.target.value) })
-                        }
-                      />
+                        } onFocus={(event) => event.target.select()} />
                     </td>
                     <td>
                       <input
@@ -169,8 +167,7 @@ export function WorkoutSession({
                           updateSet(exercise.id, set.id, {
                             rir: event.target.value === "" ? null : Number(event.target.value),
                           })
-                        }
-                      />
+                        } onFocus={(event) => event.target.select()} />
                     </td>
                     <td>
                       <input

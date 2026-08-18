@@ -44,8 +44,7 @@ export function DietLogForm() {
               placeholder="np. 45"
               value={protein}
               onChange={(event) => setProtein(event.target.value)}
-              required
-            />
+              required onFocus={(event) => event.target.select()} />
           </span>
         </label>
         <label className="field-label">
@@ -60,8 +59,7 @@ export function DietLogForm() {
               placeholder="np. 30"
               value={fat}
               onChange={(event) => setFat(event.target.value)}
-              required
-            />
+              required onFocus={(event) => event.target.select()} />
           </span>
         </label>
         <label className="field-label">
@@ -76,8 +74,7 @@ export function DietLogForm() {
               placeholder="np. 180"
               value={carbs}
               onChange={(event) => setCarbs(event.target.value)}
-              required
-            />
+              required onFocus={(event) => event.target.select()} />
           </span>
         </label>
       </div>

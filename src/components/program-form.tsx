@@ -153,8 +153,7 @@ export function ProgramForm({
                     min="1"
                     max="20"
                     value={row.targetSets}
-                    onChange={(event) => update(row.key, { targetSets: Number(event.target.value) })}
-                  />
+                    onChange={(event) => update(row.key, { targetSets: Number(event.target.value) })} onFocus={(event) => event.target.select()} />
                 </label>
                 <label className="field-label">
                   Powtórzenia
@@ -163,8 +162,7 @@ export function ProgramForm({
                     type="number"
                     min="1"
                     value={row.targetReps}
-                    onChange={(event) => update(row.key, { targetReps: Number(event.target.value) })}
-                  />
+                    onChange={(event) => update(row.key, { targetReps: Number(event.target.value) })} onFocus={(event) => event.target.select()} />
                 </label>
                 <label className="field-label">
                   Ciężar startowy
@@ -174,8 +172,7 @@ export function ProgramForm({
                     min="0"
                     step="0.1"
                     value={row.targetWeight}
-                    onChange={(event) => update(row.key, { targetWeight: Number(event.target.value) })}
-                  />
+                    onChange={(event) => update(row.key, { targetWeight: Number(event.target.value) })} onFocus={(event) => event.target.select()} />
                 </label>
                 <label className="field-label sm:col-span-2 lg:col-span-2">
                   Przerwa (sek.)
@@ -184,8 +181,7 @@ export function ProgramForm({
                     type="number"
                     min="0"
                     value={row.restSeconds}
-                    onChange={(event) => update(row.key, { restSeconds: Number(event.target.value) })}
-                  />
+                    onChange={(event) => update(row.key, { restSeconds: Number(event.target.value) })} onFocus={(event) => event.target.select()} />
                 </label>
               </div>
             </article>

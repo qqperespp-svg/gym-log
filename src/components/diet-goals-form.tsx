@@ -104,8 +104,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       min="0"
                       step="1"
                       value={values[n].protein}
-                      onChange={(event) => setField(n, "protein", event.target.value)}
-                    />
+                      onChange={(event) => setField(n, "protein", event.target.value)} onFocus={(event) => event.target.select()} />
                   </span>
                 </label>
                 <label className="field-label">
@@ -118,8 +117,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       min="0"
                       step="1"
                       value={values[n].fat}
-                      onChange={(event) => setField(n, "fat", event.target.value)}
-                    />
+                      onChange={(event) => setField(n, "fat", event.target.value)} onFocus={(event) => event.target.select()} />
                   </span>
                 </label>
                 <label className="field-label">
@@ -132,8 +130,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       min="0"
                       step="1"
                       value={values[n].carbs}
-                      onChange={(event) => setField(n, "carbs", event.target.value)}
-                    />
+                      onChange={(event) => setField(n, "carbs", event.target.value)} onFocus={(event) => event.target.select()} />
                   </span>
                 </label>
                 <div className="rounded-xl bg-lime-400/10 px-4 py-2 text-center">

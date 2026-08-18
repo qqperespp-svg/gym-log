@@ -9,6 +9,7 @@ import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
 import { MacroBar } from "@/components/macro-bar";
+import { BarcodeScanner } from "@/components/barcode-scanner";
 
 export const dynamic = "force-dynamic";
 
@@ -198,6 +199,15 @@ export default async function MichaPage({
           treningowy czy wolny.
         </p>
         <DietGoalsForm goals={goals} />
+      </section>
+
+      <section className="panel p-5 sm:p-7">
+        <h2 className="font-extrabold text-white mb-1">Skanuj kod kreskowy</h2>
+        <p className="mb-5 text-sm text-slate-500">
+          Jak w Fitatu — zeskanuj kod produktu, a makro i kcal podstawią się automatycznie z bazy
+          Open Food Facts. Wpisz gramaturę i dodaj do dziennika.
+        </p>
+        <BarcodeScanner />
       </section>
 
       <section className="panel p-5 sm:p-7">

@@ -79,35 +79,35 @@ export default async function BodyPage({
           >
             <label className="field-label">
               Waga (kg)
-              <input className="input" name="weight" type="number" step="0.1" defaultValue={editRow.weightKg ?? ""} />
+              <input className="input" name="weight" type="number" step="0.1" defaultValue={editRow.weightKg ?? ""} onFocus={(event) => event.target.select()} />
             </label>
             <label className="field-label">
               Wzrost (cm)
-              <input className="input" name="height" type="number" step="0.1" defaultValue={editRow.heightCm ?? ""} />
+              <input className="input" name="height" type="number" step="0.1" defaultValue={editRow.heightCm ?? ""} onFocus={(event) => event.target.select()} />
             </label>
             <label className="field-label">
               Klatka (cm)
-              <input className="input" name="chest" type="number" step="0.1" defaultValue={editRow.chestCm ?? ""} />
+              <input className="input" name="chest" type="number" step="0.1" defaultValue={editRow.chestCm ?? ""} onFocus={(event) => event.target.select()} />
             </label>
             <label className="field-label">
               Talia (cm)
-              <input className="input" name="waist" type="number" step="0.1" defaultValue={editRow.waistCm ?? ""} />
+              <input className="input" name="waist" type="number" step="0.1" defaultValue={editRow.waistCm ?? ""} onFocus={(event) => event.target.select()} />
             </label>
             <label className="field-label">
               Biodra (cm)
-              <input className="input" name="hip" type="number" step="0.1" defaultValue={editRow.hipCm ?? ""} />
+              <input className="input" name="hip" type="number" step="0.1" defaultValue={editRow.hipCm ?? ""} onFocus={(event) => event.target.select()} />
             </label>
             <label className="field-label">
               Udo (cm)
-              <input className="input" name="thigh" type="number" step="0.1" defaultValue={editRow.thighCm ?? ""} />
+              <input className="input" name="thigh" type="number" step="0.1" defaultValue={editRow.thighCm ?? ""} onFocus={(event) => event.target.select()} />
             </label>
             <label className="field-label">
               Biceps (cm)
-              <input className="input" name="biceps" type="number" step="0.1" defaultValue={editRow.bicepsCm ?? ""} />
+              <input className="input" name="biceps" type="number" step="0.1" defaultValue={editRow.bicepsCm ?? ""} onFocus={(event) => event.target.select()} />
             </label>
             <label className="field-label">
               Łydka (cm)
-              <input className="input" name="calf" type="number" step="0.1" defaultValue={editRow.calfCm ?? ""} />
+              <input className="input" name="calf" type="number" step="0.1" defaultValue={editRow.calfCm ?? ""} onFocus={(event) => event.target.select()} />
             </label>
             <label className="field-label">
               Data
@@ -241,35 +241,35 @@ export default async function BodyPage({
           </label>
           <label className="field-label">
             Waga (kg)
-            <input className="input" name="weight" type="number" step="0.1" />
+            <input className="input" name="weight" type="number" step="0.1" onFocus={(event) => event.target.select()} />
           </label>
           <label className="field-label">
             Wzrost (cm)
-            <input className="input" name="height" type="number" step="0.1" />
+            <input className="input" name="height" type="number" step="0.1" onFocus={(event) => event.target.select()} />
           </label>
           <label className="field-label">
             Klatka (cm)
-            <input className="input" name="chest" type="number" step="0.1" />
+            <input className="input" name="chest" type="number" step="0.1" onFocus={(event) => event.target.select()} />
           </label>
           <label className="field-label">
             Talia (cm)
-            <input className="input" name="waist" type="number" step="0.1" />
+            <input className="input" name="waist" type="number" step="0.1" onFocus={(event) => event.target.select()} />
           </label>
           <label className="field-label">
             Biodra (cm)
-            <input className="input" name="hip" type="number" step="0.1" />
+            <input className="input" name="hip" type="number" step="0.1" onFocus={(event) => event.target.select()} />
           </label>
           <label className="field-label">
             Udo (cm)
-            <input className="input" name="thigh" type="number" step="0.1" />
+            <input className="input" name="thigh" type="number" step="0.1" onFocus={(event) => event.target.select()} />
           </label>
           <label className="field-label">
             Biceps (cm)
-            <input className="input" name="biceps" type="number" step="0.1" />
+            <input className="input" name="biceps" type="number" step="0.1" onFocus={(event) => event.target.select()} />
           </label>
           <label className="field-label">
             Łydka (cm)
-            <input className="input" name="calf" type="number" step="0.1" />
+            <input className="input" name="calf" type="number" step="0.1" onFocus={(event) => event.target.select()} />
           </label>
           <div className="sm:col-span-2 lg:col-span-4">
             <button type="submit" className="button-primary">

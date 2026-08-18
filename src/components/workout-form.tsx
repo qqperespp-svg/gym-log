@@ -247,7 +247,7 @@ export function WorkoutForm({
             Czas trwania
             <span className="input-shell">
               <Clock3 size={17} />
-              <input name="durationMinutes" type="number" min="1" max="600" defaultValue={initial?.durationMinutes ?? 60} required />
+              <input name="durationMinutes" type="number" min="1" max="600" defaultValue={initial?.durationMinutes ?? 60} required  onFocus={(event) => event.target.select()} />
               <span className="text-xs text-slate-500">min</span>
             </span>
           </label>
@@ -324,8 +324,7 @@ export function WorkoutForm({
                   min="1"
                   max="20"
                   value={row.sets.length}
-                  onChange={(event) => resizeSets(row.key, Number(event.target.value))}
-                />
+                  onChange={(event) => resizeSets(row.key, Number(event.target.value))} onFocus={(event) => event.target.select()} />
               </label>
               <label className="field-label w-full sm:w-32">
                 Przerwa (sek.)
@@ -334,8 +333,7 @@ export function WorkoutForm({
                   type="number"
                   min="0"
                   value={row.restSeconds}
-                  onChange={(event) => updateExercise(row.key, { restSeconds: Number(event.target.value) })}
-                />
+                  onChange={(event) => updateExercise(row.key, { restSeconds: Number(event.target.value) })} onFocus={(event) => event.target.select()} />
               </label>
               <button
                 type="button"
@@ -372,8 +370,7 @@ export function WorkoutForm({
                           value={set.reps}
                           onChange={(event) =>
                             updateSet(row.key, set.key, { reps: Number(event.target.value) })
-                          }
-                        />
+                          } onFocus={(event) => event.target.select()} />
                       </td>
                       <td>
                         <input
@@ -384,8 +381,7 @@ export function WorkoutForm({
                           value={set.weight}
                           onChange={(event) =>
                             updateSet(row.key, set.key, { weight: Number(event.target.value) })
-                          }
-                        />
+                          } onFocus={(event) => event.target.select()} />
                       </td>
                       <td>
                         <input
@@ -399,8 +395,7 @@ export function WorkoutForm({
                             updateSet(row.key, set.key, {
                               rir: event.target.value === "" ? null : Number(event.target.value),
                             })
-                          }
-                        />
+                          } onFocus={(event) => event.target.select()} />
                       </td>
                       <td>
                         <input

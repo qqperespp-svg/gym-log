@@ -15,6 +15,7 @@ import {
   Menu,
   Plus,
   Ruler,
+  UtensilsCrossed,
   X,
 } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
@@ -25,6 +26,7 @@ const links = [
   { href: "/programs", label: "Programy", icon: Layers3 },
   { href: "/exercises", label: "Ćwiczenia", icon: LibraryBig },
   { href: "/body", label: "Ciało", icon: Ruler },
+  { href: "/micha", label: "Micha", icon: UtensilsCrossed },
   { href: "/history", label: "Historia", icon: History },
 ];
 

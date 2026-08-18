@@ -3,7 +3,6 @@ import { asc, desc, eq } from "drizzle-orm";
 import {
   ArrowUpRight,
   CalendarDays,
-  Clock3,
   Dumbbell,
   Flame,
   Play,
@@ -12,11 +11,14 @@ import {
   TrendingDown,
   TrendingUp,
   Trophy,
+  UtensilsCrossed,
 } from "lucide-react";
 import { db } from "@/db";
-import { bodyMeasurements, exercises, exerciseSets, workouts } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { WEEKDAYS, startOfWeek } from "@/lib/diet";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
+import { DashboardTiles } from "@/components/dashboard-tiles";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +58,8 @@ export default async function DashboardPage({
 }) {
   const user = await requireUser();
   const query = await searchParams;
+
+  // ---------- Treningi ----------
   const rows = await db
     .select({
       id: workouts.id,
@@ -74,6 +78,7 @@ export default async function DashboardPage({
     .leftJoin(exerciseSets, eq(exerciseSets.exerciseId, exercises.id))
     .where(eq(workouts.userId, user.id))
     .orderBy(desc(workouts.date), asc(exercises.position), asc(exerciseSets.setNumber));
+
   const grouped = new Map<
     number,
     {
@@ -114,15 +119,39 @@ export default async function DashboardPage({
   }
   const sessions = Array.from(grouped.values());
   const completedSessions = sessions.filter((item) => item.status === "completed");
-  const weekAgo = new Date(Date.now() - 7 * 86400000);
-  const weekly = completedSessions.filter((item) => item.date >= weekAgo);
+
+  // Tydzień liczony od poniedziałku do niedzieli — w poniedziałek licznik startuje od 0.
+  const weekStart = startOfWeek(new Date());
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+  const weekly = completedSessions.filter((item) => item.date >= weekStart && item.date < weekEnd);
   const weeklyVolume = weekly.reduce((sum, item) => sum + item.volume, 0);
+  const weeklyCount = weekly.length;
+
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
+    const next = new Date(day.getTime() + 86400000);
+    const volume = completedSessions
+      .filter((item) => item.date >= day && item.date < next)
+      .reduce((sum, item) => sum + item.volume, 0);
+    const today = new Date();
+    return {
+      label: day.toLocaleDateString("pl-PL", { weekday: "short" }),
+      volume,
+      isToday:
+        day.getDate() === today.getDate() &&
+        day.getMonth() === today.getMonth() &&
+        day.getFullYear() === today.getFullYear(),
+    };
+  });
+  const maxDayVolume = Math.max(...weekDays.map((d) => d.volume), 1);
+
   const active = sessions
     .filter((item) => item.status !== "completed")
     .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
   const recent = completedSessions.slice(0, 4);
   const firstName = user.name.split(" ")[0];
 
+  // ---------- Wymiary ciała ----------
   const measurementRows = await db
     .select()
     .from(bodyMeasurements)
@@ -182,6 +211,23 @@ export default async function DashboardPage({
     },
   ];
   const hasMeasurements = measurementRows.length > 0;
+
+  // ---------- Micha: cele i spożycie w bieżącym tygodniu ----------
+  const [goalRows, dietLogRows] = await Promise.all([
+    db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
+    db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)),
+  ]);
+  const goalByWeekday = new Map(goalRows.map((goal) => [goal.weekday, goal]));
+  const dietWeek = WEEKDAYS.map(({ n, label, short }) => {
+    const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + (n - 1));
+    const next = new Date(day.getTime() + 86400000);
+    const consumed = dietLogRows
+      .filter((log) => log.date >= day && log.date < next)
+      .reduce((sum, log) => sum + (log.kcal ?? 0), 0);
+    const goal = goalByWeekday.get(n)?.kcalGoal ?? null;
+    return { n, label, short, consumed, goal };
+  });
+  const anyDietData = dietLogRows.length > 0 || goalRows.length > 0;
 
   return (
     <div className="space-y-7">
@@ -243,14 +289,14 @@ export default async function DashboardPage({
             icon: Dumbbell,
             label: "Treningi łącznie",
             value: completedSessions.length.toString(),
-            meta: `${weekly.length} w ostatnich 7 dniach`,
+            meta: `${weeklyCount} w tym tygodniu (pon.–niedz.)`,
             color: "lime",
           },
           {
             icon: Target,
             label: "Objętość tygodnia",
             value: `${weeklyVolume.toLocaleString("pl-PL")} kg`,
-            meta: "Tylko wykonane serie",
+            meta: "Poniedziałek – niedziela",
             color: "blue",
           },
           {
@@ -263,8 +309,8 @@ export default async function DashboardPage({
           {
             icon: Flame,
             label: "Regularność",
-            value: `${weekly.length} sesje`,
-            meta: "Aktywność w tym tygodniu",
+            value: `${weeklyCount} sesje`,
+            meta: "Od poniedziałku do dzisiaj",
             color: "orange",
           },
         ].map(({ icon: Icon, label, value, meta, color }) => (
@@ -283,131 +329,245 @@ export default async function DashboardPage({
         ))}
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-        <div className="panel p-5 sm:p-6">
-          <h2 className="font-extrabold text-white mb-4">Objętość tygodniowa</h2>
-          {weekly.length > 0 ? (
-            <div className="flex h-48 items-end gap-3">
-              {weekly.map((item, i) => {
-                const pct = Math.max(
-                  10,
-                  Math.round(
-                    (item.volume / Math.max(...weekly.map((w) => w.volume), 1)) * 100,
-                  ),
-                );
-                return (
-                  <div key={i} className="group relative flex flex-1 flex-col justify-end">
-                    <div
-                      className="w-full rounded-t-lg bg-gradient-to-t from-lime-600 to-lime-300 transition hover:brightness-110"
-                      style={{ height: `${pct}%` }}
-                    />
-                    <span className="mt-1 truncate text-center text-[10px] text-slate-500">
-                      {new Date(item.date).toLocaleDateString("pl-PL", { weekday: "short" })}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">Brak danych z tego tygodnia.</p>
-          )}
-        </div>
-        <div className="panel p-5 sm:p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-extrabold text-white">Wymiary ciała</h2>
-            <Link href="/body" className="text-link">
-              Zobacz pomiary <ArrowUpRight size={15} />
-            </Link>
-          </div>
-          {hasMeasurements ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {bodyMetrics.map((m) => (
-                <article
-                  key={m.key}
-                  className="rounded-2xl border border-white/[.07] bg-black/15 p-4"
-                >
-                  <p className="text-xs font-semibold text-slate-500">{m.label}</p>
-                  <div className="mt-2 flex items-baseline gap-1">
-                    <b className="text-xl font-black tracking-tight text-white">
-                      {m.latest != null ? m.latest.toFixed(1) : "—"}
-                    </b>
-                    <span className="text-[10px] font-semibold text-slate-500">
-                      {m.latest != null ? m.unit : ""}
-                    </span>
-                  </div>
-                  <div className="mt-2">
-                    <MeasurementTrend first={m.first} latest={m.latest} unit={m.unit} />
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">
-              Zapisuj wagę, wzrost i obwody w zakładce <b>Ciało</b>. Porównuj pierwszy i najnowszy
-              wpis.
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[1.55fr_.85fr]">
-        <div className="panel overflow-hidden">
-          <div className="flex items-center justify-between border-b border-white/[.06] p-5 sm:p-6">
-            <div>
-              <h2 className="font-extrabold text-white">Ostatnie treningi</h2>
-              <p className="mt-1 text-xs text-slate-500">Twoja najnowsza aktywność</p>
-            </div>
-            <Link href="/workouts" className="text-link">
-              Zobacz wszystkie <ArrowUpRight size={15} />
-            </Link>
-          </div>
-          {recent.length ? (
-            <div className="divide-y divide-white/[.05]">
-              {recent.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/workouts/${item.id}/session`}
-                  className="flex items-center gap-4 p-4 transition hover:bg-white/[.025] sm:px-6"
-                >
-                  <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[.04] text-lime-400">
-                    <Dumbbell size={19} />
+      <DashboardTiles
+        tiles={[
+          {
+            id: "volume",
+            label: "Objętość tygodniowa",
+            node: (
+              <div className="panel p-5 sm:p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-extrabold text-white">Objętość tygodniowa</h2>
+                  <span className="rounded-lg bg-lime-400/10 px-2.5 py-1 text-xs font-black text-lime-300">
+                    {weeklyVolume.toLocaleString("pl-PL")} kg
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-sm font-bold text-white">{item.title}</h3>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {item.date.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} ·{" "}
-                      {item.exerciseIds.size} ćw. · {item.sets} serii
-                    </p>
+                </div>
+                <div className="flex h-48 items-end gap-2 sm:gap-3">
+                  {weekDays.map((day, index) => {
+                    const pct = day.volume > 0 ? Math.max(8, Math.round((day.volume / maxDayVolume) * 100)) : 2;
+                    return (
+                      <div
+                        key={index}
+                        className="group relative flex flex-1 flex-col justify-end"
+                        title={`${day.label}: ${day.volume.toLocaleString("pl-PL")} kg`}
+                      >
+                        {day.volume > 0 && (
+                          <span className="pointer-events-none absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-lime-300 opacity-0 transition group-hover:opacity-100">
+                            {day.volume.toLocaleString("pl-PL")}
+                          </span>
+                        )}
+                        <div
+                          className={`w-full rounded-t-lg transition ${
+                            day.isToday
+                              ? "bg-gradient-to-t from-lime-500 to-lime-200 shadow-[0_0_18px_rgba(163,230,53,.35)]"
+                              : day.volume > 0
+                                ? "bg-gradient-to-t from-lime-600 to-lime-300"
+                                : "bg-white/[.06]"
+                          }`}
+                          style={{ height: `${pct}%` }}
+                        />
+                        <span
+                          className={`mt-1.5 truncate text-center text-[10px] font-bold ${
+                            day.isToday ? "text-lime-300" : "text-slate-500"
+                          }`}
+                        >
+                          {day.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-[11px] text-slate-600">
+                  Tydzień liczony od poniedziałku do niedzieli — licznik resetuje się w poniedziałek.
+                </p>
+              </div>
+            ),
+          },
+          {
+            id: "body",
+            label: "Wymiary ciała",
+            node: (
+              <div className="panel p-5 sm:p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-extrabold text-white">Wymiary ciała</h2>
+                  <Link href="/body" className="text-link">
+                    Zobacz pomiary <ArrowUpRight size={15} />
+                  </Link>
+                </div>
+                {hasMeasurements ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {bodyMetrics.map((m) => (
+                      <article
+                        key={m.key}
+                        className="rounded-2xl border border-white/[.07] bg-black/15 p-4"
+                      >
+                        <p className="text-xs font-semibold text-slate-500">{m.label}</p>
+                        <div className="mt-2 flex items-baseline gap-1">
+                          <b className="text-xl font-black tracking-tight text-white">
+                            {m.latest != null ? m.latest.toFixed(1) : "—"}
+                          </b>
+                          <span className="text-[10px] font-semibold text-slate-500">
+                            {m.latest != null ? m.unit : ""}
+                          </span>
+                        </div>
+                        <div className="mt-2">
+                          <MeasurementTrend first={m.first} latest={m.latest} unit={m.unit} />
+                        </div>
+                      </article>
+                    ))}
                   </div>
-                  <div className="hidden text-right sm:block">
-                    <b className="text-sm text-white">{item.volume.toLocaleString("pl-PL")} kg</b>
-                    <p className="text-[10px] uppercase tracking-wider text-slate-600">objętość</p>
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    Zapisuj wagę, wzrost i obwody w zakładce <b>Ciało</b>. Porównuj pierwszy i
+                    najnowszy wpis.
+                  </p>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: "diet",
+            label: "Micha",
+            defaultFull: true,
+            node: (
+              <div className="panel p-5 sm:p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 font-extrabold text-white">
+                    <UtensilsCrossed size={19} className="text-lime-400" /> Micha
+                  </h2>
+                  <Link href="/micha" className="text-link">
+                    Otwórz Michę <ArrowUpRight size={15} />
+                  </Link>
+                </div>
+                {anyDietData ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
+                    {dietWeek.map((day) => {
+                      const pct = day.goal
+                        ? Math.min(100, Math.round((day.consumed / day.goal) * 100))
+                        : null;
+                      const status =
+                        pct == null
+                          ? "text-slate-500"
+                          : pct > 100
+                            ? "text-rose-300"
+                            : pct > 90
+                              ? "text-amber-300"
+                              : "text-lime-300";
+                      return (
+                        <div
+                          key={day.n}
+                          className="rounded-2xl border border-white/[.07] bg-black/15 p-3 text-center"
+                        >
+                          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            {day.short}
+                          </p>
+                          <p className={`mt-1 text-lg font-black ${status}`}>
+                            {day.consumed.toLocaleString("pl-PL")}
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            kcal{day.goal ? ` / ${day.goal.toLocaleString("pl-PL")}` : ""}
+                          </p>
+                          {pct != null && (
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.05]">
+                              <div
+                                className={`h-full rounded-full ${
+                                  pct > 100
+                                    ? "bg-rose-400"
+                                    : pct > 90
+                                      ? "bg-amber-400"
+                                      : "bg-lime-400"
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <ArrowUpRight size={17} className="text-slate-700" />
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state border-0">
-              <h3>Brak ukończonych treningów</h3>
-              <p>Czas zacząć pierwszą sesję.</p>
-            </div>
-          )}
-        </div>
-        <div className="space-y-5">
-          <WeeklyGoalCard goal={user.weeklyGoal} weeklyCount={weekly.length} />
-          <article className="panel p-6">
-            <p className="eyebrow">Programowanie</p>
-            <h3 className="text-xl font-black text-white">Zestawy gotowe do użycia</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              Zapisz ćwiczenia raz i planuj całe sesje w kilka sekund.
-            </p>
-            <Link href="/programs" className="button-secondary mt-5">
-              Otwórz programy
-            </Link>
-          </article>
-        </div>
-      </section>
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    Ustaw dzienne cele kcal (z białka, tłuszczy i węglowodanów) i loguj spożycie w
+                    zakładce <b>Micha</b>.
+                  </p>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: "workouts",
+            label: "Ostatnie treningi",
+            node: (
+              <div className="panel overflow-hidden">
+                <div className="flex items-center justify-between border-b border-white/[.06] p-5 sm:p-6">
+                  <div>
+                    <h2 className="font-extrabold text-white">Ostatnie treningi</h2>
+                    <p className="mt-1 text-xs text-slate-500">Twoja najnowsza aktywność</p>
+                  </div>
+                  <Link href="/workouts" className="text-link">
+                    Zobacz wszystkie <ArrowUpRight size={15} />
+                  </Link>
+                </div>
+                {recent.length ? (
+                  <div className="divide-y divide-white/[.05]">
+                    {recent.map((item) => (
+                      <Link
+                        key={item.id}
+                        href={`/workouts/${item.id}/session`}
+                        className="flex items-center gap-4 p-4 transition hover:bg-white/[.025] sm:px-6"
+                      >
+                        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[.04] text-lime-400">
+                          <Dumbbell size={19} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate text-sm font-bold text-white">{item.title}</h3>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {item.date.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} ·{" "}
+                            {item.exerciseIds.size} ćw. · {item.sets} serii
+                          </p>
+                        </div>
+                        <div className="hidden text-right sm:block">
+                          <b className="text-sm text-white">
+                            {item.volume.toLocaleString("pl-PL")} kg
+                          </b>
+                          <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                            objętość
+                          </p>
+                        </div>
+                        <ArrowUpRight size={17} className="text-slate-700" />
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state border-0">
+                    <h3>Brak ukończonych treningów</h3>
+                    <p>Czas zacząć pierwszą sesję.</p>
+                  </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: "side",
+            label: "Cel tygodniowy i programy",
+            node: (
+              <div className="space-y-5">
+                <WeeklyGoalCard goal={user.weeklyGoal} weeklyCount={weeklyCount} />
+                <article className="panel p-6">
+                  <p className="eyebrow">Programowanie</p>
+                  <h3 className="text-xl font-black text-white">Zestawy gotowe do użycia</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Zapisz ćwiczenia raz i planuj całe sesje w kilka sekund.
+                  </p>
+                  <Link href="/programs" className="button-secondary mt-5">
+                    Otwórz programy
+                  </Link>
+                </article>
+              </div>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

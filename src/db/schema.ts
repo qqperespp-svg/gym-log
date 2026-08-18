@@ -183,6 +183,41 @@ export const bodyMeasurements = pgTable(
   (table) => [index("body_measurements_user_idx").on(table.userId)],
 );
 
+export const dietGoals = pgTable(
+  "diet_goals",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    weekday: integer("weekday").notNull(), // 1 = poniedziałek ... 7 = niedziela
+    protein: integer("protein").notNull().default(0),
+    fat: integer("fat").notNull().default(0),
+    carbs: integer("carbs").notNull().default(0),
+    kcalGoal: integer("kcal_goal").notNull().default(0),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("diet_goals_user_idx").on(table.userId),
+    uniqueIndex("diet_goals_user_weekday_idx").on(table.userId, table.weekday),
+  ],
+);
+
+export const dietLogs = pgTable(
+  "diet_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    date: timestamp("date").notNull(),
+    kcal: integer("kcal").notNull().default(0),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("diet_logs_user_date_idx").on(table.userId, table.date)],
+);
+
 export type User = typeof users.$inferSelect;
 export type Workout = typeof workouts.$inferSelect;
 export type WorkoutExercise = typeof exercises.$inferSelect;
@@ -191,3 +226,5 @@ export type ExerciseDefinition = typeof exerciseDefinitions.$inferSelect;
 export type WorkoutProgram = typeof workoutPrograms.$inferSelect;
 export type ProgramExercise = typeof programExercises.$inferSelect;
 export type BodyMeasurement = typeof bodyMeasurements.$inferSelect;
+export type DietGoal = typeof dietGoals.$inferSelect;
+export type DietLog = typeof dietLogs.$inferSelect;

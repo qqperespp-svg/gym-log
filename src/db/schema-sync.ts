@@ -122,6 +122,47 @@ async function runSchemaSync(): Promise<void> {
       "exercise_sets.note",
       sql`ALTER TABLE exercise_sets ADD COLUMN IF NOT EXISTS note text`,
     ],
+    // Tabele zakładki „Micha” — dzienne cele kcal (z makro) i dziennik spożycia.
+    [
+      "diet_goals",
+      sql`
+        CREATE TABLE IF NOT EXISTS diet_goals (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          weekday integer NOT NULL,
+          protein integer NOT NULL DEFAULT 0,
+          fat integer NOT NULL DEFAULT 0,
+          carbs integer NOT NULL DEFAULT 0,
+          kcal_goal integer NOT NULL DEFAULT 0,
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "diet_goals.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS diet_goals_user_idx ON diet_goals (user_id)`,
+    ],
+    [
+      "diet_goals.user_id+weekday unique",
+      sql`CREATE UNIQUE INDEX IF NOT EXISTS diet_goals_user_weekday_idx ON diet_goals (user_id, weekday)`,
+    ],
+    [
+      "diet_logs",
+      sql`
+        CREATE TABLE IF NOT EXISTS diet_logs (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          date timestamp NOT NULL,
+          kcal integer NOT NULL DEFAULT 0,
+          note text,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "diet_logs.user_id+date index",
+      sql`CREATE INDEX IF NOT EXISTS diet_logs_user_date_idx ON diet_logs (user_id, date)`,
+    ],
   ];
 
   for (const [label, statement] of steps) {

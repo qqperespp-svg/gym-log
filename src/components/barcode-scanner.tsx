@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Barcode, Camera, ImagePlus, LoaderCircle, ScanLine, Search, X } from "lucide-react";
 import { logScannedEntryAction } from "@/actions/diet";
+import type { FoodProduct } from "@/db/schema";
 
 type Product = {
   code: string;
@@ -25,11 +26,7 @@ type ZXingReader = {
 
 type ZXingGlobal = { BrowserMultiFormatReader: new () => ZXingReader };
 
-/**
- * Ładuje silnik skanowania kodów kreskowych (ZXing) z pliku wbudowanego
- * w aplikację (public/vendor/zxing.min.js). Dzięki temu żadna zależność
- * npm nie jest potrzebna — wystarczy wgrać src + public na GitHub.
- */
+/** Ładuje silnik ZXing z pliku wbudowanego w aplikację (public/vendor/zxing.min.js). */
 function loadZxing(): Promise<ZXingGlobal> {
   return new Promise((resolve, reject) => {
     const w = window as unknown as { ZXing?: ZXingGlobal };
@@ -59,18 +56,43 @@ function round1(n: number | undefined): number {
   return Number.isFinite(n) ? Math.round((n ?? 0) * 10) / 10 : 0;
 }
 
-export function BarcodeScanner() {
+/** Czeka, aż wideo ma realne klatki (rozmiar > 0) — bez tego ZXing nie ma czego dekodować. */
+function waitForVideoFrames(video: HTMLVideoElement, timeout = 7000): Promise<void> {
+  return new Promise((resolve) => {
+    if (video.videoWidth > 0 && video.readyState >= 2) {
+      resolve();
+      return;
+    }
+    const start = Date.now();
+    const iv = setInterval(() => {
+      if ((video.videoWidth > 0 && video.readyState >= 2) || Date.now() - start > timeout) {
+        clearInterval(iv);
+        resolve();
+      }
+    }, 150);
+  });
+}
+
+export function BarcodeScanner({
+  products,
+  meals,
+}: {
+  products: FoodProduct[];
+  meals: number;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const readerRef = useRef<ZXingReader | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [scanning, setScanning] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [product, setProduct] = useState<Product | null>(null);
   const [manualCode, setManualCode] = useState("");
   const [grams, setGrams] = useState("100");
+  const [meal, setMeal] = useState("1");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
@@ -88,6 +110,7 @@ export function BarcodeScanner() {
 
   async function stopCamera() {
     setScanning(false);
+    setCameraError(null);
     if (readerRef.current) {
       try {
         readerRef.current.reset();
@@ -100,9 +123,25 @@ export function BarcodeScanner() {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    if (videoRef.current) videoRef.current.srcObject = null;
+    const video = videoRef.current;
+    if (video) {
+      video.srcObject = null;
+      video.removeAttribute("src");
+    }
   }
 
+  function cameraHint(e: unknown): string {
+    const name = e instanceof DOMException ? e.name : "";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+      return "Brak zgody na aparat — odblokuj kamerę dla tej strony w ustawieniach przeglądarki / aplikacji.";
+    }
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      return "Nie znaleziono aparatu na tym urządzeniu.";
+    }
+    return "Nie udało się uruchomić aparatu — użyj „Wgraj zdjęcie kodu” albo wpisz kod ręcznie.";
+  }
+
+  /** Najpierw szukaj w lokalnym katalogu, potem w Open Food Facts. */
   async function lookup(code: string) {
     const clean = code.trim();
     if (!clean) return;
@@ -110,6 +149,19 @@ export function BarcodeScanner() {
     setError(null);
     setProduct(null);
     try {
+      const local = products.find((p) => p.barcode === clean);
+      if (local) {
+        setProduct({
+          code: clean,
+          name: local.name,
+          protein: local.protein,
+          fat: local.fat,
+          carbs: local.carbs,
+          kcal: local.kcal,
+        });
+        setLoading(false);
+        return;
+      }
       const res = await fetch(
         `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(clean)}.json`,
       );
@@ -122,8 +174,6 @@ export function BarcodeScanner() {
       const kcal =
         n["energy-kcal_100g"] ??
         (n["energy-kj_100g"] != null ? Math.round((n["energy-kj_100g"] / 4.184) * 10) / 10 : 0);
-      // Uwaga: Open Food Facts używa kluczy w liczbie mnogiej (proteins_100g,
-      // carbohydrates_100g) — obsługujemy też warianty pojedyncze jako fallback.
       setProduct({
         code: clean,
         name:
@@ -146,53 +196,60 @@ export function BarcodeScanner() {
   async function startCamera() {
     setError(null);
     setProduct(null);
+    const video = videoRef.current;
+    if (!video) {
+      setCameraError("Aparat nie jest gotowy — odśwież stronę i spróbuj ponownie.");
+      return;
+    }
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("no-camera");
+        throw new DOMException("", "NotFoundError");
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
         audio: false,
       });
       streamRef.current = stream;
-      const video = videoRef.current;
-      if (video) {
-        video.srcObject = stream;
+      if (!stream.getVideoTracks().length) {
+        throw new DOMException("", "NotFoundError");
+      }
+      // Atrybuty + właściwości, żeby WebView nie blokował odtwarzania.
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.setAttribute("muted", "");
+      video.setAttribute("playsinline", "");
+      video.setAttribute("autoplay", "");
+      video.srcObject = stream;
+      setScanning(true);
+      setCameraError(null);
+      try {
         await video.play();
-        // Poczekaj, aż wideo będzie miało realne klatki (rozmiar) — inaczej
-        // ZXing nie wykryje żadnego kadru i skanowanie cicho nie zadziała.
-        if (video.videoWidth === 0) {
-          await new Promise<void>((resolve) => {
-            const done = () => {
-              video.removeEventListener("loadedmetadata", done);
-              resolve();
-            };
-            video.addEventListener("loadedmetadata", done);
-            // bezpiecznik na wypadek braku eventu
-            setTimeout(resolve, 3000);
-          });
+      } catch {
+        await new Promise((r) => setTimeout(r, 150));
+        try {
+          await video.play();
+        } catch {
+          // i tak spróbujemy dekodować — ZXing sam woła play()
         }
+      }
+      await waitForVideoFrames(video);
+      if (video.videoWidth === 0) {
+        // wideo nie ma klatek — stream nie działa
+        throw new DOMException("", "NotFoundError");
       }
       const { BrowserMultiFormatReader } = await loadZxing();
       const reader = new BrowserMultiFormatReader();
       readerRef.current = reader;
-      setScanning(true);
-      reader.decodeFromStream(stream, video!, (result) => {
+      reader.decodeFromStream(stream, video, (result) => {
         if (result) {
           const code = result.getText().trim();
           void stopCamera().then(() => lookup(code));
         }
       });
     } catch (e) {
-      const name = e instanceof DOMException ? e.name : "";
-      const hint =
-        name === "NotAllowedError" || name === "PermissionDeniedError"
-          ? "Brak zgody na aparat — odblokuj kamerę dla tej strony w ustawieniach przeglądarki."
-          : name === "NotFoundError"
-            ? "Nie znaleziono aparatu na tym urządzeniu."
-            : "Nie udało się uruchomić aparatu — użyj „Wgraj zdjęcie kodu” albo wpisz kod ręcznie.";
-      setError(hint);
-      setScanning(false);
+      await stopCamera();
+      setCameraError(cameraHint(e));
     }
   }
 
@@ -231,6 +288,8 @@ export function BarcodeScanner() {
         kcal: Math.round(product.kcal * (g / 100)),
       }
     : null;
+
+  const mealOptions = Array.from({ length: Math.max(1, Math.min(meals, 10)) }, (_, i) => i + 1);
 
   return (
     <div className="space-y-4">
@@ -272,7 +331,7 @@ export function BarcodeScanner() {
         <input
           type="text"
           inputMode="numeric"
-          placeholder="np. 3017620422003"
+          placeholder="np. 5902409703887"
           className="input w-44"
           value={manualCode}
           onFocus={(event) => event.target.select()}
@@ -288,19 +347,29 @@ export function BarcodeScanner() {
         </button>
       </div>
 
-      {scanning && (
-        <div className="relative overflow-hidden rounded-2xl border border-lime-400/25 bg-black/40">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            className="mx-auto aspect-video max-h-72 w-full object-contain"
-          />
-          <div className="pointer-events-none absolute inset-x-0 top-1/2 h-16 -translate-y-1/2 border-y-2 border-lime-400/80" />
-          <p className="absolute inset-x-0 bottom-2 text-center text-xs font-bold text-lime-300">
-            Skieruj aparat na kod kreskowy
-          </p>
-        </div>
+      {/* Wideo zawsze w DOM — ref musi istnieć, zanim getUserMedia zwróci strumień. */}
+      <div
+        className={`relative overflow-hidden rounded-2xl border border-lime-400/25 bg-black/40 ${
+          scanning ? "block" : "hidden"
+        }`}
+      >
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          autoPlay
+          className="mx-auto aspect-video max-h-72 w-full object-contain"
+        />
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-16 -translate-y-1/2 border-y-2 border-lime-400/80" />
+        <p className="absolute inset-x-0 bottom-2 text-center text-xs font-bold text-lime-300">
+          Skieruj aparat na kod kreskowy
+        </p>
+      </div>
+
+      {cameraError && (
+        <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+          {cameraError}
+        </p>
       )}
 
       {loading && (
@@ -357,6 +426,18 @@ export function BarcodeScanner() {
               />
             </label>
             <label className="field-label">
+              Posiłek
+              <span className="select-shell">
+                <select name="meal" value={meal} onChange={(event) => setMeal(event.target.value)}>
+                  {mealOptions.map((m) => (
+                    <option key={m} value={m}>
+                      Posiłek {m}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </label>
+            <label className="field-label">
               Data
               <input
                 className="input"
@@ -365,7 +446,7 @@ export function BarcodeScanner() {
                 onChange={(event) => setDate(event.target.value)}
               />
             </label>
-            <div className="flex items-end rounded-xl bg-black/20 px-4 py-2.5 sm:col-span-2">
+            <div className="flex items-end rounded-xl bg-black/20 px-4 py-2.5">
               <p className="text-sm text-slate-300">
                 Wpis: <b className="text-lime-300">{computed.kcal} kcal</b> · B{" "}
                 {computed.protein} g · T {computed.fat} g · W {computed.carbs} g

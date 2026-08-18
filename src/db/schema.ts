@@ -196,6 +196,7 @@ export const dietGoals = pgTable(
     carbs: integer("carbs").notNull().default(0),
     kcalGoal: integer("kcal_goal").notNull().default(0),
     trainingDay: integer("training_day").notNull().default(0), // 0 = dzień wolny, 1 = dzień treningowy
+    meals: integer("meals").notNull().default(3), // liczba posiłków w danym dniu
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
@@ -216,10 +217,32 @@ export const dietLogs = pgTable(
     fat: integer("fat").notNull().default(0),
     carbs: integer("carbs").notNull().default(0),
     kcal: integer("kcal").notNull().default(0),
+    mealNumber: integer("meal_number"), // 1..N — do którego posiłku dnia przypisany wpis
     note: text("note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [index("diet_logs_user_date_idx").on(table.userId, table.date)],
+);
+
+export const foodProducts = pgTable(
+  "food_products",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }), // NULL = katalog globalny
+    name: varchar("name", { length: 255 }).notNull(),
+    barcode: varchar("barcode", { length: 64 }),
+    protein: integer("protein").notNull().default(0), // na 100 g
+    fat: integer("fat").notNull().default(0), // na 100 g
+    carbs: integer("carbs").notNull().default(0), // na 100 g
+    kcal: integer("kcal").notNull().default(0), // na 100 g
+    isCustom: integer("is_custom").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("food_products_user_idx").on(table.userId),
+    index("food_products_name_idx").on(table.name),
+    uniqueIndex("food_products_user_barcode_idx").on(table.userId, table.barcode),
+  ],
 );
 
 export type User = typeof users.$inferSelect;
@@ -232,3 +255,4 @@ export type ProgramExercise = typeof programExercises.$inferSelect;
 export type BodyMeasurement = typeof bodyMeasurements.$inferSelect;
 export type DietGoal = typeof dietGoals.$inferSelect;
 export type DietLog = typeof dietLogs.$inferSelect;
+export type FoodProduct = typeof foodProducts.$inferSelect;

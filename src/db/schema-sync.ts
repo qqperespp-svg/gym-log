@@ -184,6 +184,46 @@ async function runSchemaSync(): Promise<void> {
       "diet_goals.training_day",
       sql`ALTER TABLE diet_goals ADD COLUMN IF NOT EXISTS training_day integer NOT NULL DEFAULT 0`,
     ],
+    // Liczba posiłków w danym dniu.
+    [
+      "diet_goals.meals",
+      sql`ALTER TABLE diet_goals ADD COLUMN IF NOT EXISTS meals integer NOT NULL DEFAULT 3`,
+    ],
+    // Numer posiłku (1..N), do którego przypisany jest wpis spożycia.
+    [
+      "diet_logs.meal_number",
+      sql`ALTER TABLE diet_logs ADD COLUMN IF NOT EXISTS meal_number integer`,
+    ],
+    // Katalog produktów spożywczych (globalny + własne użytkownika).
+    [
+      "food_products",
+      sql`
+        CREATE TABLE IF NOT EXISTS food_products (
+          id serial PRIMARY KEY,
+          user_id integer REFERENCES users(id) ON DELETE CASCADE,
+          name varchar(255) NOT NULL,
+          barcode varchar(64),
+          protein integer NOT NULL DEFAULT 0,
+          fat integer NOT NULL DEFAULT 0,
+          carbs integer NOT NULL DEFAULT 0,
+          kcal integer NOT NULL DEFAULT 0,
+          is_custom integer NOT NULL DEFAULT 0,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "food_products.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS food_products_user_idx ON food_products (user_id)`,
+    ],
+    [
+      "food_products.name index",
+      sql`CREATE INDEX IF NOT EXISTS food_products_name_idx ON food_products (name)`,
+    ],
+    [
+      "food_products.user_id+barcode unique",
+      sql`CREATE UNIQUE INDEX IF NOT EXISTS food_products_user_barcode_idx ON food_products (user_id, barcode)`,
+    ],
   ];
 
   for (const [label, statement] of steps) {

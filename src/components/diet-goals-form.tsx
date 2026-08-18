@@ -1,13 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Beef, Croissant, Dumbbell, Droplets, Save, Sofa } from "lucide-react";
+import { Beef, Croissant, Droplets, Dumbbell, Save, Sofa, UtensilsCrossed } from "lucide-react";
 import { saveDietGoalsAction } from "@/actions/diet";
 import type { DietGoal } from "@/db/schema";
 import { WEEKDAYS, kcalFromMacros } from "@/lib/diet";
 import { SubmitButton } from "@/components/submit-button";
 
-type GoalValues = Record<number, { protein: string; fat: string; carbs: string; training: boolean }>;
+type GoalValues = Record<
+  number,
+  { protein: string; fat: string; carbs: string; training: boolean; meals: string }
+>;
 
 function formatKcal(n: number): string {
   return n.toLocaleString("pl-PL");
@@ -29,6 +32,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
             fat: goal ? String(goal.fat) : "",
             carbs: goal ? String(goal.carbs) : "",
             training: goal ? goal.trainingDay === 1 : false,
+            meals: goal ? String(goal.meals || 3) : "3",
           },
         ];
       }),
@@ -49,7 +53,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
 
   function setField(
     n: number,
-    field: "protein" | "fat" | "carbs" | "training",
+    field: "protein" | "fat" | "carbs" | "training" | "meals",
     value: string | boolean,
   ) {
     setValues((current) => ({
@@ -69,13 +73,25 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
           );
           const training = !!values[n]?.training;
           return (
-            <div
-              key={n}
-              className="rounded-2xl border border-white/[.07] bg-black/15 p-4"
-            >
+            <div key={n} className="rounded-2xl border border-white/[.07] bg-black/15 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-extrabold text-white">{label}</p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="field-label !space-y-0 flex items-center gap-2 !text-[11px] text-slate-400">
+                    <UtensilsCrossed size={13} className="text-lime-400" />
+                    Posiłki
+                    <input
+                      name={`meals-${n}`}
+                      type="number"
+                      min="1"
+                      max="10"
+                      step="1"
+                      className="input !min-h-9 !w-16 !px-2 !py-1 text-center"
+                      value={values[n].meals}
+                      onFocus={(event) => event.target.select()}
+                      onChange={(event) => setField(n, "meals", event.target.value)}
+                    />
+                  </label>
                   <input type="hidden" name={`training-${n}`} value={training ? "1" : "0"} />
                   <button
                     type="button"
@@ -104,7 +120,9 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       min="0"
                       step="1"
                       value={values[n].protein}
-                      onChange={(event) => setField(n, "protein", event.target.value)} onFocus={(event) => event.target.select()} />
+                      onFocus={(event) => event.target.select()}
+                      onChange={(event) => setField(n, "protein", event.target.value)}
+                    />
                   </span>
                 </label>
                 <label className="field-label">
@@ -117,7 +135,9 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       min="0"
                       step="1"
                       value={values[n].fat}
-                      onChange={(event) => setField(n, "fat", event.target.value)} onFocus={(event) => event.target.select()} />
+                      onFocus={(event) => event.target.select()}
+                      onChange={(event) => setField(n, "fat", event.target.value)}
+                    />
                   </span>
                 </label>
                 <label className="field-label">
@@ -130,7 +150,9 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       min="0"
                       step="1"
                       value={values[n].carbs}
-                      onChange={(event) => setField(n, "carbs", event.target.value)} onFocus={(event) => event.target.select()} />
+                      onFocus={(event) => event.target.select()}
+                      onChange={(event) => setField(n, "carbs", event.target.value)}
+                    />
                   </span>
                 </label>
                 <div className="rounded-xl bg-lime-400/10 px-4 py-2 text-center">

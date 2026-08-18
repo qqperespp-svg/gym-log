@@ -1,15 +1,18 @@
 import Link from "next/link";
-import { desc, eq } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, Sofa, UtensilsCrossed } from "lucide-react";
+import { asc, desc, eq, isNull, or } from "drizzle-orm";
+import { ArrowLeft, CheckCircle2, Dumbbell, Plus, Search, Sofa, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
-import { dietGoals, dietLogs, type DietLog } from "@/db/schema";
+import { dietGoals, dietLogs, foodProducts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, startOfWeek, weekdayOf } from "@/lib/diet";
+import { addFoodProductAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
+import { DeleteFoodProductButton } from "@/components/delete-food-product-button";
 import { MacroBar } from "@/components/macro-bar";
 import { BarcodeScanner } from "@/components/barcode-scanner";
+import { FoodCatalogSearch } from "@/components/food-catalog-search";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +23,18 @@ export default async function MichaPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [goals, logs] = await Promise.all([
+  const [goals, logs, products] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)).orderBy(desc(dietLogs.date), desc(dietLogs.id)),
+    db
+      .select()
+      .from(foodProducts)
+      .where(or(eq(foodProducts.userId, user.id), isNull(foodProducts.userId)))
+      .orderBy(asc(foodProducts.name)),
   ]);
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
+  const todayMeals = Math.max(1, Math.min(goalByWeekday.get(weekdayOf(new Date()))?.meals ?? 3, 10));
+  const customProducts = products.filter((p) => p.userId === user.id);
   const weekStart = startOfWeek(new Date());
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
 
@@ -202,20 +212,69 @@ export default async function MichaPage({
       </section>
 
       <section className="panel p-5 sm:p-7">
+        <h2 className="font-extrabold text-white mb-1">Katalog produktów</h2>
+        <p className="mb-5 text-sm text-slate-500">
+          Baza zawiera ponad 800 produktów z makroskładnikami (na 100 g). Wyszukaj po nazwie albo
+          dodaj własny produkt.
+        </p>
+        <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+          <div>
+            <FoodCatalogSearch products={products} userId={user.id} />
+          </div>
+          <div>
+            <form action={addFoodProductAction} className="rounded-2xl border border-white/[.07] bg-black/15 p-4">
+              <p className="mb-3 text-xs font-black uppercase tracking-wider text-lime-400">
+                Dodaj własny produkt
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="field-label sm:col-span-2">
+                  Nazwa produktu
+                  <input className="input" name="name" type="text" placeholder="np. Twaróg półtłusty" required minLength={2} />
+                </label>
+                <label className="field-label">
+                  Białko (g/100g)
+                  <input className="input" name="protein" type="number" min="0" step="1" required />
+                </label>
+                <label className="field-label">
+                  Tłuszcze (g/100g)
+                  <input className="input" name="fat" type="number" min="0" step="1" required />
+                </label>
+                <label className="field-label">
+                  Węglowodany (g/100g)
+                  <input className="input" name="carbs" type="number" min="0" step="1" required />
+                </label>
+                <label className="field-label">
+                  Kod kreskowy (opcjonalnie)
+                  <input className="input" name="barcode" type="text" inputMode="numeric" placeholder="np. 5902409703887" />
+                </label>
+              </div>
+              <div className="mt-4">
+                <button type="submit" className="button-primary">
+                  <Plus size={17} /> Dodaj do katalogu
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel p-5 sm:p-7">
         <h2 className="font-extrabold text-white mb-1">Skanuj kod kreskowy</h2>
         <p className="mb-5 text-sm text-slate-500">
-          Jak w Fitatu — zeskanuj kod produktu, a makro i kcal podstawią się automatycznie z bazy
-          Open Food Facts. Wpisz gramaturę i dodaj do dziennika.
+          Jak w Fitatu — zeskanuj kod produktu, a makro i kcal podstawią się automatycznie
+          (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz gramaturę, wybierz
+          numer posiłku i dodaj do dziennika.
         </p>
-        <BarcodeScanner />
+        <BarcodeScanner products={products} meals={todayMeals} />
       </section>
 
       <section className="panel p-5 sm:p-7">
         <h2 className="font-extrabold text-white mb-1">Dziennik spożycia</h2>
         <p className="mb-5 text-sm text-slate-500">
-          Dodaj posiłek — podaj białko, tłuszcze i węglowodany, a kcal policzą się same.
+          Dodaj posiłek — wyszukaj produkt po nazwie w katalogu albo podaj makro ręcznie i wybierz,
+          do którego posiłku dnia go przypisać.
         </p>
-        <DietLogForm />
+        <DietLogForm products={products} meals={todayMeals} />
 
         <div className="mt-8">
           <h3 className="mb-3 text-sm font-extrabold text-white">Ostatnie wpisy</h3>
@@ -225,7 +284,7 @@ export default async function MichaPage({
                 <thead>
                   <tr>
                     <th>Data</th>
-                    <th>Dzień</th>
+                    <th>Posiłek</th>
                     <th>Białko</th>
                     <th>Tłuszcze</th>
                     <th>Węgl.</th>
@@ -236,14 +295,22 @@ export default async function MichaPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.slice(0, 30).map((log) => {
+                  {logs.slice(0, 40).map((log) => {
                     const goal = goalByWeekday.get(weekdayOf(log.date));
                     return (
                       <tr key={log.id}>
                         <td className="font-bold text-white">
                           {log.date.toLocaleDateString("pl-PL")}
                         </td>
-                        <td>{WEEKDAYS[weekdayOf(log.date) - 1]?.short}</td>
+                        <td>
+                          {log.mealNumber ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
+                              <UtensilsCrossed size={11} /> {log.mealNumber}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
+                        </td>
                         <td>{log.protein ?? 0} g</td>
                         <td>{log.fat ?? 0} g</td>
                         <td>{log.carbs ?? 0} g</td>

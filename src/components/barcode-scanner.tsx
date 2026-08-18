@@ -13,6 +13,48 @@ type Product = {
   kcal: number;
 };
 
+type ZXingReader = {
+  decodeFromStream(
+    stream: MediaStream,
+    video: HTMLVideoElement,
+    callback: (result: { getText(): string } | null) => void,
+  ): unknown;
+  decodeFromImageUrl(url: string): Promise<{ getText(): string } | null>;
+  reset(): void;
+};
+
+type ZXingGlobal = { BrowserMultiFormatReader: new () => ZXingReader };
+
+/**
+ * Ładuje silnik skanowania kodów kreskowych (ZXing) z pliku wbudowanego
+ * w aplikację (public/vendor/zxing.min.js). Dzięki temu żadna zależność
+ * npm nie jest potrzebna — wystarczy wgrać src + public na GitHub.
+ */
+function loadZxing(): Promise<ZXingGlobal> {
+  return new Promise((resolve, reject) => {
+    const w = window as unknown as { ZXing?: ZXingGlobal };
+    if (w.ZXing) {
+      resolve(w.ZXing);
+      return;
+    }
+    const existing = document.querySelector<HTMLScriptElement>('script[data-zxing="1"]');
+    if (existing) {
+      const done = () => (w.ZXing ? resolve(w.ZXing) : reject(new Error("load-failed")));
+      const fail = () => reject(new Error("load-failed"));
+      existing.addEventListener("load", done);
+      existing.addEventListener("error", fail);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "/vendor/zxing.min.js";
+    script.dataset.zxing = "1";
+    script.onload = () =>
+      w.ZXing ? resolve(w.ZXing) : reject(new Error("Nie udało się załadować skanera"));
+    script.onerror = () => reject(new Error("Nie udało się załadować skanera (sprawdź połączenie)"));
+    document.head.appendChild(script);
+  });
+}
+
 function round1(n: number | undefined): number {
   return Number.isFinite(n) ? Math.round((n ?? 0) * 10) / 10 : 0;
 }
@@ -20,7 +62,7 @@ function round1(n: number | undefined): number {
 export function BarcodeScanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const readerRef = useRef<{ reset: () => void } | null>(null);
+  const readerRef = useRef<ZXingReader | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [scanning, setScanning] = useState(false);
@@ -115,7 +157,7 @@ export function BarcodeScanner() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      const { BrowserMultiFormatReader } = await import("@zxing/library");
+      const { BrowserMultiFormatReader } = await loadZxing();
       const reader = new BrowserMultiFormatReader();
       readerRef.current = reader;
       setScanning(true);
@@ -138,11 +180,15 @@ export function BarcodeScanner() {
     setLoading(true);
     setError(null);
     try {
-      const { BrowserMultiFormatReader } = await import("@zxing/library");
+      const { BrowserMultiFormatReader } = await loadZxing();
       const reader = new BrowserMultiFormatReader();
       const url = URL.createObjectURL(file);
-      const result = await reader.decodeFromImageUrl(url);
-      URL.revokeObjectURL(url);
+      let result: { getText(): string } | null = null;
+      try {
+        result = await reader.decodeFromImageUrl(url);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
       if (result) {
         await lookup(result.getText().trim());
       } else {

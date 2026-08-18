@@ -76,9 +76,11 @@ function waitForVideoFrames(video: HTMLVideoElement, timeout = 7000): Promise<vo
 export function BarcodeScanner({
   products,
   meals,
+  mealNames,
 }: {
   products: FoodProduct[];
   meals: number;
+  mealNames: string[];
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -290,6 +292,7 @@ export function BarcodeScanner({
     : null;
 
   const mealOptions = Array.from({ length: Math.max(1, Math.min(meals, 10)) }, (_, i) => i + 1);
+  const mealLabel = (m: number) => mealNames[m - 1] || `Posiłek ${m}`;
 
   return (
     <div className="space-y-4">
@@ -431,7 +434,7 @@ export function BarcodeScanner({
                 <select name="meal" value={meal} onChange={(event) => setMeal(event.target.value)}>
                   {mealOptions.map((m) => (
                     <option key={m} value={m}>
-                      Posiłek {m}
+                      {m}. {mealLabel(m)}
                     </option>
                   ))}
                 </select>

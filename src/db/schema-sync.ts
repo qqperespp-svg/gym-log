@@ -189,6 +189,11 @@ async function runSchemaSync(): Promise<void> {
       "diet_goals.meals",
       sql`ALTER TABLE diet_goals ADD COLUMN IF NOT EXISTS meals integer NOT NULL DEFAULT 3`,
     ],
+    // Nazwy posiłków (JSON) — np. ["Śniadanie","Obiad","Kolacja"].
+    [
+      "diet_goals.meal_names",
+      sql`ALTER TABLE diet_goals ADD COLUMN IF NOT EXISTS meal_names text`,
+    ],
     // Numer posiłku (1..N), do którego przypisany jest wpis spożycia.
     [
       "diet_logs.meal_number",

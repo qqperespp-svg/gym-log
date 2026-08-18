@@ -3,7 +3,7 @@
 import { db } from "@/db";
 import { dietGoals, dietLogs, foodProducts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, kcalFromMacros } from "@/lib/diet";
+import { WEEKDAYS, defaultMealName, kcalFromMacros } from "@/lib/diet";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -29,12 +29,41 @@ export async function saveDietGoalsAction(formData: FormData): Promise<void> {
     const kcalGoal = kcalFromMacros(protein, fat, carbs);
     const trainingDay = String(formData.get(`training-${n}`) ?? "") === "1" ? 1 : 0;
     const meals = clamp(Number(formData.get(`meals-${n}`)) || 3, 1, 10);
+    // Nazwy posiłków (JSON) — wypełnij braki domyślnymi nazwami.
+    let mealNames: string[] = [];
+    try {
+      const raw = JSON.parse(String(formData.get(`mealNames-${n}`) ?? "[]"));
+      if (Array.isArray(raw)) mealNames = raw.map((x) => String(x ?? "").trim());
+    } catch {
+      mealNames = [];
+    }
+    while (mealNames.length < meals) mealNames.push(defaultMealName(mealNames.length + 1));
+    mealNames = mealNames.slice(0, meals).map((name, i) => name || defaultMealName(i + 1));
     await db
       .insert(dietGoals)
-      .values({ userId: user.id, weekday: n, protein, fat, carbs, kcalGoal, trainingDay, meals })
+      .values({
+        userId: user.id,
+        weekday: n,
+        protein,
+        fat,
+        carbs,
+        kcalGoal,
+        trainingDay,
+        meals,
+        mealNames: JSON.stringify(mealNames),
+      })
       .onConflictDoUpdate({
         target: [dietGoals.userId, dietGoals.weekday],
-        set: { protein, fat, carbs, kcalGoal, trainingDay, meals, updatedAt: new Date() },
+        set: {
+          protein,
+          fat,
+          carbs,
+          kcalGoal,
+          trainingDay,
+          meals,
+          mealNames: JSON.stringify(mealNames),
+          updatedAt: new Date(),
+        },
       });
   }
   revalidatePath("/micha");

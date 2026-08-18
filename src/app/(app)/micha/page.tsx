@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle2, Dumbbell, Plus, Sofa, UtensilsCrossed } from "
 import { db } from "@/db";
 import { dietGoals, dietLogs, foodProducts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, startOfWeek, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
 import { addFoodProductAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
@@ -38,6 +38,17 @@ export default async function MichaPage({
   ]);
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
   const todayMeals = Math.max(1, Math.min(goalByWeekday.get(weekdayOf(new Date()))?.meals ?? 3, 10));
+  const mealNamesByWeekday = new Map<number, string[]>();
+  for (const goal of goals) {
+    const count = Math.max(1, Math.min(goal.meals || 3, 10));
+    mealNamesByWeekday.set(goal.weekday, parseMealNames(goal.mealNames ?? null, count));
+  }
+  const todayMealNames = mealNamesByWeekday.get(weekdayOf(new Date())) ?? [];
+  const mealNameFor = (date: Date, mealNumber: number | null) => {
+    if (!mealNumber) return null;
+    const names = mealNamesByWeekday.get(weekdayOf(date));
+    return names?.[mealNumber - 1] || `Posiłek ${mealNumber}`;
+  };
   const weekStart = startOfWeek(new Date());
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
 
@@ -239,7 +250,7 @@ export default async function MichaPage({
                             <td>
                               {log.mealNumber ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
-                                  <UtensilsCrossed size={11} /> {log.mealNumber}
+                                  <UtensilsCrossed size={11} /> {mealNameFor(log.date, log.mealNumber)}
                                 </span>
                               ) : (
                                 <span className="text-slate-600">—</span>
@@ -355,7 +366,7 @@ export default async function MichaPage({
                 (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz gramaturę,
                 wybierz numer posiłku i dodaj do dziennika.
               </p>
-              <BarcodeScanner products={products} meals={todayMeals} />
+              <BarcodeScanner products={products} meals={todayMeals} mealNames={todayMealNames} />
             </section>
 
             <section className="panel p-5 sm:p-7">
@@ -364,7 +375,7 @@ export default async function MichaPage({
                 Dodaj posiłek — wyszukaj produkt po nazwie w katalogu albo podaj makro ręcznie i
                 wybierz, do którego posiłku dnia go przypisać.
               </p>
-              <DietLogForm products={products} meals={todayMeals} />
+              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} />
             </section>
           </>
         }

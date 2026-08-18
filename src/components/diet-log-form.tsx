@@ -19,7 +19,7 @@ function norm(s: string): string {
     .trim();
 }
 
-export function DietLogForm({ products, meals }: { products: FoodProduct[]; meals: number }) {
+export function DietLogForm({ products, meals, mealNames }: { products: FoodProduct[]; meals: number; mealNames: string[] }) {
   const [protein, setProtein] = useState("");
   const [fat, setFat] = useState("");
   const [carbs, setCarbs] = useState("");
@@ -49,6 +49,7 @@ export function DietLogForm({ products, meals }: { products: FoodProduct[]; meal
   }
 
   const mealOptions = Array.from({ length: Math.max(1, Math.min(meals, 10)) }, (_, i) => i + 1);
+  const mealLabel = (m: number) => mealNames[m - 1] || `Posiłek ${m}`;
 
   return (
     <form action={logDietEntryAction} className="space-y-4">
@@ -116,7 +117,7 @@ export function DietLogForm({ products, meals }: { products: FoodProduct[]; meal
             <select name="meal" value={meal} onChange={(event) => setMeal(event.target.value)}>
               {mealOptions.map((m) => (
                 <option key={m} value={m}>
-                  Posiłek {m}
+                  {m}. {mealLabel(m)}
                 </option>
               ))}
             </select>

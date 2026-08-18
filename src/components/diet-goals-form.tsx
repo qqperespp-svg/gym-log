@@ -4,12 +4,12 @@ import { useMemo, useState } from "react";
 import { Beef, Croissant, Droplets, Dumbbell, Save, Sofa, UtensilsCrossed } from "lucide-react";
 import { saveDietGoalsAction } from "@/actions/diet";
 import type { DietGoal } from "@/db/schema";
-import { WEEKDAYS, kcalFromMacros } from "@/lib/diet";
+import { WEEKDAYS, defaultMealName, kcalFromMacros, parseMealNames } from "@/lib/diet";
 import { SubmitButton } from "@/components/submit-button";
 
 type GoalValues = Record<
   number,
-  { protein: string; fat: string; carbs: string; training: boolean; meals: string }
+  { protein: string; fat: string; carbs: string; training: boolean; meals: string; mealNames: string[] }
 >;
 
 function formatKcal(n: number): string {
@@ -25,6 +25,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
     Object.fromEntries(
       WEEKDAYS.map(({ n }) => {
         const goal = goalByWeekday.get(n);
+        const count = goal ? goal.meals || 3 : 3;
         return [
           n,
           {
@@ -32,7 +33,8 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
             fat: goal ? String(goal.fat) : "",
             carbs: goal ? String(goal.carbs) : "",
             training: goal ? goal.trainingDay === 1 : false,
-            meals: goal ? String(goal.meals || 3) : "3",
+            meals: String(count),
+            mealNames: parseMealNames(goal?.mealNames ?? null, count),
           },
         ];
       }),
@@ -53,13 +55,30 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
 
   function setField(
     n: number,
-    field: "protein" | "fat" | "carbs" | "training" | "meals",
-    value: string | boolean,
+    field: "protein" | "fat" | "carbs" | "training" | "meals" | "mealNames",
+    value: string | boolean | string[],
   ) {
     setValues((current) => ({
       ...current,
       [n]: { ...current[n], [field]: value },
     }));
+  }
+
+  function setMeals(n: number, raw: string) {
+    const count = Math.max(1, Math.min(Math.round(Number(raw) || 1), 10));
+    setValues((current) => {
+      const prev = current[n];
+      const names = Array.from({ length: count }, (_, i) => prev.mealNames[i] || defaultMealName(i + 1));
+      return { ...current, [n]: { ...prev, meals: String(count), mealNames: names } };
+    });
+  }
+
+  function setMealName(n: number, index: number, name: string) {
+    setValues((current) => {
+      const names = [...current[n].mealNames];
+      names[index] = name;
+      return { ...current, [n]: { ...current[n], mealNames: names } };
+    });
   }
 
   return (
@@ -72,6 +91,8 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
             Number(values[n]?.carbs) || 0,
           );
           const training = !!values[n]?.training;
+          const meals = Math.max(1, Math.min(Number(values[n]?.meals) || 3, 10));
+          const mealNames = values[n]?.mealNames ?? [];
           return (
             <div key={n} className="rounded-2xl border border-white/[.07] bg-black/15 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -89,7 +110,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       className="input !min-h-9 !w-16 !px-2 !py-1 text-center"
                       value={values[n].meals}
                       onFocus={(event) => event.target.select()}
-                      onChange={(event) => setField(n, "meals", event.target.value)}
+                      onChange={(event) => setMeals(n, event.target.value)}
                     />
                   </label>
                   <input type="hidden" name={`training-${n}`} value={training ? "1" : "0"} />
@@ -109,6 +130,35 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                   </button>
                 </div>
               </div>
+
+              {/* Nazwy posiłków */}
+              {meals > 1 && (
+                <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                  {mealNames.slice(0, meals).map((name, i) => (
+                    <label
+                      key={i}
+                      className="field-label !space-y-1 flex items-center gap-2 !text-[11px] text-slate-400"
+                    >
+                      <UtensilsCrossed size={12} className="shrink-0 text-lime-400" />
+                      {i + 1}.
+                      <input
+                        type="text"
+                        maxLength={40}
+                        className="input !min-h-9 !px-2 !py-1 text-sm"
+                        placeholder={defaultMealName(i + 1)}
+                        value={name}
+                        onChange={(event) => setMealName(n, i, event.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+              <input
+                type="hidden"
+                name={`mealNames-${n}`}
+                value={JSON.stringify(mealNames.slice(0, meals))}
+              />
+
               <div className="grid items-end gap-3 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
                 <label className="field-label">
                   Białko (g)

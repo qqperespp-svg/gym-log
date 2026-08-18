@@ -197,6 +197,7 @@ export const dietGoals = pgTable(
     kcalGoal: integer("kcal_goal").notNull().default(0),
     trainingDay: integer("training_day").notNull().default(0), // 0 = dzień wolny, 1 = dzień treningowy
     meals: integer("meals").notNull().default(3), // liczba posiłków w danym dniu
+    mealNames: text("meal_names"), // JSON: ["Śniadanie","Obiad","Kolacja",...]
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [

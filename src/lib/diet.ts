@@ -29,3 +29,30 @@ export function kcalFromMacros(protein: number, fat: number, carbs: number): num
   const clamp = (v: number) => Math.max(0, Math.min(9999, Math.round(Number.isFinite(v) ? v : 0)));
   return clamp(protein) * 4 + clamp(carbs) * 4 + clamp(fat) * 9;
 }
+
+const DEFAULT_MEAL_NAMES = [
+  "Śniadanie",
+  "Drugie śniadanie",
+  "Obiad",
+  "Podwieczorek",
+  "Kolacja",
+];
+
+/** Domyślna nazwa posiłku dla numeru 1..N. */
+export function defaultMealName(n: number): string {
+  return DEFAULT_MEAL_NAMES[n - 1] ?? `Posiłek ${n}`;
+}
+
+/** Bezpieczne sparsowanie nazw posiłków z JSON (kolumna meal_names). */
+export function parseMealNames(raw: string | null, count: number): string[] {
+  let names: string[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) names = parsed.map((x) => String(x ?? "").trim());
+    } catch {
+      names = [];
+    }
+  }
+  return Array.from({ length: count }, (_, i) => names[i] || defaultMealName(i + 1));
+}

@@ -26,7 +26,7 @@ export function FoodCatalogSearch({
   const visible = useMemo(() => {
     const q = norm(query);
     const list = q.length >= 2 ? products.filter((p) => norm(p.name).includes(q)) : products;
-    return list.slice(0, 60);
+    return list.slice(0, 80);
   }, [query, products]);
 
   const count = products.length;
@@ -34,8 +34,11 @@ export function FoodCatalogSearch({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-0 flex-1 sm:max-w-sm">
-          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+        <div className="relative min-w-0 flex-1">
+          <Search
+            size={15}
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+          />
           <input
             className="input pl-10"
             type="text"
@@ -45,49 +48,47 @@ export function FoodCatalogSearch({
           />
         </div>
         <span className="text-xs text-slate-500">
-          <b className="text-white">{count.toLocaleString("pl-PL")}</b> produktów w katalogu
+          <b className="text-white">{count.toLocaleString("pl-PL")}</b> produktów
         </span>
       </div>
 
-      <div className="max-h-80 overflow-y-auto rounded-xl border border-white/[.06]">
+      {/* Karty zamiast szerokiej tabeli — mieszczą się na smartfonie */}
+      <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
         {visible.length ? (
-          <table className="data-table !w-full">
-            <thead>
-              <tr>
-                <th>Produkt</th>
-                <th>kcal/100g</th>
-                <th>B</th>
-                <th>T</th>
-                <th>W</th>
-                <th>Kod</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((p) => (
-                <tr key={p.id} className={p.userId === userId ? "bg-lime-400/[.03]" : ""}>
-                  <td className="font-bold text-white">
-                    {p.name}
-                    {p.userId === userId && (
-                      <span className="ml-2 rounded-full bg-lime-400/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-lime-300">
-                        Moje
-                      </span>
-                    )}
-                  </td>
-                  <td>{p.kcal}</td>
-                  <td>{p.protein} g</td>
-                  <td>{p.fat} g</td>
-                  <td>{p.carbs} g</td>
-                  <td className="text-xs text-slate-500">{p.barcode ?? "—"}</td>
-                  <td>{p.userId === userId ? <DeleteFoodProductButton id={p.id} /> : null}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          visible.map((p) => (
+            <div
+              key={p.id}
+              className={`rounded-xl border border-white/[.06] px-3 py-2.5 ${
+                p.userId === userId ? "bg-lime-400/[.04]" : "bg-black/15"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 truncate text-sm font-bold text-white">
+                  {p.name}
+                  {p.userId === userId && (
+                    <span className="ml-2 rounded-full bg-lime-400/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-lime-300">
+                      Moje
+                    </span>
+                  )}
+                </p>
+                {p.userId === userId && <DeleteFoodProductButton id={p.id} />}
+              </div>
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+                <span className="font-bold text-lime-300">{p.kcal} kcal</span>
+                <span>B {p.protein} g</span>
+                <span>T {p.fat} g</span>
+                <span>W {p.carbs} g</span>
+                <span className="text-slate-600">/ 100 g</span>
+                {p.barcode && <span className="text-slate-600">kod: {p.barcode}</span>}
+              </p>
+            </div>
+          ))
         ) : (
-          <p className="p-5 text-center text-sm text-slate-500">
-            {query ? "Brak produktów pasujących do zapytania." : "Katalog jest pusty."}
-          </p>
+          <div className="rounded-xl border border-white/[.06] bg-black/15 p-5 text-center">
+            <p className="text-sm text-slate-500">
+              {query ? "Brak produktów pasujących do zapytania." : "Katalog jest pusty."}
+            </p>
+          </div>
         )}
       </div>
     </div>

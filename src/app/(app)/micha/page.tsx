@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, desc, eq, isNull, or } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, Plus, Search, Sofa, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Dumbbell, Plus, Sofa, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
 import { dietGoals, dietLogs, foodProducts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -9,10 +9,10 @@ import { addFoodProductAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
-import { DeleteFoodProductButton } from "@/components/delete-food-product-button";
 import { MacroBar } from "@/components/macro-bar";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { FoodCatalogSearch } from "@/components/food-catalog-search";
+import { MichaTabs } from "@/components/micha-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,11 @@ export default async function MichaPage({
   const params = await searchParams;
   const [goals, logs, products] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
-    db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)).orderBy(desc(dietLogs.date), desc(dietLogs.id)),
+    db
+      .select()
+      .from(dietLogs)
+      .where(eq(dietLogs.userId, user.id))
+      .orderBy(desc(dietLogs.date), desc(dietLogs.id)),
     db
       .select()
       .from(foodProducts)
@@ -34,7 +38,6 @@ export default async function MichaPage({
   ]);
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
   const todayMeals = Math.max(1, Math.min(goalByWeekday.get(weekdayOf(new Date()))?.meals ?? 3, 10));
-  const customProducts = products.filter((p) => p.userId === user.id);
   const weekStart = startOfWeek(new Date());
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
 
@@ -102,237 +105,270 @@ export default async function MichaPage({
         </div>
       )}
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        {/* DZIŚ */}
-        <div className="panel p-5 sm:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="font-extrabold text-white">
-                Dzisiaj · {WEEKDAYS[todayWeekday - 1]?.label}
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-500">Spożycie vs cel dzienny</p>
-            </div>
-            <span
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                isTrainingDay
-                  ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                  : "bg-white/[.04] text-slate-400 ring-white/10"
-              }`}
-            >
-              {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-              {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-            </span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <MacroBar
-              label="Kalorie"
-              consumed={todaySum.kcal}
-              target={todayGoal?.kcalGoal ?? 0}
-              unit="kcal"
-              barClass="bg-lime-400"
-            />
-            <MacroBar
-              label="Białko"
-              consumed={todaySum.protein}
-              target={todayGoal?.protein ?? 0}
-              unit="g"
-              barClass="bg-sky-400"
-            />
-            <MacroBar
-              label="Tłuszcze"
-              consumed={todaySum.fat}
-              target={todayGoal?.fat ?? 0}
-              unit="g"
-              barClass="bg-amber-400"
-            />
-            <MacroBar
-              label="Węglowodany"
-              consumed={todaySum.carbs}
-              target={todayGoal?.carbs ?? 0}
-              unit="g"
-              barClass="bg-rose-400"
-            />
-          </div>
-        </div>
-
-        {/* TYDZIEŃ */}
-        <div className="panel p-5 sm:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="font-extrabold text-white">Ten tydzień</h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                Poniedziałek – niedziela · spożycie vs cele tygodniowe
-              </p>
-            </div>
-            <span className="rounded-full bg-white/[.04] px-3 py-1.5 text-xs font-bold text-slate-400 ring-1 ring-white/10">
-              {weekSum.kcal.toLocaleString("pl-PL")} /{" "}
-              {weekGoal.kcal.toLocaleString("pl-PL")} kcal
-            </span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <MacroBar
-              label="Kalorie"
-              consumed={weekSum.kcal}
-              target={weekGoal.kcal}
-              unit="kcal"
-              barClass="bg-lime-400"
-            />
-            <MacroBar
-              label="Białko"
-              consumed={weekSum.protein}
-              target={weekGoal.protein}
-              unit="g"
-              barClass="bg-sky-400"
-            />
-            <MacroBar
-              label="Tłuszcze"
-              consumed={weekSum.fat}
-              target={weekGoal.fat}
-              unit="g"
-              barClass="bg-amber-400"
-            />
-            <MacroBar
-              label="Węglowodany"
-              consumed={weekSum.carbs}
-              target={weekGoal.carbs}
-              unit="g"
-              barClass="bg-rose-400"
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="panel p-5 sm:p-7">
-        <h2 className="font-extrabold text-white mb-1">Cele na dni tygodnia</h2>
-        <p className="mb-5 text-sm text-slate-500">
-          kcal = białko × 4 + węglowodany × 4 + tłuszcze × 9 (na gram). Oznacz, czy dany dzień jest
-          treningowy czy wolny.
-        </p>
-        <DietGoalsForm goals={goals} />
-      </section>
-
-      <section className="panel p-5 sm:p-7">
-        <h2 className="font-extrabold text-white mb-1">Katalog produktów</h2>
-        <p className="mb-5 text-sm text-slate-500">
-          Baza zawiera ponad 800 produktów z makroskładnikami (na 100 g). Wyszukaj po nazwie albo
-          dodaj własny produkt.
-        </p>
-        <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-          <div>
-            <FoodCatalogSearch products={products} userId={user.id} />
-          </div>
-          <div>
-            <form action={addFoodProductAction} className="rounded-2xl border border-white/[.07] bg-black/15 p-4">
-              <p className="mb-3 text-xs font-black uppercase tracking-wider text-lime-400">
-                Dodaj własny produkt
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="field-label sm:col-span-2">
-                  Nazwa produktu
-                  <input className="input" name="name" type="text" placeholder="np. Twaróg półtłusty" required minLength={2} />
-                </label>
-                <label className="field-label">
-                  Białko (g/100g)
-                  <input className="input" name="protein" type="number" min="0" step="1" required />
-                </label>
-                <label className="field-label">
-                  Tłuszcze (g/100g)
-                  <input className="input" name="fat" type="number" min="0" step="1" required />
-                </label>
-                <label className="field-label">
-                  Węglowodany (g/100g)
-                  <input className="input" name="carbs" type="number" min="0" step="1" required />
-                </label>
-                <label className="field-label">
-                  Kod kreskowy (opcjonalnie)
-                  <input className="input" name="barcode" type="text" inputMode="numeric" placeholder="np. 5902409703887" />
-                </label>
+      <MichaTabs
+        makro={
+          <>
+            <section className="grid gap-5 xl:grid-cols-2">
+              {/* DZIŚ */}
+              <div className="panel p-5 sm:p-6">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="font-extrabold text-white">
+                      Dzisiaj · {WEEKDAYS[todayWeekday - 1]?.label}
+                    </h2>
+                    <p className="mt-0.5 text-xs text-slate-500">Spożycie vs cel dzienny</p>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
+                      isTrainingDay
+                        ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
+                        : "bg-white/[.04] text-slate-400 ring-white/10"
+                    }`}
+                  >
+                    {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
+                    {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <MacroBar
+                    label="Kalorie"
+                    consumed={todaySum.kcal}
+                    target={todayGoal?.kcalGoal ?? 0}
+                    unit="kcal"
+                    barClass="bg-lime-400"
+                  />
+                  <MacroBar
+                    label="Białko"
+                    consumed={todaySum.protein}
+                    target={todayGoal?.protein ?? 0}
+                    unit="g"
+                    barClass="bg-sky-400"
+                  />
+                  <MacroBar
+                    label="Tłuszcze"
+                    consumed={todaySum.fat}
+                    target={todayGoal?.fat ?? 0}
+                    unit="g"
+                    barClass="bg-amber-400"
+                  />
+                  <MacroBar
+                    label="Węglowodany"
+                    consumed={todaySum.carbs}
+                    target={todayGoal?.carbs ?? 0}
+                    unit="g"
+                    barClass="bg-rose-400"
+                  />
+                </div>
               </div>
-              <div className="mt-4">
-                <button type="submit" className="button-primary">
-                  <Plus size={17} /> Dodaj do katalogu
-                </button>
+
+              {/* TYDZIEŃ */}
+              <div className="panel p-5 sm:p-6">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="font-extrabold text-white">Ten tydzień</h2>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Poniedziałek – niedziela · spożycie vs cele tygodniowe
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white/[.04] px-3 py-1.5 text-xs font-bold text-slate-400 ring-1 ring-white/10">
+                    {weekSum.kcal.toLocaleString("pl-PL")} / {weekGoal.kcal.toLocaleString("pl-PL")} kcal
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <MacroBar
+                    label="Kalorie"
+                    consumed={weekSum.kcal}
+                    target={weekGoal.kcal}
+                    unit="kcal"
+                    barClass="bg-lime-400"
+                  />
+                  <MacroBar
+                    label="Białko"
+                    consumed={weekSum.protein}
+                    target={weekGoal.protein}
+                    unit="g"
+                    barClass="bg-sky-400"
+                  />
+                  <MacroBar
+                    label="Tłuszcze"
+                    consumed={weekSum.fat}
+                    target={weekGoal.fat}
+                    unit="g"
+                    barClass="bg-amber-400"
+                  />
+                  <MacroBar
+                    label="Węglowodany"
+                    consumed={weekSum.carbs}
+                    target={weekGoal.carbs}
+                    unit="g"
+                    barClass="bg-rose-400"
+                  />
+                </div>
               </div>
-            </form>
-          </div>
-        </div>
-      </section>
+            </section>
 
-      <section className="panel p-5 sm:p-7">
-        <h2 className="font-extrabold text-white mb-1">Skanuj kod kreskowy</h2>
-        <p className="mb-5 text-sm text-slate-500">
-          Jak w Fitatu — zeskanuj kod produktu, a makro i kcal podstawią się automatycznie
-          (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz gramaturę, wybierz
-          numer posiłku i dodaj do dziennika.
-        </p>
-        <BarcodeScanner products={products} meals={todayMeals} />
-      </section>
-
-      <section className="panel p-5 sm:p-7">
-        <h2 className="font-extrabold text-white mb-1">Dziennik spożycia</h2>
-        <p className="mb-5 text-sm text-slate-500">
-          Dodaj posiłek — wyszukaj produkt po nazwie w katalogu albo podaj makro ręcznie i wybierz,
-          do którego posiłku dnia go przypisać.
-        </p>
-        <DietLogForm products={products} meals={todayMeals} />
-
-        <div className="mt-8">
-          <h3 className="mb-3 text-sm font-extrabold text-white">Ostatnie wpisy</h3>
-          {logs.length ? (
-            <div className="overflow-x-auto">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th>Posiłek</th>
-                    <th>Białko</th>
-                    <th>Tłuszcze</th>
-                    <th>Węgl.</th>
-                    <th>kcal</th>
-                    <th>Cel dnia</th>
-                    <th>Notatka</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.slice(0, 40).map((log) => {
-                    const goal = goalByWeekday.get(weekdayOf(log.date));
-                    return (
-                      <tr key={log.id}>
-                        <td className="font-bold text-white">
-                          {log.date.toLocaleDateString("pl-PL")}
-                        </td>
-                        <td>
-                          {log.mealNumber ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
-                              <UtensilsCrossed size={11} /> {log.mealNumber}
-                            </span>
-                          ) : (
-                            <span className="text-slate-600">—</span>
-                          )}
-                        </td>
-                        <td>{log.protein ?? 0} g</td>
-                        <td>{log.fat ?? 0} g</td>
-                        <td>{log.carbs ?? 0} g</td>
-                        <td className="font-bold text-lime-300">{log.kcal.toLocaleString("pl-PL")}</td>
-                        <td>{goal ? `${goal.kcalGoal.toLocaleString("pl-PL")} kcal` : "—"}</td>
-                        <td className="text-slate-400">{log.note ?? "—"}</td>
-                        <td className="flex gap-1">
-                          <DeleteDietLogButton id={log.id} />
-                        </td>
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Wpisy z posiłkami</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Historia wpisów spożycia — z podziałem na posiłki.
+              </p>
+              {logs.length ? (
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Data</th>
+                        <th>Posiłek</th>
+                        <th>Białko</th>
+                        <th>Tłuszcze</th>
+                        <th>Węgl.</th>
+                        <th>kcal</th>
+                        <th className="hidden md:table-cell">Cel dnia</th>
+                        <th className="hidden md:table-cell">Notatka</th>
+                        <th></th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-white/[.07] bg-black/15 p-6 text-center">
-              <p className="text-sm text-slate-500">Brak wpisów. Dodaj pierwszy posiłek!</p>
-            </div>
-          )}
-        </div>
-      </section>
+                    </thead>
+                    <tbody>
+                      {logs.slice(0, 40).map((log) => {
+                        const goal = goalByWeekday.get(weekdayOf(log.date));
+                        return (
+                          <tr key={log.id}>
+                            <td className="font-bold text-white">
+                              {log.date.toLocaleDateString("pl-PL")}
+                            </td>
+                            <td>
+                              {log.mealNumber ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
+                                  <UtensilsCrossed size={11} /> {log.mealNumber}
+                                </span>
+                              ) : (
+                                <span className="text-slate-600">—</span>
+                              )}
+                            </td>
+                            <td>{log.protein ?? 0} g</td>
+                            <td>{log.fat ?? 0} g</td>
+                            <td>{log.carbs ?? 0} g</td>
+                            <td className="font-bold text-lime-300">
+                              {log.kcal.toLocaleString("pl-PL")}
+                            </td>
+                            <td className="hidden md:table-cell">
+                              {goal ? `${goal.kcalGoal.toLocaleString("pl-PL")} kcal` : "—"}
+                            </td>
+                            <td className="hidden text-slate-400 md:table-cell">
+                              {log.note ?? "—"}
+                            </td>
+                            <td className="flex gap-1">
+                              <DeleteDietLogButton id={log.id} />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-white/[.07] bg-black/15 p-6 text-center">
+                  <p className="text-sm text-slate-500">Brak wpisów. Dodaj pierwszy posiłek!</p>
+                </div>
+              )}
+            </section>
+          </>
+        }
+        wprowadzanie={
+          <>
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Cele na dni tygodnia</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                kcal = białko × 4 + węglowodany × 4 + tłuszcze × 9 (na gram). Oznacz, czy dany dzień
+                jest treningowy czy wolny, i ustaw liczbę posiłków.
+              </p>
+              <DietGoalsForm goals={goals} />
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Katalog produktów</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Baza zawiera ponad 800 produktów z makroskładnikami (na 100 g). Wyszukaj po nazwie
+                albo dodaj własny produkt.
+              </p>
+              <div className="grid gap-5 xl:grid-cols-2">
+                <div className="min-w-0">
+                  <FoodCatalogSearch products={products} userId={user.id} />
+                </div>
+                <div className="min-w-0">
+                  <form
+                    action={addFoodProductAction}
+                    className="rounded-2xl border border-white/[.07] bg-black/15 p-4"
+                  >
+                    <p className="mb-3 text-xs font-black uppercase tracking-wider text-lime-400">
+                      Dodaj własny produkt
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="field-label sm:col-span-2">
+                        Nazwa produktu
+                        <input
+                          className="input"
+                          name="name"
+                          type="text"
+                          placeholder="np. Twaróg półtłusty"
+                          required
+                          minLength={2}
+                        />
+                      </label>
+                      <label className="field-label">
+                        Białko (g/100g)
+                        <input className="input" name="protein" type="number" min="0" step="1" required />
+                      </label>
+                      <label className="field-label">
+                        Tłuszcze (g/100g)
+                        <input className="input" name="fat" type="number" min="0" step="1" required />
+                      </label>
+                      <label className="field-label">
+                        Węglowodany (g/100g)
+                        <input className="input" name="carbs" type="number" min="0" step="1" required />
+                      </label>
+                      <label className="field-label">
+                        Kod kreskowy (opcjonalnie)
+                        <input
+                          className="input"
+                          name="barcode"
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="np. 5902409703887"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4">
+                      <button type="submit" className="button-primary">
+                        <Plus size={17} /> Dodaj do katalogu
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Skanuj kod kreskowy</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Jak w Fitatu — zeskanuj kod produktu, a makro i kcal podstawią się automatycznie
+                (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz gramaturę,
+                wybierz numer posiłku i dodaj do dziennika.
+              </p>
+              <BarcodeScanner products={products} meals={todayMeals} />
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Dziennik spożycia</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Dodaj posiłek — wyszukaj produkt po nazwie w katalogu albo podaj makro ręcznie i
+                wybierz, do którego posiłku dnia go przypisać.
+              </p>
+              <DietLogForm products={products} meals={todayMeals} />
+            </section>
+          </>
+        }
+      />
     </div>
   );
 }

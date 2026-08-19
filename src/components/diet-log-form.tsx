@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Beef, Croissant, Droplets, Plus, Search, X } from "lucide-react";
+import { Beef, Croissant, Droplets, Plus, Scale, Search, X } from "lucide-react";
 import { logDietEntryAction } from "@/actions/diet";
 import { kcalFromMacros } from "@/lib/diet";
 import type { FoodProduct } from "@/db/schema";
@@ -19,31 +19,50 @@ function norm(s: string): string {
     .trim();
 }
 
-export function DietLogForm({ products, meals, mealNames }: { products: FoodProduct[]; meals: number; mealNames: string[] }) {
-  const [protein, setProtein] = useState("");
-  const [fat, setFat] = useState("");
-  const [carbs, setCarbs] = useState("");
+const round = (n: number) => Math.round(n);
+
+export function DietLogForm({
+  products,
+  meals,
+  mealNames,
+}: {
+  products: FoodProduct[];
+  meals: number;
+  mealNames: string[];
+}) {
+  const [proteinPer100, setProteinPer100] = useState("");
+  const [fatPer100, setFatPer100] = useState("");
+  const [carbsPer100, setCarbsPer100] = useState("");
+  const [grams, setGrams] = useState("100");
   const [note, setNote] = useState("");
   const [meal, setMeal] = useState("1");
   const [query, setQuery] = useState("");
 
+  const g = Math.max(0, Number(grams) || 0);
+  // Makro przeliczone na gramaturę (na 100 g → na podaną ilość).
+  const computed = useMemo(
+    () => ({
+      protein: round((Number(proteinPer100) || 0) * (g / 100)),
+      fat: round((Number(fatPer100) || 0) * (g / 100)),
+      carbs: round((Number(carbsPer100) || 0) * (g / 100)),
+    }),
+    [proteinPer100, fatPer100, carbsPer100, g],
+  );
   const kcal = useMemo(
-    () => kcalFromMacros(Number(protein) || 0, Number(fat) || 0, Number(carbs) || 0),
-    [protein, fat, carbs],
+    () => kcalFromMacros(computed.protein, computed.fat, computed.carbs),
+    [computed],
   );
 
   const matches = useMemo(() => {
     const q = norm(query);
     if (q.length < 2) return [];
-    return products
-      .filter((p) => norm(p.name).includes(q))
-      .slice(0, 8);
+    return products.filter((p) => norm(p.name).includes(q)).slice(0, 8);
   }, [query, products]);
 
   function pickProduct(p: FoodProduct) {
-    setProtein(String(p.protein));
-    setFat(String(p.fat));
-    setCarbs(String(p.carbs));
+    setProteinPer100(String(p.protein));
+    setFatPer100(String(p.fat));
+    setCarbsPer100(String(p.carbs));
     setNote(p.barcode ? `${p.name} (${p.barcode})` : p.name);
     setQuery("");
   }
@@ -87,9 +106,7 @@ export function DietLogForm({ products, meals, mealNames }: { products: FoodProd
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-bold text-white">{p.name}</span>
-                  {p.barcode && (
-                    <span className="text-[10px] text-slate-500">kod: {p.barcode}</span>
-                  )}
+                  {p.barcode && <span className="text-[10px] text-slate-500">kod: {p.barcode}</span>}
                 </span>
                 <span className="shrink-0 text-[11px] font-bold text-slate-400">
                   {p.kcal} kcal · B{p.protein} T{p.fat} W{p.carbs}
@@ -124,54 +141,70 @@ export function DietLogForm({ products, meals, mealNames }: { products: FoodProd
           </span>
         </label>
         <label className="field-label">
-          Białko (g)
+          Gramatura (g)
           <span className="input-shell !min-h-12">
-            <Beef size={16} />
+            <Scale size={16} />
             <input
-              name="protein"
               type="number"
               min="0"
               step="1"
-              placeholder="np. 45"
-              value={protein}
+              placeholder="np. 150"
+              value={grams}
               onFocus={(event) => event.target.select()}
-              onChange={(event) => setProtein(event.target.value)}
-              required
+              onChange={(event) => setGrams(event.target.value)}
             />
           </span>
         </label>
         <label className="field-label">
-          Tłuszcze (g)
+          Białko (g/100g)
           <span className="input-shell !min-h-12">
-            <Droplets size={16} />
+            <Beef size={16} />
             <input
-              name="fat"
+              name="proteinPer100"
               type="number"
               min="0"
               step="1"
-              placeholder="np. 30"
-              value={fat}
+              placeholder="np. 20"
+              value={proteinPer100}
               onFocus={(event) => event.target.select()}
-              onChange={(event) => setFat(event.target.value)}
+              onChange={(event) => setProteinPer100(event.target.value)}
               required
             />
           </span>
         </label>
       </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="field-label">
-          Węglowodany (g)
+          Tłuszcze (g/100g)
           <span className="input-shell !min-h-12">
-            <Croissant size={16} />
+            <Droplets size={16} />
             <input
-              name="carbs"
+              name="fatPer100"
               type="number"
               min="0"
               step="1"
-              placeholder="np. 180"
-              value={carbs}
+              placeholder="np. 5"
+              value={fatPer100}
               onFocus={(event) => event.target.select()}
-              onChange={(event) => setCarbs(event.target.value)}
+              onChange={(event) => setFatPer100(event.target.value)}
+              required
+            />
+          </span>
+        </label>
+        <label className="field-label">
+          Węglowodany (g/100g)
+          <span className="input-shell !min-h-12">
+            <Croissant size={16} />
+            <input
+              name="carbsPer100"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="np. 15"
+              value={carbsPer100}
+              onFocus={(event) => event.target.select()}
+              onChange={(event) => setCarbsPer100(event.target.value)}
               required
             />
           </span>
@@ -188,18 +221,28 @@ export function DietLogForm({ products, meals, mealNames }: { products: FoodProd
             onChange={(event) => setNote(event.target.value)}
           />
         </label>
-        <div className="flex items-end justify-between gap-4">
-          <div className="flex-1 rounded-xl bg-lime-400/10 px-4 py-2.5 text-center">
-            <p className="text-[10px] font-black uppercase tracking-wider text-lime-400/70">
-              kcal
-            </p>
-            <b className="text-lg font-black text-lime-300">{formatKcal(kcal)}</b>
-          </div>
-          <button type="submit" className="button-primary">
-            <Plus size={17} /> Dodaj
-          </button>
-        </div>
       </div>
+
+      {/* Podsumowanie wpisu przeliczone na gramaturę */}
+      <div className="flex items-end justify-between gap-4 rounded-2xl border border-lime-400/15 bg-lime-400/[.06] px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-wider text-lime-400/70">
+            Wpis na {Math.round(g).toLocaleString("pl-PL")} g
+          </p>
+          <p className="mt-0.5 text-sm text-slate-300">
+            <b className="text-lime-300">{formatKcal(kcal)} kcal</b> · B {computed.protein} g · T{" "}
+            {computed.fat} g · W {computed.carbs} g
+          </p>
+        </div>
+        <button type="submit" className="button-primary shrink-0">
+          <Plus size={17} /> Dodaj
+        </button>
+      </div>
+
+      {/* Przesyłane wartości = makro przeliczone na gramaturę */}
+      <input type="hidden" name="protein" value={computed.protein} />
+      <input type="hidden" name="fat" value={computed.fat} />
+      <input type="hidden" name="carbs" value={computed.carbs} />
     </form>
   );
 }

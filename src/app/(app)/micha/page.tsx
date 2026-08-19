@@ -288,10 +288,29 @@ export default async function MichaPage({
         wprowadzanie={
           <>
             <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Skanuj kod kreskowy</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Jak w Fitatu — zeskanuj kod produktu, a makro i kcal podstawią się automatycznie
+                (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz gramaturę,
+                wybierz numer posiłku i dodaj do dziennika.
+              </p>
+              <BarcodeScanner products={products} meals={todayMeals} mealNames={todayMealNames} />
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Dziennik spożycia</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Dodaj posiłek — wyszukaj produkt po nazwie w katalogu albo podaj makro ręcznie
+                (na 100 g), ustaw gramaturę i wybierz, do którego posiłku dnia go przypisać.
+              </p>
+              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} />
+            </section>
+
+            <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Cele na dni tygodnia</h2>
               <p className="mb-5 text-sm text-slate-500">
                 kcal = białko × 4 + węglowodany × 4 + tłuszcze × 9 (na gram). Oznacz, czy dany dzień
-                jest treningowy czy wolny, i ustaw liczbę posiłków.
+                jest treningowy czy wolny, i ustaw liczbę posiłków oraz ich nazwy.
               </p>
               <DietGoalsForm goals={goals} />
             </section>
@@ -299,8 +318,8 @@ export default async function MichaPage({
             <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Katalog produktów</h2>
               <p className="mb-5 text-sm text-slate-500">
-                Baza zawiera ponad 800 produktów z makroskładnikami (na 100 g). Wyszukaj po nazwie
-                albo dodaj własny produkt.
+                Baza zawiera prawie 1000 produktów z makroskładnikami (na 100 g) — w tym podstawowe
+                produkty: jajka, warzywa, owoce, mięsa. Wyszukaj po nazwie albo dodaj własny produkt.
               </p>
               <div className="grid gap-5 xl:grid-cols-2">
                 <div className="min-w-0">
@@ -357,25 +376,6 @@ export default async function MichaPage({
                   </form>
                 </div>
               </div>
-            </section>
-
-            <section className="panel p-5 sm:p-7">
-              <h2 className="font-extrabold text-white mb-1">Skanuj kod kreskowy</h2>
-              <p className="mb-5 text-sm text-slate-500">
-                Jak w Fitatu — zeskanuj kod produktu, a makro i kcal podstawią się automatycznie
-                (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz gramaturę,
-                wybierz numer posiłku i dodaj do dziennika.
-              </p>
-              <BarcodeScanner products={products} meals={todayMeals} mealNames={todayMealNames} />
-            </section>
-
-            <section className="panel p-5 sm:p-7">
-              <h2 className="font-extrabold text-white mb-1">Dziennik spożycia</h2>
-              <p className="mb-5 text-sm text-slate-500">
-                Dodaj posiłek — wyszukaj produkt po nazwie w katalogu albo podaj makro ręcznie i
-                wybierz, do którego posiłku dnia go przypisać.
-              </p>
-              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} />
             </section>
           </>
         }

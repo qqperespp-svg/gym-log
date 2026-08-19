@@ -102,49 +102,65 @@ export async function POST(request: Request) {
     return Response.json({ error: "Nie udało się odczytać zdjęcia." }, { status: 400 });
   }
 
-  // Wywołanie Google Gemini.
-  let res: Response;
-  try {
-    res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { inlineData: { mimeType: mime, data: base64 } },
-                { text: PROMPT },
-              ],
-            },
-          ],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
-        }),
-      },
-    );
-  } catch {
-    return Response.json({ error: "Brak połączenia z AI — spróbuj ponownie." }, { status: 502 });
-  }
+  // Wywołanie Google Gemini — próbuj kolejnych aktualnych modeli, aż któryś zadziała.
+  // (starsze modele, np. gemini-1.5-flash, są wycofywane przez Google i mogą zwracać 404)
+  const defaultModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash"];
+  const models = (process.env.GEMINI_MODEL || "").trim()
+    ? [process.env.GEMINI_MODEL!.trim()]
+    : defaultModels;
 
-  if (!res.ok) {
+  let lastDetail = "";
+  for (const model of models) {
+    let res: Response;
+    try {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { inlineData: { mimeType: mime, data: base64 } },
+                  { text: PROMPT },
+                ],
+              },
+            ],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+          }),
+        },
+      );
+    } catch {
+      lastDetail = "Brak połączenia z AI — spróbuj ponownie.";
+      continue;
+    }
+
+    if (res.ok) {
+      const data = (await res.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+      const items = parseItems(text);
+      if (!items.length) {
+        return Response.json({ error: "Nie wykryto jedzenia na zdjęciu." }, { status: 422 });
+      }
+      return Response.json({ items, model });
+    }
+
     const detail = await res.text().catch(() => "");
-    return Response.json(
-      { error: "AI nie odpowiedziało poprawnie. Spróbuj ponownie." + (detail ? ` (${detail.slice(0, 160)})` : "") },
-      { status: 502 },
-    );
+    lastDetail = `Model ${model}: ${detail.slice(0, 140)}`;
+    if (res.status !== 404) break; // inny błąd (auth, limit) — nie ma sensu próbować dalej
   }
 
-  const data = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const text =
-    data?.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
-      .join("") ?? "";
-  const items = parseItems(text);
-  if (!items.length) {
-    return Response.json({ error: "Nie wykryto jedzenia na zdjęciu." }, { status: 422 });
-  }
-  return Response.json({ items });
+  return Response.json(
+    {
+      error:
+        "AI nie odpowiedziało poprawnie. " +
+        lastDetail +
+        " (możesz wskazać model zmienną GEMINI_MODEL w Vercel, np. gemini-2.0-flash)",
+    },
+    { status: 502 },
+  );
+
 }

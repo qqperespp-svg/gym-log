@@ -316,6 +316,8 @@ export const userSettings = pgTable(
       .primaryKey()
       .references(() => users.id, { onDelete: "cascade" }),
     lang: varchar("lang", { length: 8 }).notNull().default("pl"),
+    theme: varchar("theme", { length: 8 }).notNull().default("dark"), // dark | light
+    accent: varchar("accent", { length: 12 }).notNull().default("lime"), // kolor motywu
     waterGoal: doublePrecision("water_goal").notNull().default(2.5), // litry dziennie
     reminders: text("reminders"), // JSON: [{type:'water'|'meal', time:'12:00'}]
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

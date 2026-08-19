@@ -13,6 +13,7 @@ import { MacroBar } from "@/components/macro-bar";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { FoodCatalogSearch } from "@/components/food-catalog-search";
 import { MichaTabs } from "@/components/micha-tabs";
+import { TdeeCalculator } from "@/components/tdee-calculator";
 import { RecipeForm, RecipeItem } from "@/components/recipe-form";
 
 export const dynamic = "force-dynamic";
@@ -491,6 +492,17 @@ export default async function MichaPage({
               </div>
             </section>
           </>
+        }
+        planowanie={
+          <section className="panel p-5 sm:p-7">
+            <h2 className="font-extrabold text-white mb-1">Planowanie kalorii (TDEE)</h2>
+            <p className="mb-5 text-sm text-slate-500">
+              Oblicz zapotrzebowanie, ustaw proporcje białko / węglowodany / tłuszcze i dodatek na
+              dzień treningowy. Po zapisie każdy dzień oznaczony jako „treningowy" dostanie
+              podwyższoną kalorykę, pozostałe — bazową (z proporcjami przeliczonymi na gramy).
+            </p>
+            <TdeeCalculator />
+          </section>
         }
       />
     </div>

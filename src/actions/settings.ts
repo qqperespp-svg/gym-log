@@ -20,6 +20,10 @@ import { redirect } from "next/navigation";
 export async function saveSettingsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const lang = String(formData.get("lang") ?? "pl") === "en" ? "en" : "pl";
+  const theme = String(formData.get("theme") ?? "dark") === "light" ? "light" : "dark";
+  const accent = String(formData.get("accent") ?? "lime");
+  const ACCENTS = ["lime", "sky", "violet", "rose", "amber", "emerald"];
+  const safeAccent = ACCENTS.includes(accent) ? accent : "lime";
   const waterGoal = Math.min(Math.max(Number(formData.get("waterGoal")) || 2.5, 0.5), 10);
   const reminders: string[] = [];
   for (let i = 1; i <= 4; i++) {
@@ -28,16 +32,18 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
   }
   await db
     .insert(userSettings)
-    .values({ userId: user.id, lang, waterGoal, reminders: JSON.stringify(reminders) })
+    .values({ userId: user.id, lang, theme, accent: safeAccent, waterGoal, reminders: JSON.stringify(reminders) })
     .onConflictDoUpdate({
       target: userSettings.userId,
-      set: { lang, waterGoal, reminders: JSON.stringify(reminders), updatedAt: new Date() },
+      set: { lang, theme, accent: safeAccent, waterGoal, reminders: JSON.stringify(reminders), updatedAt: new Date() },
     });
   revalidatePath("/settings");
   redirect("/settings?saved=1");
 }
 
-/** TDEE: wylicza i zapisuje cele makro/kcal dla wszystkich dni tygodnia. */
+/** TDEE: wylicza i zapisuje cele makro/kcal dla wszystkich dni tygodnia.
+ *  Dni oznaczone jako „treningowe" dostają podwyższoną kalorykę; proporcje
+ *  makro (białko/węglowodany/tłuszcze w % kalorii) są przeliczane na gramy. */
 export async function saveTdeeAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const sex = String(formData.get("sex") ?? "m") === "f" ? "f" : "m";
@@ -46,33 +52,66 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
   const weight = Math.max(30, Math.min(300, Number(formData.get("weight")) || 80));
   const activity = Number(formData.get("activity")) || 1.4;
   const goal = String(formData.get("goal") ?? "maintain"); // lose | maintain | gain
+  const proteinPct = Math.max(5, Math.min(70, Number(formData.get("proteinPct")) || 30));
+  const carbsPct = Math.max(5, Math.min(80, Number(formData.get("carbsPct")) || 40));
+  const fatPct = Math.max(5, Math.min(70, Number(formData.get("fatPct")) || 30));
+  const trainingBonus = Math.max(0, Math.min(800, Math.round(Number(formData.get("trainingBonus")) || 0)));
 
   const bmr =
     sex === "m"
       ? 10 * weight + 6.25 * height - 5 * age + 5
       : 10 * weight + 6.25 * height - 5 * age - 161;
-  let tdee = bmr * activity;
-  if (goal === "lose") tdee -= 400;
-  if (goal === "gain") tdee += 300;
-  tdee = Math.round(tdee / 10) * 10;
+  let base = bmr * activity;
+  if (goal === "lose") base -= 400;
+  if (goal === "gain") base += 300;
+  const restKcal = Math.round(base / 10) * 10;
+  const trainingKcal = restKcal + trainingBonus;
 
-  // Makro: białko 2 g/kg, tłuszcz 1 g/kg, reszta z węglowodanów.
-  const protein = Math.round(weight * 2);
-  const fat = Math.round(weight);
-  const carbs = Math.max(30, Math.round((tdee - protein * 4 - fat * 9) / 4));
+  const total = proteinPct + carbsPct + fatPct || 1;
+  const macros = (kcal: number) => ({
+    protein: Math.round((kcal * (proteinPct / total)) / 4),
+    fat: Math.round((kcal * (fatPct / total)) / 9),
+    carbs: Math.round((kcal * (carbsPct / total)) / 4),
+  });
+
+  // Istniejące flagi treningowy/wolny per dzień tygodnia.
+  const existing = await db.select().from(dietGoals).where(eq(dietGoals.userId, user.id));
+  const trainingByDay = new Map(existing.map((g) => [g.weekday, g.trainingDay === 1]));
 
   for (const { n } of WEEKDAYS) {
+    const isTraining = trainingByDay.get(n) ?? false;
+    const kcal = isTraining ? trainingKcal : restKcal;
+    const m = macros(kcal);
     await db
       .insert(dietGoals)
-      .values({ userId: user.id, weekday: n, protein, fat, carbs, kcalGoal: tdee })
+      .values({
+        userId: user.id,
+        weekday: n,
+        protein: m.protein,
+        fat: m.fat,
+        carbs: m.carbs,
+        kcalGoal: kcal,
+        trainingDay: isTraining ? 1 : 0,
+        meals: 3,
+        mealNames: JSON.stringify(["Śniadanie", "Obiad", "Kolacja"]),
+      })
       .onConflictDoUpdate({
         target: [dietGoals.userId, dietGoals.weekday],
-        set: { protein, fat, carbs, kcalGoal: tdee, updatedAt: new Date() },
+        set: {
+          protein: m.protein,
+          fat: m.fat,
+          carbs: m.carbs,
+          kcalGoal: kcal,
+          trainingDay: isTraining ? 1 : 0,
+          meals: 3,
+          mealNames: JSON.stringify(["Śniadanie", "Obiad", "Kolacja"]),
+          updatedAt: new Date(),
+        },
       });
   }
   revalidatePath("/micha");
   revalidatePath("/settings");
-  redirect("/settings?saved=1");
+  redirect("/micha?saved=1");
 }
 
 /** Eksport danych użytkownika jako JSON (do pobrania). */

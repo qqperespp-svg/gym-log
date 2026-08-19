@@ -346,11 +346,21 @@ async function runSchemaSync(): Promise<void> {
         CREATE TABLE IF NOT EXISTS user_settings (
           user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
           lang varchar(8) NOT NULL DEFAULT 'pl',
+          theme varchar(8) NOT NULL DEFAULT 'dark',
+          accent varchar(12) NOT NULL DEFAULT 'lime',
           water_goal double precision NOT NULL DEFAULT 2.5,
           reminders text,
           updated_at timestamp NOT NULL DEFAULT now()
         )
       `,
+    ],
+    [
+      "user_settings.theme",
+      sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS theme varchar(8) NOT NULL DEFAULT 'dark'`,
+    ],
+    [
+      "user_settings.accent",
+      sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS accent varchar(12) NOT NULL DEFAULT 'lime'`,
     ],
     [
       "user_favorites",

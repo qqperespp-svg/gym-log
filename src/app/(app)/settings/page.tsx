@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
-import { ArrowLeft, Bell, Calculator, CheckCircle2, Download, Languages } from "lucide-react";
+import { ArrowLeft, Bell, CheckCircle2, Download, Languages, Palette } from "lucide-react";
 import { db } from "@/db";
 import { userSettings } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { exportDataAction, saveSettingsAction, saveTdeeAction } from "@/actions/settings";
-import { TdeeCalculator } from "@/components/tdee-calculator";
 import { ImportForm } from "@/components/import-form";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +18,8 @@ export default async function SettingsPage({
   const params = await searchParams;
   const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1);
   const lang = settings?.lang === "en" ? "en" : "pl";
+  const themeSetting = settings?.theme === "light" ? "light" : "dark";
+  const accentSetting = settings?.accent ?? "lime";
   const waterGoal = settings?.waterGoal ?? 2.5;
   let reminders: string[] = [];
   try {
@@ -104,12 +105,48 @@ export default async function SettingsPage({
 
       <section className="panel p-5 sm:p-7">
         <h2 className="mb-1 flex items-center gap-2 font-extrabold text-white">
-          <Calculator size={18} className="text-lime-400" /> {lang === "en" ? "TDEE calculator / Kalkulator kalorii" : "Kalkulator zapotrzebowania (TDEE)"}
+          <Palette size={18} className="text-lime-400" /> {lang === "en" ? "Theme / Motyw" : "Motyw i kolor"}
         </h2>
         <p className="mb-4 text-sm text-slate-500">
-          Wylicza dzienne zapotrzebowanie i zapisuje cele makro/kcal dla wszystkich dni tygodnia.
+          Motyw zapisany tu jest stały dla każdego urządzenia. Przełącznik w menu bocznym działa
+          natychmiast (zapis na tym urządzeniu).
         </p>
-        <TdeeCalculator />
+        <form action={saveSettingsAction} className="grid gap-4 sm:grid-cols-2">
+          <input type="hidden" name="lang" value={lang} />
+          <input type="hidden" name="waterGoal" value={waterGoal} />
+          {reminders.map((r, i) => (
+            <input key={i} type="hidden" name={`reminder${i + 1}`} value={r} />
+          ))}
+          <label className="field-label">
+            Motyw
+            <select className="input" name="theme" defaultValue={themeSetting}>
+              <option value="dark">Ciemny</option>
+              <option value="light">Jasny</option>
+            </select>
+          </label>
+          <label className="field-label">
+            Kolor motywu
+            <select className="input" name="accent" defaultValue={accentSetting}>
+              {(
+                [
+                  ["lime", "Limonkowy"],
+                  ["sky", "Błękitny"],
+                  ["violet", "Fioletowy"],
+                  ["rose", "Różowy"],
+                  ["amber", "Bursztynowy"],
+                  ["emerald", "Szmaragdowy"],
+                ] as const
+              ).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="sm:col-span-2">
+            <button type="submit" className="button-primary">Zapisz motyw</button>
+          </div>
+        </form>
       </section>
     </div>
   );

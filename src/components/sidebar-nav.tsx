@@ -14,16 +14,29 @@ import {
   LibraryBig,
   LogOut,
   Menu,
+  Moon,
   Plus,
   Ruler,
   Settings,
+  Sun,
   UtensilsCrossed,
   X,
 } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
 import { t, type Lang } from "@/lib/i18n";
+import { applyTheme, type Accent, type Theme } from "@/components/theme-provider";
 
-export function SidebarNav({ user, lang }: { user: { name: string; email: string }; lang: Lang }) {
+export function SidebarNav({
+  user,
+  lang,
+  theme,
+  accent,
+}: {
+  user: { name: string; email: string };
+  lang: Lang;
+  theme: Theme;
+  accent: Accent;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const initials = user.name
@@ -100,6 +113,41 @@ export function SidebarNav({ user, lang }: { user: { name: string; email: string
         })}
       </nav>
       <div className="border-t border-white/5 p-5">
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-white/[.04] px-3 py-2.5">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => applyTheme(theme === "dark" ? "light" : "dark", accent)}
+              className="grid size-9 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 hover:text-white"
+              title={theme === "dark" ? "Włącz jasny motyw" : "Włącz ciemny motyw"}
+              aria-label="Przełącz motyw jasny/ciemny"
+            >
+              {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
+          </div>
+          <div className="flex items-center gap-1">
+            {(
+              [
+                ["lime", "#a3e635"],
+                ["sky", "#38bdf8"],
+                ["violet", "#a78bfa"],
+                ["rose", "#fb7185"],
+                ["amber", "#fbbf24"],
+                ["emerald", "#34d399"],
+              ] as const
+            ).map(([key, color]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => applyTheme(theme, key)}
+                className={`size-5 rounded-full transition ${accent === key ? "ring-2 ring-white/70" : "hover:scale-110"}`}
+                style={{ backgroundColor: color }}
+                title={`Kolor motywu: ${key}`}
+                aria-label={`Kolor motywu: ${key}`}
+              />
+            ))}
+          </div>
+        </div>
         <div className="mb-4 flex items-center gap-3 rounded-xl bg-lime-400/5 px-3 py-3 text-xs text-slate-400">
           <ChartNoAxesColumnIncreasing className="text-lime-400" size={19} />
           <span>

@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { ChartPie, PenLine } from "lucide-react";
+import { Calculator, ChartPie, PenLine } from "lucide-react";
 
-type Section = "makro" | "wprowadzanie";
+type Section = "makro" | "wprowadzanie" | "planowanie";
 
 export function MichaTabs({
   makro,
   wprowadzanie,
+  planowanie,
 }: {
   makro: React.ReactNode;
   wprowadzanie: React.ReactNode;
+  planowanie: React.ReactNode;
 }) {
   const [active, setActive] = useState<Section>("makro");
 
@@ -23,7 +25,7 @@ export function MichaTabs({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <button type="button" onClick={() => setActive("makro")} aria-pressed={active === "makro"} className={tile("makro")}>
           <span className="flex items-center gap-3">
             <span
@@ -58,14 +60,36 @@ export function MichaTabs({
             <span className="min-w-0">
               <b className="block text-sm font-extrabold text-white">Wprowadzanie</b>
               <span className="block text-xs leading-5 text-slate-500">
-                Cele, katalog produktów, skaner, dodawanie posiłków
+                Cele, katalog, skaner, posiłki, przepisy
+              </span>
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActive("planowanie")}
+          aria-pressed={active === "planowanie"}
+          className={tile("planowanie")}
+        >
+          <span className="flex items-center gap-3">
+            <span
+              className={`grid size-11 shrink-0 place-items-center rounded-xl transition ${
+                active === "planowanie" ? "bg-lime-400 text-slate-950" : "bg-white/[.05] text-slate-400"
+              }`}
+            >
+              <Calculator size={20} />
+            </span>
+            <span className="min-w-0">
+              <b className="block text-sm font-extrabold text-white">Planowanie</b>
+              <span className="block text-xs leading-5 text-slate-500">
+                TDEE, kaloryka treningowa/wolna, proporcje makro
               </span>
             </span>
           </span>
         </button>
       </div>
 
-      {active === "makro" ? makro : wprowadzanie}
+      {active === "makro" ? makro : active === "wprowadzanie" ? wprowadzanie : planowanie}
     </div>
   );
 }

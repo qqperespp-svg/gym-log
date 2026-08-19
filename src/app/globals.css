@@ -422,3 +422,12 @@ textarea.input { line-height: 1.6; }
 }
 :root[data-theme="light"] .icon-button { color: #64748b; }
 :root[data-theme="light"] .icon-button:hover { background-color: rgba(15,23,42,.06); color: #0f172a; }
+
+/* ============ NAWIGACJA: aktywny link wg akcentu (z !important — klasa ma !text-lime-300) ============ */
+:root[data-accent="lime"] .nav-link-active { background-color: #a3e63514 !important; color: #bef264 !important; }
+:root[data-accent="sky"] .nav-link-active { background-color: #38bdf814 !important; color: #7dd3fc !important; }
+:root[data-accent="violet"] .nav-link-active { background-color: #a78bfa14 !important; color: #c4b5fd !important; }
+:root[data-accent="rose"] .nav-link-active { background-color: #fb718514 !important; color: #fda4af !important; }
+:root[data-accent="amber"] .nav-link-active { background-color: #fbbf2414 !important; color: #fcd34d !important; }
+:root[data-accent="emerald"] .nav-link-active { background-color: #34d39914 !important; color: #6ee7b7 !important; }
+:root[data-theme="light"] .nav-link-active { background-color: rgba(163,230,53,.15) !important; color: #0f172a !important; }

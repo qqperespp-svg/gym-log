@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CalendarDays,
   ChartNoAxesColumnIncreasing,
@@ -39,6 +39,25 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  // Bieżący motyw/kolor — inicjowane z serwera, ale aktualizowane na kliknięcie
+  // (propy z serwera są stałe i nie zmieniają się po zmianie w przeglądarce).
+  const [curTheme, setCurTheme] = useState<Theme>(theme);
+  const [curAccent, setCurAccent] = useState<Accent>(accent);
+  useEffect(() => {
+    const t = document.documentElement.getAttribute("data-theme") as Theme | null;
+    const a = document.documentElement.getAttribute("data-accent") as Accent | null;
+    if (t) setCurTheme(t);
+    if (a) setCurAccent(a);
+  }, []);
+  function changeTheme() {
+    const next: Theme = curTheme === "dark" ? "light" : "dark";
+    applyTheme(next, curAccent);
+    setCurTheme(next);
+  }
+  function changeAccent(key: Accent) {
+    applyTheme(curTheme, key);
+    setCurAccent(key);
+  }
   const initials = user.name
     .split(" ")
     .map((part) => part[0])
@@ -117,15 +136,12 @@ export function SidebarNav({
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => {
-                const current = (document.documentElement.getAttribute("data-theme") as Theme) || theme;
-                applyTheme(current === "dark" ? "light" : "dark", accent);
-              }}
+              onClick={changeTheme}
               className="grid size-9 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 hover:text-white"
-              title={theme === "dark" ? "Włącz jasny motyw" : "Włącz ciemny motyw"}
+              title={curTheme === "dark" ? "Włącz jasny motyw" : "Włącz ciemny motyw"}
               aria-label="Przełącz motyw jasny/ciemny"
             >
-              {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+              {curTheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
             </button>
           </div>
           <div className="flex items-center gap-1">
@@ -142,11 +158,8 @@ export function SidebarNav({
               <button
                 key={key}
                 type="button"
-                onClick={() => {
-                  const current = (document.documentElement.getAttribute("data-theme") as Theme) || theme;
-                  applyTheme(current, key);
-                }}
-                className={`size-5 rounded-full transition ${accent === key ? "ring-2 ring-white/70" : "hover:scale-110"}`}
+                onClick={() => changeAccent(key)}
+                className={`size-5 rounded-full transition ${curAccent === key ? "ring-2 ring-white/70" : "hover:scale-110"}`}
                 style={{ backgroundColor: color }}
                 title={`Kolor motywu: ${key}`}
                 aria-label={`Kolor motywu: ${key}`}

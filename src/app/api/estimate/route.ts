@@ -103,22 +103,27 @@ export async function POST(request: Request) {
   }
 
   // ---------- Wybór modelu Gemini ----------
-  // Najpierw odczytujemy listę modeli dostępnych dla Twojego klucza i wybieramy
-  // najlepszy (zamiast zgadywać nazwy — starsze bywają wycofywane).
-  let model = await pickModel(apiKey);
+  // Lista modeli dostępnych dla klucza (lub fallback). Próbujemy WSZYSTKICH po kolei —
+  // Google różnie ogranicza dostęp do modeli (np. „no longer available to new users").
+  let candidates: string[] = [];
+  if (process.env.GEMINI_MODEL) {
+    candidates = [process.env.GEMINI_MODEL.trim()];
+  } else {
+    candidates = await listCandidateModels(apiKey);
+  }
+  if (!candidates.length) candidates = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-1.5-flash"];
 
-  // Wywołanie generowania.
   let lastDetail = "";
-  for (const attempt of [model, ...(model === null ? [] : [null])]) {
-    const m = attempt ?? model;
-    if (!m) break;
+  let lastRes: Response | null = null;
+  for (const model of candidates) {
     let res: Response;
     try {
-      res = await callGemini(m, apiKey, mime, base64);
+      res = await callGemini(model, apiKey, mime, base64);
     } catch {
       lastDetail = "Brak połączenia z AI — spróbuj ponownie.";
       continue;
     }
+    lastRes = res;
 
     if (res.ok) {
       const data = (await res.json()) as {
@@ -129,12 +134,13 @@ export async function POST(request: Request) {
       if (!items.length) {
         return Response.json({ error: "Nie wykryto jedzenia na zdjęciu." }, { status: 422 });
       }
-      return Response.json({ items, model: m });
+      return Response.json({ items, model });
     }
 
     const detail = await res.text().catch(() => "");
-    lastDetail = `Model ${m}: ${detail.slice(0, 140)}`;
-    if (res.status !== 404) break; // inny błąd (auth, limit) — dalsze próby nie pomogą
+    lastDetail = `Model ${model}: ${detail.slice(0, 140)}`;
+    // 404 lub „no longer available" → spróbuj następnego; inne błędy (auth/limit) → stop.
+    if (res.status !== 404 && !/no longer available|not found|not supported/i.test(detail)) break;
   }
 
   return Response.json(
@@ -142,82 +148,67 @@ export async function POST(request: Request) {
       error:
         "AI nie odpowiedziało poprawnie. " +
         lastDetail +
-        " (sprawdź GEMINI_API_KEY i spróbuj ponownie; możesz też wymusić model zmienną GEMINI_MODEL)",
+        " (sprawdź GEMINI_API_KEY; możesz też wymusić model zmienną GEMINI_MODEL, np. gemini-2.0-flash)",
     },
     { status: 502 },
   );
 }
 
-// Pamięć podręczna wybranego modelu (per klucz) — nie listujemy przy każdym zdjęciu.
-const modelCache = new Map<string, string | null>();
+// ---------- Pomocnicze ----------
 
+// Priorytet: nowsze i lżejsze modele najpierw (te zwykle są dostępne dla nowych kluczy).
 const PRIORITY = [
+  "gemini-2.5-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
   "gemini-2.5-pro",
   "gemini-1.5-flash-latest",
   "gemini-1.5-flash",
   "gemini-1.5-pro-latest",
 ];
 
-async function pickModel(apiKey: string): Promise<string | null> {
-  if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL.trim();
-  if (modelCache.has(apiKey)) return modelCache.get(apiKey)!;
-
-  let chosen: string | null = null;
+async function listCandidateModels(apiKey: string): Promise<string[]> {
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
       { headers: { "Content-Type": "application/json" } },
     );
-    if (res.ok) {
-      const data = (await res.json()) as { models?: Array<{ name?: string }> };
-      const names = (data.models ?? []).map((m) => String(m.name ?? "").replace(/^models\//, ""));
-      for (const p of PRIORITY) {
-        if (names.includes(p)) {
-          chosen = p;
-          break;
-        }
-      }
-      if (!chosen) {
-        const flash = names.filter((n) => n.includes("flash") && n.startsWith("gemini"));
-        chosen = flash[0] ?? names.find((n) => n.startsWith("gemini")) ?? null;
-      }
-    }
+    if (!res.ok) return [];
+    const data = (await res.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
+    const names = (data.models ?? [])
+      .map((m) => String(m.name ?? "").replace(/^models\//, ""))
+      .filter((n) => n.startsWith("gemini-"))
+      .filter((n) => !/thinking|embedding|imagen|tts|tuning/i.test(n));
+    const ordered: string[] = [];
+    for (const p of PRIORITY) if (names.includes(p)) ordered.push(p);
+    for (const n of names) if (!ordered.includes(n)) ordered.push(n);
+    return ordered;
   } catch {
-    chosen = null;
+    return [];
   }
-  modelCache.set(apiKey, chosen);
-  return chosen;
 }
 
 async function callGemini(model: string, apiKey: string, mime: string, base64: string): Promise<Response> {
-  // Próbuj v1beta, a jeśli model w nim nie istnieje — v1 (różni klienci mają różną dostępność).
+  const body = JSON.stringify({
+    contents: [
+      { parts: [{ inlineData: { mimeType: mime, data: base64 } }, { text: PROMPT }] },
+    ],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+  });
+  // Próbuj v1beta, potem v1.
   for (const version of ["v1beta", "v1"]) {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/${version}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { inlineData: { mimeType: mime, data: base64 } },
-                { text: PROMPT },
-              ],
-            },
-          ],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
-        }),
-      },
+      { method: "POST", headers: { "Content-Type": "application/json" }, body },
     );
-    if (res.ok || res.status !== 404) return res; // sukces albo błąd nie-404
+    if (res.ok || res.status !== 404) return res;
   }
-  // oba wersje dały 404 — zwróć ostatnią odpowiedź
-  const last = await fetch(
+  // Oba wersje dały 404 — zwróć ostatnią.
+  return fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: "ping" }] }] }) },
+    { method: "POST", headers: { "Content-Type": "application/json" }, body },
   );
-  return last;
 }
+
+// Pamięć podręczna wybranego modelu (per klucz) — nie listujemy przy każdym zdjęciu.

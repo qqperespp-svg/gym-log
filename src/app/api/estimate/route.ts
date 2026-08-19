@@ -139,18 +139,46 @@ export async function POST(request: Request) {
 
     const detail = await res.text().catch(() => "");
     lastDetail = `Model ${model}: ${detail.slice(0, 140)}`;
-    // 404 lub „no longer available" → spróbuj następnego; inne błędy (auth/limit) → stop.
-    if (res.status !== 404 && !/no longer available|not found|not supported/i.test(detail)) break;
+
+    const notFound = res.status === 404 || /no longer available|not found|not supported/i.test(detail);
+    // 429 (quota) / 503 („high demand", przeciążenie) — chwilowe; spróbuj kolejnego modelu,
+    // a potem wróć do pierwszego z opóźnieniem (retry).
+    const overloaded = res.status === 429 || res.status === 503 || /high demand|quota|resource exhausted|overloaded|rate limit|temporary/i.test(detail);
+
+    if (notFound) continue; // model niedostępny → następny
+
+    if (overloaded) {
+      // Jedno ponowienie TEGO modelu po krótkiej przerwie; potem przejdź do następnego.
+      await new Promise((r) => setTimeout(r, 1200));
+      const retryRes = await callGemini(model, apiKey, mime, base64).catch(() => null);
+      if (retryRes && retryRes.ok) {
+        const data = (await retryRes.json()) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        };
+        const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+        const items = parseItems(text);
+        if (!items.length) {
+          return Response.json({ error: "Nie wykryto jedzenia na zdjęciu." }, { status: 422 });
+        }
+        return Response.json({ items, model });
+      }
+      if (retryRes) {
+        const d2 = await retryRes.text().catch(() => "");
+        lastDetail = `Model ${model}: ${d2.slice(0, 140)}`;
+      }
+      continue; // następny model
+    }
+    break; // inny błąd (auth itp.) — dalsze próby nie pomogą
   }
 
+  const overloadAll = /high demand|quota|resource exhausted|overloaded|rate limit|temporary/i.test(lastDetail);
   return Response.json(
     {
-      error:
-        "AI nie odpowiedziało poprawnie. " +
-        lastDetail +
-        " (sprawdź GEMINI_API_KEY; możesz też wymusić model zmienną GEMINI_MODEL, np. gemini-2.0-flash)",
+      error: overloadAll
+        ? "AI jest chwilowo przeciążone (duże obłożenie). Poczekaj kilkanaście sekund i spróbuj ponownie."
+        : "AI nie odpowiedziało poprawnie. " + lastDetail + " (sprawdź GEMINI_API_KEY; możesz też wymusić model zmienną GEMINI_MODEL, np. gemini-2.0-flash)",
     },
-    { status: 502 },
+    { status: overloadAll ? 503 : 502 },
   );
 }
 

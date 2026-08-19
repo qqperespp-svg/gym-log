@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Barcode, Camera, ImagePlus, LoaderCircle, ScanLine, Search, X } from "lucide-react";
 import { logScannedEntryAction } from "@/actions/diet";
+import { formatMacro, round1 } from "@/lib/diet";
 import type { FoodProduct } from "@/db/schema";
 
 type Product = {
@@ -52,7 +53,7 @@ function loadZxing(): Promise<ZXingGlobal> {
   });
 }
 
-function round1(n: number | undefined): number {
+function round1Raw(n: number | undefined): number {
   return Number.isFinite(n) ? Math.round((n ?? 0) * 10) / 10 : 0;
 }
 
@@ -183,9 +184,9 @@ export function BarcodeScanner({
           data.product.generic_name ||
           data.product.brands ||
           `Produkt (${clean})`,
-        protein: round1(n.proteins_100g ?? n.protein_100g),
-        fat: round1(n.fat_100g ?? n.fats_100g),
-        carbs: round1(n.carbohydrates_100g ?? n.carbs_100g),
+        protein: round1Raw(n.proteins_100g ?? n.protein_100g),
+        fat: round1Raw(n.fat_100g ?? n.fats_100g),
+        carbs: round1Raw(n.carbohydrates_100g ?? n.carbs_100g),
         kcal: Math.round(Number(kcal) || 0),
       });
     } catch (e) {
@@ -284,9 +285,9 @@ export function BarcodeScanner({
   const g = Math.max(0, Number(grams) || 0);
   const computed = product
     ? {
-        protein: Math.round(product.protein * (g / 100)),
-        fat: Math.round(product.fat * (g / 100)),
-        carbs: Math.round(product.carbs * (g / 100)),
+        protein: round1(product.protein * (g / 100)),
+        fat: round1(product.fat * (g / 100)),
+        carbs: round1(product.carbs * (g / 100)),
         kcal: Math.round(product.kcal * (g / 100)),
       }
     : null;
@@ -452,7 +453,8 @@ export function BarcodeScanner({
             <div className="flex items-end rounded-xl bg-black/20 px-4 py-2.5">
               <p className="text-sm text-slate-300">
                 Wpis: <b className="text-lime-300">{computed.kcal} kcal</b> · B{" "}
-                {computed.protein} g · T {computed.fat} g · W {computed.carbs} g
+                {formatMacro(computed.protein)} g · T {formatMacro(computed.fat)} g · W{" "}
+                {formatMacro(computed.carbs)} g
               </p>
             </div>
             <div className="sm:col-span-4">

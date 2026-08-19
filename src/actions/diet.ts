@@ -13,6 +13,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(n), min), max);
 }
 
+/** Zaokrągla z jedną cyfrą po przecinku (np. 6.1) — dla makroskładników. */
+function clamp1(value: number, min: number, max: number): number {
+  const n = Number.isFinite(value) ? value : min;
+  return Math.min(Math.max(Math.round(n * 10) / 10, min), max);
+}
+
 function readMealNumber(formData: FormData): number | null {
   const raw = Number(formData.get("meal") ?? 0);
   if (!Number.isFinite(raw) || raw < 1 || raw > 12) return null;
@@ -23,9 +29,9 @@ function readMealNumber(formData: FormData): number | null {
 export async function saveDietGoalsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   for (const { n } of WEEKDAYS) {
-    const protein = clamp(Number(formData.get(`protein-${n}`)) || 0, 0, 9999);
-    const fat = clamp(Number(formData.get(`fat-${n}`)) || 0, 0, 9999);
-    const carbs = clamp(Number(formData.get(`carbs-${n}`)) || 0, 0, 9999);
+    const protein = clamp1(Number(formData.get(`protein-${n}`)) || 0, 0, 9999);
+    const fat = clamp1(Number(formData.get(`fat-${n}`)) || 0, 0, 9999);
+    const carbs = clamp1(Number(formData.get(`carbs-${n}`)) || 0, 0, 9999);
     const kcalGoal = kcalFromMacros(protein, fat, carbs);
     const trainingDay = String(formData.get(`training-${n}`) ?? "") === "1" ? 1 : 0;
     const meals = clamp(Number(formData.get(`meals-${n}`)) || 3, 1, 10);
@@ -75,9 +81,9 @@ export async function saveDietGoalsAction(formData: FormData): Promise<void> {
 export async function logDietEntryAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const dateStr = String(formData.get("date") ?? "").trim();
-  const protein = clamp(Number(formData.get("protein")) || 0, 0, 9999);
-  const fat = clamp(Number(formData.get("fat")) || 0, 0, 9999);
-  const carbs = clamp(Number(formData.get("carbs")) || 0, 0, 9999);
+  const protein = clamp1(Number(formData.get("protein")) || 0, 0, 9999);
+  const fat = clamp1(Number(formData.get("fat")) || 0, 0, 9999);
+  const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 9999);
   const kcal = kcalFromMacros(protein, fat, carbs);
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!dateStr) redirect("/micha");
@@ -108,9 +114,9 @@ export async function deleteDietLogAction(id: number): Promise<void> {
 export async function logScannedEntryAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const dateStr = String(formData.get("date") ?? "").trim();
-  const protein = clamp(Number(formData.get("protein")) || 0, 0, 9999);
-  const fat = clamp(Number(formData.get("fat")) || 0, 0, 9999);
-  const carbs = clamp(Number(formData.get("carbs")) || 0, 0, 9999);
+  const protein = clamp1(Number(formData.get("protein")) || 0, 0, 9999);
+  const fat = clamp1(Number(formData.get("fat")) || 0, 0, 9999);
+  const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 9999);
   const kcal = kcalFromMacros(protein, fat, carbs);
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!dateStr) redirect("/micha");
@@ -136,9 +142,9 @@ export async function addFoodProductAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const name = String(formData.get("name") ?? "").trim();
   if (name.length < 2) redirect("/micha");
-  const protein = clamp(Number(formData.get("protein")) || 0, 0, 999);
-  const fat = clamp(Number(formData.get("fat")) || 0, 0, 999);
-  const carbs = clamp(Number(formData.get("carbs")) || 0, 0, 999);
+  const protein = clamp1(Number(formData.get("protein")) || 0, 0, 999);
+  const fat = clamp1(Number(formData.get("fat")) || 0, 0, 999);
+  const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 999);
   const kcal = kcalFromMacros(protein, fat, carbs);
   const barcode = String(formData.get("barcode") ?? "").trim() || null;
   await db.insert(foodProducts).values({

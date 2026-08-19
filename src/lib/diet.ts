@@ -24,10 +24,24 @@ export function weekdayOf(date: Date): number {
   return day === 0 ? 7 : day;
 }
 
-/** kcal wyliczone z makroskładników: białko 4, węglowodany 4, tłuszcze 9 kcal/g. */
+/** kcal wyliczone z makroskładników: białko 4, węglowodany 4, tłuszcze 9 kcal/g.
+ *  Makro mogą mieć jedną cyfrę po przecinku (np. 6.1 g); kcal zaokrąglamy do całości. */
 export function kcalFromMacros(protein: number, fat: number, carbs: number): number {
-  const clamp = (v: number) => Math.max(0, Math.min(9999, Math.round(Number.isFinite(v) ? v : 0)));
-  return clamp(protein) * 4 + clamp(carbs) * 4 + clamp(fat) * 9;
+  const clamp = (v: number) => Math.max(0, Math.min(9999, Number.isFinite(v) ? v : 0));
+  return Math.round(clamp(protein) * 4 + clamp(carbs) * 4 + clamp(fat) * 9);
+}
+
+/** Formatuje makroskładnik z jedną cyfrą po przecinku (np. 6,1 g / 46 g). */
+export function formatMacro(n: number | null | undefined): string {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "0";
+  return v.toLocaleString("pl-PL", { maximumFractionDigits: 1 });
+}
+
+/** Zaokrągla do jednej cyfry po przecinku z zabezpieczeniem przed błędami
+ *  zmiennoprzecinkowymi (np. 6.1 * 1.5 = 9.149999… -> 9.2). */
+export function round1(n: number): number {
+  return Math.round((n + 1e-9) * 10) / 10;
 }
 
 const DEFAULT_MEAL_NAMES = [

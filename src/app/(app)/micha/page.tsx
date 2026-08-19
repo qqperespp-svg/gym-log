@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle2, Dumbbell, Plus, Sofa, UtensilsCrossed } from "
 import { db } from "@/db";
 import { dietGoals, dietLogs, foodProducts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, formatMacro, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
 import { addFoodProductAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
@@ -256,9 +256,9 @@ export default async function MichaPage({
                                 <span className="text-slate-600">—</span>
                               )}
                             </td>
-                            <td>{log.protein ?? 0} g</td>
-                            <td>{log.fat ?? 0} g</td>
-                            <td>{log.carbs ?? 0} g</td>
+                            <td>{formatMacro(log.protein)} g</td>
+                            <td>{formatMacro(log.fat)} g</td>
+                            <td>{formatMacro(log.carbs)} g</td>
                             <td className="font-bold text-lime-300">
                               {log.kcal.toLocaleString("pl-PL")}
                             </td>
@@ -347,15 +347,15 @@ export default async function MichaPage({
                       </label>
                       <label className="field-label">
                         Białko (g/100g)
-                        <input className="input" name="protein" type="number" min="0" step="1" required />
+                        <input className="input" name="protein" type="number" min="0" step="0.1" required />
                       </label>
                       <label className="field-label">
                         Tłuszcze (g/100g)
-                        <input className="input" name="fat" type="number" min="0" step="1" required />
+                        <input className="input" name="fat" type="number" min="0" step="0.1" required />
                       </label>
                       <label className="field-label">
                         Węglowodany (g/100g)
-                        <input className="input" name="carbs" type="number" min="0" step="1" required />
+                        <input className="input" name="carbs" type="number" min="0" step="0.1" required />
                       </label>
                       <label className="field-label">
                         Kod kreskowy (opcjonalnie)

@@ -20,8 +20,10 @@ export function MacroBar({
           {label}
         </span>
         <span className="text-xs font-extrabold text-white">
-          {consumed.toLocaleString("pl-PL")}{" "}
-          <span className="text-slate-500">/ {target.toLocaleString("pl-PL")} {unit}</span>
+          {consumed.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}{" "}
+          <span className="text-slate-500">
+            / {target.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} {unit}
+          </span>
         </span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.05]">
@@ -30,7 +32,7 @@ export function MacroBar({
       <p className={`mt-1.5 text-[10px] font-bold ${remaining > 0 ? "text-slate-400" : "text-lime-300"}`}>
         {target > 0
           ? remaining > 0
-            ? `zostało ${remaining.toLocaleString("pl-PL")} ${unit}`
+            ? `zostało ${remaining.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} ${unit}`
             : "osiągnięto cel 🎉"
           : "brak celu"}
       </p>

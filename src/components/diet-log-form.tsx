@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Beef, Croissant, Droplets, Plus, Scale, Search, X } from "lucide-react";
 import { logDietEntryAction } from "@/actions/diet";
-import { kcalFromMacros } from "@/lib/diet";
+import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
 import type { FoodProduct } from "@/db/schema";
 
 function formatKcal(n: number): string {
@@ -19,7 +19,7 @@ function norm(s: string): string {
     .trim();
 }
 
-const round = (n: number) => Math.round(n);
+
 
 export function DietLogForm({
   products,
@@ -42,9 +42,9 @@ export function DietLogForm({
   // Makro przeliczone na gramaturę (na 100 g → na podaną ilość).
   const computed = useMemo(
     () => ({
-      protein: round((Number(proteinPer100) || 0) * (g / 100)),
-      fat: round((Number(fatPer100) || 0) * (g / 100)),
-      carbs: round((Number(carbsPer100) || 0) * (g / 100)),
+      protein: round1((Number(proteinPer100) || 0) * (g / 100)),
+      fat: round1((Number(fatPer100) || 0) * (g / 100)),
+      carbs: round1((Number(carbsPer100) || 0) * (g / 100)),
     }),
     [proteinPer100, fatPer100, carbsPer100, g],
   );
@@ -163,8 +163,8 @@ export function DietLogForm({
               name="proteinPer100"
               type="number"
               min="0"
-              step="1"
-              placeholder="np. 20"
+              step="0.1"
+              placeholder="np. 20,5"
               value={proteinPer100}
               onFocus={(event) => event.target.select()}
               onChange={(event) => setProteinPer100(event.target.value)}
@@ -183,8 +183,8 @@ export function DietLogForm({
               name="fatPer100"
               type="number"
               min="0"
-              step="1"
-              placeholder="np. 5"
+              step="0.1"
+              placeholder="np. 5,5"
               value={fatPer100}
               onFocus={(event) => event.target.select()}
               onChange={(event) => setFatPer100(event.target.value)}
@@ -200,8 +200,8 @@ export function DietLogForm({
               name="carbsPer100"
               type="number"
               min="0"
-              step="1"
-              placeholder="np. 15"
+              step="0.1"
+              placeholder="np. 15,2"
               value={carbsPer100}
               onFocus={(event) => event.target.select()}
               onChange={(event) => setCarbsPer100(event.target.value)}
@@ -230,8 +230,8 @@ export function DietLogForm({
             Wpis na {Math.round(g).toLocaleString("pl-PL")} g
           </p>
           <p className="mt-0.5 text-sm text-slate-300">
-            <b className="text-lime-300">{formatKcal(kcal)} kcal</b> · B {computed.protein} g · T{" "}
-            {computed.fat} g · W {computed.carbs} g
+            <b className="text-lime-300">{formatKcal(kcal)} kcal</b> · B {formatMacro(computed.protein)} g · T{" "}
+            {formatMacro(computed.fat)} g · W {formatMacro(computed.carbs)} g
           </p>
         </div>
         <button type="submit" className="button-primary shrink-0">

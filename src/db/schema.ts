@@ -191,10 +191,10 @@ export const dietGoals = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     weekday: integer("weekday").notNull(), // 1 = poniedziałek ... 7 = niedziela
-    protein: integer("protein").notNull().default(0),
-    fat: integer("fat").notNull().default(0),
-    carbs: integer("carbs").notNull().default(0),
-    kcalGoal: integer("kcal_goal").notNull().default(0),
+    protein: doublePrecision("protein").notNull().default(0),
+    fat: doublePrecision("fat").notNull().default(0),
+    carbs: doublePrecision("carbs").notNull().default(0),
+    kcalGoal: doublePrecision("kcal_goal").notNull().default(0),
     trainingDay: integer("training_day").notNull().default(0), // 0 = dzień wolny, 1 = dzień treningowy
     meals: integer("meals").notNull().default(3), // liczba posiłków w danym dniu
     mealNames: text("meal_names"), // JSON: ["Śniadanie","Obiad","Kolacja",...]
@@ -214,10 +214,10 @@ export const dietLogs = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     date: timestamp("date").notNull(),
-    protein: integer("protein").notNull().default(0),
-    fat: integer("fat").notNull().default(0),
-    carbs: integer("carbs").notNull().default(0),
-    kcal: integer("kcal").notNull().default(0),
+    protein: doublePrecision("protein").notNull().default(0),
+    fat: doublePrecision("fat").notNull().default(0),
+    carbs: doublePrecision("carbs").notNull().default(0),
+    kcal: doublePrecision("kcal").notNull().default(0),
     mealNumber: integer("meal_number"), // 1..N — do którego posiłku dnia przypisany wpis
     note: text("note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -232,10 +232,10 @@ export const foodProducts = pgTable(
     userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }), // NULL = katalog globalny
     name: varchar("name", { length: 255 }).notNull(),
     barcode: varchar("barcode", { length: 64 }),
-    protein: integer("protein").notNull().default(0), // na 100 g
-    fat: integer("fat").notNull().default(0), // na 100 g
-    carbs: integer("carbs").notNull().default(0), // na 100 g
-    kcal: integer("kcal").notNull().default(0), // na 100 g
+    protein: doublePrecision("protein").notNull().default(0), // na 100 g
+    fat: doublePrecision("fat").notNull().default(0), // na 100 g
+    carbs: doublePrecision("carbs").notNull().default(0), // na 100 g
+    kcal: doublePrecision("kcal").notNull().default(0), // na 100 g
     isCustom: integer("is_custom").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

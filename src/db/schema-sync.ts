@@ -229,6 +229,55 @@ async function runSchemaSync(): Promise<void> {
       "food_products.user_id+barcode unique",
       sql`CREATE UNIQUE INDEX IF NOT EXISTS food_products_user_barcode_idx ON food_products (user_id, barcode)`,
     ],
+    // Makroskładniki z jedną cyfrą po przecinku (np. 6.1 g) — zmiana typu integer -> double precision.
+    [
+      "diet_goals.protein (double precision)",
+      sql`ALTER TABLE diet_goals ALTER COLUMN protein TYPE double precision`,
+    ],
+    [
+      "diet_goals.fat (double precision)",
+      sql`ALTER TABLE diet_goals ALTER COLUMN fat TYPE double precision`,
+    ],
+    [
+      "diet_goals.carbs (double precision)",
+      sql`ALTER TABLE diet_goals ALTER COLUMN carbs TYPE double precision`,
+    ],
+    [
+      "diet_goals.kcal_goal (double precision)",
+      sql`ALTER TABLE diet_goals ALTER COLUMN kcal_goal TYPE double precision`,
+    ],
+    [
+      "diet_logs.protein (double precision)",
+      sql`ALTER TABLE diet_logs ALTER COLUMN protein TYPE double precision`,
+    ],
+    [
+      "diet_logs.fat (double precision)",
+      sql`ALTER TABLE diet_logs ALTER COLUMN fat TYPE double precision`,
+    ],
+    [
+      "diet_logs.carbs (double precision)",
+      sql`ALTER TABLE diet_logs ALTER COLUMN carbs TYPE double precision`,
+    ],
+    [
+      "diet_logs.kcal (double precision)",
+      sql`ALTER TABLE diet_logs ALTER COLUMN kcal TYPE double precision`,
+    ],
+    [
+      "food_products.protein (double precision)",
+      sql`ALTER TABLE food_products ALTER COLUMN protein TYPE double precision`,
+    ],
+    [
+      "food_products.fat (double precision)",
+      sql`ALTER TABLE food_products ALTER COLUMN fat TYPE double precision`,
+    ],
+    [
+      "food_products.carbs (double precision)",
+      sql`ALTER TABLE food_products ALTER COLUMN carbs TYPE double precision`,
+    ],
+    [
+      "food_products.kcal (double precision)",
+      sql`ALTER TABLE food_products ALTER COLUMN kcal TYPE double precision`,
+    ],
   ];
 
   for (const [label, statement] of steps) {

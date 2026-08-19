@@ -168,7 +168,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       name={`protein-${n}`}
                       type="number"
                       min="0"
-                      step="1"
+                      step="0.1"
                       value={values[n].protein}
                       onFocus={(event) => event.target.select()}
                       onChange={(event) => setField(n, "protein", event.target.value)}
@@ -183,7 +183,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       name={`fat-${n}`}
                       type="number"
                       min="0"
-                      step="1"
+                      step="0.1"
                       value={values[n].fat}
                       onFocus={(event) => event.target.select()}
                       onChange={(event) => setField(n, "fat", event.target.value)}
@@ -198,7 +198,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       name={`carbs-${n}`}
                       type="number"
                       min="0"
-                      step="1"
+                      step="0.1"
                       value={values[n].carbs}
                       onFocus={(event) => event.target.select()}
                       onChange={(event) => setField(n, "carbs", event.target.value)}

@@ -1,10 +1,13 @@
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { Ruler, TrendingDown, TrendingUp } from "lucide-react";
 import { db } from "@/db";
 import { bodyMeasurements } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { saveBodyAction, updateBodyAction } from "@/actions/body";
+import { progressPhotos } from "@/db/schema";
+import { BodyCharts } from "@/components/body-charts";
+import { ProgressPhotos } from "@/components/progress-photos";
 import { DeleteMeasurementButton } from "@/components/delete-measurement-button";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +43,7 @@ export default async function BodyPage({
     .from(bodyMeasurements)
     .where(eq(bodyMeasurements.userId, user.id))
     .orderBy(desc(bodyMeasurements.date));
+  const photos = await db.select().from(progressPhotos).where(eq(progressPhotos.userId, user.id)).orderBy(asc(progressPhotos.date));
   const first = rows[rows.length - 1] ?? null;
   const latest = rows[0] ?? null;
   const editRow = editId > 0 ? (rows.find((row) => row.id === editId) ?? null) : null;
@@ -134,6 +138,18 @@ export default async function BodyPage({
           </form>
         </section>
       ) : null}
+
+      <section className="panel p-5 sm:p-7">
+        <h2 className="font-extrabold text-white mb-1">Wykresy pomiarów</h2>
+        <p className="mb-4 text-sm text-slate-500">Trend każdej metryki w czasie — wybierz poniżej.</p>
+        <BodyCharts rows={rows as unknown as Record<string, unknown>[]} />
+      </section>
+
+      <section className="panel p-5 sm:p-7">
+        <h2 className="font-extrabold text-white mb-1">Zdjęcia progresu</h2>
+        <p className="mb-4 text-sm text-slate-500">Fotki sylwetki przy pomiarach — porównanie „przed/po".</p>
+        <ProgressPhotos photos={photos} />
+      </section>
 
       <section className="panel p-5 sm:p-7">
         <h2 className="font-extrabold text-white mb-4">Wzrost (informacja)</h2>

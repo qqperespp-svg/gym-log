@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { asc, desc, eq, isNull, or } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, Plus, Sofa, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Dumbbell, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
-import { dietGoals, dietLogs, foodProducts, type DietLog } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, foodProducts, recipes, userFavorites, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, formatMacro, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
-import { addFoodProductAction } from "@/actions/diet";
+import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
@@ -13,6 +13,7 @@ import { MacroBar } from "@/components/macro-bar";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { FoodCatalogSearch } from "@/components/food-catalog-search";
 import { MichaTabs } from "@/components/micha-tabs";
+import { RecipeForm, RecipeItem } from "@/components/recipe-form";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function MichaPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [goals, logs, products] = await Promise.all([
+  const [goals, logs, products, measurements, recipeRows, favRows] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db
       .select()
@@ -35,7 +36,15 @@ export default async function MichaPage({
       .from(foodProducts)
       .where(or(eq(foodProducts.userId, user.id), isNull(foodProducts.userId)))
       .orderBy(asc(foodProducts.name)),
+    db
+      .select()
+      .from(bodyMeasurements)
+      .where(eq(bodyMeasurements.userId, user.id))
+      .orderBy(asc(bodyMeasurements.date)),
+    db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)),
+    db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)),
   ]);
+  const favoriteIds = new Set(favRows.map((f) => f.productId));
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
   const todayMeals = Math.max(1, Math.min(goalByWeekday.get(weekdayOf(new Date()))?.meals ?? 3, 10));
   const mealNamesByWeekday = new Map<number, string[]>();
@@ -235,7 +244,7 @@ export default async function MichaPage({
                         <th>Węgl.</th>
                         <th>kcal</th>
                         <th className="hidden md:table-cell">Cel dnia</th>
-                        <th className="hidden md:table-cell">Notatka</th>
+                        <th>Notatka</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -262,12 +271,10 @@ export default async function MichaPage({
                             <td className="font-bold text-lime-300">
                               {log.kcal.toLocaleString("pl-PL")}
                             </td>
-                            <td className="hidden md:table-cell">
+                            <td className="hidden text-slate-400 md:table-cell">
                               {goal ? `${goal.kcalGoal.toLocaleString("pl-PL")} kcal` : "—"}
                             </td>
-                            <td className="hidden text-slate-400 md:table-cell">
-                              {log.note ?? "—"}
-                            </td>
+                            <td className="text-slate-400">{log.note ?? "—"}</td>
                             <td className="flex gap-1">
                               <DeleteDietLogButton id={log.id} />
                             </td>
@@ -282,6 +289,88 @@ export default async function MichaPage({
                   <p className="text-sm text-slate-500">Brak wpisów. Dodaj pierwszy posiłek!</p>
                 </div>
               )}
+            </section>
+
+            {/* Analiza tygodnia */}
+            <section className="panel p-5 sm:p-7">
+              <h2 className="mb-4 flex items-center gap-2 font-extrabold text-white">
+                <TrendingUp size={18} className="text-lime-400" /> Analiza tygodnia
+              </h2>
+              {(() => {
+                const weights = measurements.filter((m) => m.weightKg != null).map((m) => ({ date: m.date, w: m.weightKg as number }));
+                const latest = weights[weights.length - 1]?.w ?? null;
+                const baseline = weights.find((m) => m.date < weekStart)?.w ?? weights[0]?.w ?? null;
+                const wDelta = latest != null && baseline != null ? latest - baseline : null;
+                const pctProtein = weekGoal.protein > 0 ? Math.round((weekSum.protein / weekGoal.protein) * 100) : null;
+                const pctKcal = weekGoal.kcal > 0 ? Math.round((weekSum.kcal / weekGoal.kcal) * 100) : null;
+                return (
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Waga</p>
+                      {wDelta == null ? (
+                        <p className="mt-1 text-sm text-slate-500">brak danych</p>
+                      ) : (
+                        <p className={`mt-1 flex items-center gap-1 text-lg font-black ${wDelta <= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                          {wDelta <= 0 ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
+                          {wDelta > 0 ? "+" : ""}{wDelta.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} kg
+                        </p>
+                      )}
+                      <p className="mt-1 text-[10px] text-slate-600">vs sprzed tygodnia</p>
+                    </div>
+                    <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Białko</p>
+                      <p className="mt-1 text-lg font-black text-sky-300">{pctProtein == null ? "—" : `${pctProtein}%`}</p>
+                      <p className="mt-1 text-[10px] text-slate-600">celu tygodnia ({formatMacro(weekSum.protein)}/{formatMacro(weekGoal.protein)} g)</p>
+                    </div>
+                    <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Kalorie</p>
+                      <p className="mt-1 text-lg font-black text-lime-300">{pctKcal == null ? "—" : `${pctKcal}%`}</p>
+                      <p className="mt-1 text-[10px] text-slate-600">celu tygodnia ({weekSum.kcal.toLocaleString("pl-PL")}/{weekGoal.kcal.toLocaleString("pl-PL")} kcal)</p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </section>
+
+            {/* Trend wagi */}
+            <section className="panel p-5 sm:p-7">
+              <h2 className="mb-4 flex items-center gap-2 font-extrabold text-white">
+                <Scale size={18} className="text-sky-400" /> Trend wagi
+              </h2>
+              {(() => {
+                const pts = measurements.filter((m) => m.weightKg != null).slice(-10);
+                if (pts.length < 2)
+                  return <p className="text-sm text-slate-500">Potrzebne co najmniej 2 pomiary wagi (zakładka Ciało).</p>;
+                const vals = pts.map((m) => m.weightKg as number);
+                const min = Math.min(...vals);
+                const max = Math.max(...vals);
+                const range = max - min || 1;
+                const w = 480;
+                const h = 120;
+                const coords = pts.map((m, i) => {
+                  const x = (i / (pts.length - 1)) * w;
+                  const y = h - ((m.weightKg as number) - min) / range * (h - 16) - 8;
+                  return `${x.toFixed(1)},${y.toFixed(1)}`;
+                });
+                return (
+                  <div>
+                    <svg viewBox={`0 0 ${w} ${h}`} className="w-full">
+                      <polyline points={coords.join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      {pts.map((m, i) => {
+                        const [x, y] = coords[i].split(",").map(Number);
+                        return <circle key={i} cx={x} cy={y} r="3.5" fill="#38bdf8" />;
+                      })}
+                    </svg>
+                    <div className="mt-2 flex justify-between text-[10px] text-slate-500">
+                      <span>{pts[0].date.toLocaleDateString("pl-PL")}</span>
+                      <span>
+                        {min.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} – {max.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} kg
+                      </span>
+                      <span>{pts[pts.length - 1].date.toLocaleDateString("pl-PL")}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </section>
           </>
         }
@@ -303,7 +392,31 @@ export default async function MichaPage({
                 Dodaj posiłek — wyszukaj produkt po nazwie w katalogu albo podaj makro ręcznie
                 (na 100 g), ustaw gramaturę i wybierz, do którego posiłku dnia go przypisać.
               </p>
-              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} />
+              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} favoriteIds={favoriteIds} />
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Posiłki złożone (przepisy)</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Zbuduj posiłek z produktów katalogu (np. „Obiad = kurczak 150 g + ryż 80 g"), a makro
+                zsumuje się automatycznie. Dodajesz go do dziennika jednym kliknięciem.
+              </p>
+              <div className="grid gap-5 xl:grid-cols-2">
+                <div className="rounded-2xl border border-white/[.07] bg-black/15 p-4">
+                  <p className="mb-3 text-xs font-black uppercase tracking-wider text-lime-400">Nowy przepis</p>
+                  <RecipeForm products={products} />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-black uppercase tracking-wider text-slate-500">Twoje przepisy</p>
+                  {recipeRows.length ? (
+                    recipeRows.map((r) => <RecipeItem key={r.id} recipe={r} />)
+                  ) : (
+                    <p className="rounded-xl border border-white/[.06] bg-black/15 p-4 text-sm text-slate-500">
+                      Brak przepisów — stwórz pierwszy po lewej.
+                    </p>
+                  )}
+                </div>
+              </div>
             </section>
 
             <section className="panel p-5 sm:p-7">
@@ -323,7 +436,7 @@ export default async function MichaPage({
               </p>
               <div className="grid gap-5 xl:grid-cols-2">
                 <div className="min-w-0">
-                  <FoodCatalogSearch products={products} userId={user.id} />
+                  <FoodCatalogSearch products={products} userId={user.id} favoriteIds={favoriteIds} />
                 </div>
                 <div className="min-w-0">
                   <form

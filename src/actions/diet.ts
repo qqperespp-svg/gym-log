@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { dietGoals, dietLogs, foodProducts } from "@/db/schema";
+import { dietGoals, dietLogs, foodProducts, progressPhotos, recipes, userFavorites } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, defaultMealName, kcalFromMacros } from "@/lib/diet";
 import { and, eq } from "drizzle-orm";
@@ -167,5 +167,109 @@ export async function deleteFoodProductAction(id: number): Promise<void> {
     .delete(foodProducts)
     .where(and(eq(foodProducts.id, id), eq(foodProducts.userId, user.id)));
   revalidatePath("/micha");
+  redirect("/micha?saved=1");
+}
+
+
+// ---------- Przepisy / posiłki złożone ----------
+
+export async function addRecipeAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const name = String(formData.get("name") ?? "").trim();
+  const itemsRaw = String(formData.get("items") ?? "[]");
+  if (name.length < 2) redirect("/micha?saved=1");
+  let items: Array<{ productId: number; grams: number; name: string; protein: number; fat: number; carbs: number; kcal: number }> = [];
+  try {
+    items = JSON.parse(itemsRaw);
+  } catch {
+    redirect("/micha?saved=1");
+  }
+  const sums = items.reduce(
+    (a, i) => ({
+      protein: a.protein + (i.protein || 0) * ((i.grams || 0) / 100),
+      fat: a.fat + (i.fat || 0) * ((i.grams || 0) / 100),
+      carbs: a.carbs + (i.carbs || 0) * ((i.grams || 0) / 100),
+      kcal: a.kcal + (i.kcal || 0) * ((i.grams || 0) / 100),
+    }),
+    { protein: 0, fat: 0, carbs: 0, kcal: 0 },
+  );
+  await db.insert(recipes).values({
+    userId: user.id,
+    name: name.slice(0, 160),
+    items: JSON.stringify(items),
+    protein: Math.round(sums.protein * 10) / 10,
+    fat: Math.round(sums.fat * 10) / 10,
+    carbs: Math.round(sums.carbs * 10) / 10,
+    kcal: Math.round(sums.kcal),
+  });
+  revalidatePath("/micha");
+  redirect("/micha?saved=1");
+}
+
+export async function deleteRecipeAction(id: number): Promise<void> {
+  const user = await requireUser();
+  await db.delete(recipes).where(and(eq(recipes.id, id), eq(recipes.userId, user.id)));
+  revalidatePath("/micha");
+  redirect("/micha?saved=1");
+}
+
+// ---------- Ulubione ----------
+
+export async function toggleFavoriteProductAction(id: number): Promise<void> {
+  const user = await requireUser();
+  const [existing] = await db
+    .select()
+    .from(userFavorites)
+    .where(and(eq(userFavorites.userId, user.id), eq(userFavorites.productId, id)))
+    .limit(1);
+  if (existing) {
+    await db.delete(userFavorites).where(eq(userFavorites.id, existing.id));
+  } else {
+    await db.insert(userFavorites).values({ userId: user.id, productId: id }).onConflictDoNothing();
+  }
+  revalidatePath("/micha");
+}
+
+// ---------- Zdjęcia progresu ----------
+
+export async function addProgressPhotoAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const photo = String(formData.get("photo") ?? "");
+  if (!photo || photo.length > 400000) redirect("/body");
+  const note = String(formData.get("note") ?? "").trim() || null;
+  await db.insert(progressPhotos).values({ userId: user.id, photo, note });
+  revalidatePath("/body");
+  redirect("/body?saved=1");
+}
+
+export async function deleteProgressPhotoAction(id: number): Promise<void> {
+  const user = await requireUser();
+  await db
+    .delete(progressPhotos)
+    .where(and(eq(progressPhotos.id, id), eq(progressPhotos.userId, user.id)));
+  revalidatePath("/body");
+}
+
+// ---------- Dodanie przepisu jako wpis spożycia jednym kliknięciem ----------
+
+export async function logRecipeAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(formData.get("id")) || 0;
+  const dateStr = String(formData.get("date") ?? "").trim();
+  const mealNumber = readMealNumber(formData);
+  const [recipe] = await db.select().from(recipes).where(and(eq(recipes.id, id), eq(recipes.userId, user.id))).limit(1);
+  if (!recipe) redirect("/micha?saved=1");
+  await db.insert(dietLogs).values({
+    userId: user.id,
+    date: new Date(`${dateStr || new Date().toISOString().slice(0, 10)}T12:00:00`),
+    protein: recipe.protein,
+    fat: recipe.fat,
+    carbs: recipe.carbs,
+    kcal: recipe.kcal,
+    mealNumber,
+    note: recipe.name,
+  });
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
   redirect("/micha?saved=1");
 }

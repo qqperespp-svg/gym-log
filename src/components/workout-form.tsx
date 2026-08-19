@@ -16,7 +16,7 @@ import { SubmitButton } from "@/components/submit-button";
 
 type LibraryItem = { id: number; name: string; muscleGroup: string; equipment: string };
 type SetRow = { key: string; reps: number; weight: number; rir: number | null; note: string; completed: boolean };
-type ExerciseRow = { key: string; definitionId: number; name: string; restSeconds: number; sets: SetRow[] };
+type ExerciseRow = { key: string; definitionId: number; name: string; restSeconds: number; grp: string | null; sets: SetRow[] };
 type Program = {
   id: number;
   name: string;
@@ -67,6 +67,7 @@ const makeExercise = (): ExerciseRow => ({
   definitionId: 0,
   name: "",
   restSeconds: 90,
+  grp: null,
   sets: [makeSet(), makeSet(), makeSet()],
 });
 
@@ -87,6 +88,7 @@ export function WorkoutForm({
     initial?.exercises.map((item) => ({
       ...item,
       key: crypto.randomUUID(),
+      grp: (item as { grp?: string | null }).grp ?? null,
       sets: item.sets.map((set) => makeSet(set)),
     })) ?? [makeExercise()],
   );
@@ -139,6 +141,7 @@ export function WorkoutForm({
         definitionId: item.definitionId,
         name: item.name,
         restSeconds: item.restSeconds,
+        grp: null,
         sets: previousSets(item.definitionId, item.targetSets, {
           reps: item.targetReps,
           weight: item.targetWeight,
@@ -168,6 +171,7 @@ export function WorkoutForm({
     definitionId: row.definitionId || null,
     name: row.name,
     restSeconds: row.restSeconds,
+    grp: row.grp,
     sets: row.sets.map((set) => ({
       reps: set.reps,
       weight: set.weight,

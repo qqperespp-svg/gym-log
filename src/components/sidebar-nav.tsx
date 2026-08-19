@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   CalendarDays,
   ChartNoAxesColumnIncreasing,
+  Droplets,
   Dumbbell,
   History,
   Layers3,
@@ -15,22 +16,14 @@ import {
   Menu,
   Plus,
   Ruler,
+  Settings,
   UtensilsCrossed,
   X,
 } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
+import { t, type Lang } from "@/lib/i18n";
 
-const links = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/workouts", label: "Treningi", icon: CalendarDays },
-  { href: "/programs", label: "Programy", icon: Layers3 },
-  { href: "/exercises", label: "Ćwiczenia", icon: LibraryBig },
-  { href: "/body", label: "Ciało", icon: Ruler },
-  { href: "/micha", label: "Micha", icon: UtensilsCrossed },
-  { href: "/history", label: "Historia", icon: History },
-];
-
-export function SidebarNav({ user }: { user: { name: string; email: string } }) {
+export function SidebarNav({ user, lang }: { user: { name: string; email: string }; lang: Lang }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const initials = user.name
@@ -39,6 +32,18 @@ export function SidebarNav({ user }: { user: { name: string; email: string } }) 
     .join("")
     .slice(0, 2)
     .toUpperCase();
+
+  const links = [
+    { href: "/dashboard", label: t(lang, "nav.dashboard"), icon: LayoutDashboard },
+    { href: "/workouts", label: t(lang, "nav.workouts"), icon: CalendarDays },
+    { href: "/programs", label: t(lang, "nav.programs"), icon: Layers3 },
+    { href: "/exercises", label: t(lang, "nav.exercises"), icon: LibraryBig },
+    { href: "/body", label: t(lang, "nav.body"), icon: Ruler },
+    { href: "/micha", label: t(lang, "nav.micha"), icon: UtensilsCrossed },
+    { href: "/nawodnienie", label: t(lang, "nav.hydration"), icon: Droplets },
+    { href: "/history", label: t(lang, "nav.history"), icon: History },
+    { href: "/settings", label: t(lang, "nav.settings"), icon: Settings },
+  ];
 
   const content = (
     <>
@@ -70,12 +75,12 @@ export function SidebarNav({ user }: { user: { name: string; email: string } }) 
           onClick={() => setOpen(false)}
           className="button-primary w-full justify-center py-2.5 text-sm"
         >
-          <Plus size={17} /> Nowy trening
+          <Plus size={17} /> {t(lang, "nav.newWorkout")}
         </Link>
       </div>
       <nav className="flex-1 space-y-1 px-5 py-7">
         <p className="mb-3 px-3 text-[10px] font-extrabold uppercase tracking-[.2em] text-slate-600">
-          Nawigacja
+          {lang === "en" ? "Navigation" : "Nawigacja"}
         </p>
         {links.map(({ href, label, icon: Icon }) => {
           const active =
@@ -104,7 +109,7 @@ export function SidebarNav({ user }: { user: { name: string; email: string } }) 
         </div>
         <form action={logoutAction}>
           <button className="nav-link w-full">
-            <LogOut size={18} /> Wyloguj się
+            <LogOut size={18} /> {t(lang, "nav.logout")}
           </button>
         </form>
       </div>

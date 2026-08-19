@@ -24,7 +24,7 @@ type SetRow = {
   note: string | null;
   completed: boolean;
 };
-type ExerciseRow = { id: number; name: string; restSeconds: number; sets: SetRow[] };
+type ExerciseRow = { id: number; name: string; restSeconds: number; grp: string | null; sets: SetRow[] };
 
 function SessionButtons() {
   const { pending } = useFormStatus();
@@ -110,7 +110,14 @@ export function WorkoutSession({
               <p className="text-[10px] font-black uppercase tracking-[.18em] text-slate-600">
                 Ćwiczenie {exerciseIndex + 1}
               </p>
-              <h2 className="font-extrabold text-white">{exercise.name}</h2>
+              <h2 className="flex items-center gap-2 font-extrabold text-white">
+                {exercise.name}
+                {exercise.grp && (
+                  <span className="rounded-full bg-sky-400/15 px-2 py-0.5 text-[10px] font-black text-sky-300 ring-1 ring-sky-400/30">
+                    Superseria {exercise.grp}
+                  </span>
+                )}
+              </h2>
             </div>
             <span className="hidden text-xs text-slate-500 sm:block">
               Przerwa {exercise.restSeconds}s

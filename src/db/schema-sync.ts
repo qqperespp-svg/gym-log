@@ -278,6 +278,94 @@ async function runSchemaSync(): Promise<void> {
       "food_products.kcal (double precision)",
       sql`ALTER TABLE food_products ALTER COLUMN kcal TYPE double precision`,
     ],
+    // ---- Rozszerzone funkcje: offline/sync, woda, przepisy, zdjęcia, ustawienia, superserie ----
+    [
+      "food_products.is_favorite",
+      sql`ALTER TABLE food_products ADD COLUMN IF NOT EXISTS is_favorite integer NOT NULL DEFAULT 0`,
+    ],
+    [
+      "exercises.grp",
+      sql`ALTER TABLE exercises ADD COLUMN IF NOT EXISTS grp varchar(8)`,
+    ],
+    [
+      "water_logs",
+      sql`
+        CREATE TABLE IF NOT EXISTS water_logs (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          date timestamp NOT NULL,
+          liters double precision NOT NULL DEFAULT 0,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "water_logs.user_id+date index",
+      sql`CREATE INDEX IF NOT EXISTS water_logs_user_date_idx ON water_logs (user_id, date)`,
+    ],
+    [
+      "recipes",
+      sql`
+        CREATE TABLE IF NOT EXISTS recipes (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name varchar(160) NOT NULL,
+          items text,
+          protein double precision NOT NULL DEFAULT 0,
+          fat double precision NOT NULL DEFAULT 0,
+          carbs double precision NOT NULL DEFAULT 0,
+          kcal double precision NOT NULL DEFAULT 0,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "recipes.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS recipes_user_idx ON recipes (user_id)`,
+    ],
+    [
+      "progress_photos",
+      sql`
+        CREATE TABLE IF NOT EXISTS progress_photos (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          date timestamp NOT NULL DEFAULT now(),
+          photo text,
+          note text,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "progress_photos.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS progress_photos_user_idx ON progress_photos (user_id)`,
+    ],
+    [
+      "user_settings",
+      sql`
+        CREATE TABLE IF NOT EXISTS user_settings (
+          user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          lang varchar(8) NOT NULL DEFAULT 'pl',
+          water_goal double precision NOT NULL DEFAULT 2.5,
+          reminders text,
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "user_favorites",
+      sql`
+        CREATE TABLE IF NOT EXISTS user_favorites (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          product_id integer NOT NULL REFERENCES food_products(id) ON DELETE CASCADE
+        )
+      `,
+    ],
+    [
+      "user_favorites unique",
+      sql`CREATE UNIQUE INDEX IF NOT EXISTS user_favorites_user_product_idx ON user_favorites (user_id, product_id)`,
+    ],
   ];
 
   for (const [label, statement] of steps) {

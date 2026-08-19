@@ -15,9 +15,10 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { db } from "@/db";
-import { bodyMeasurements, dietGoals, dietLogs, exercises, exerciseSets, workouts } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, exercises, exerciseSets, userSettings, waterLogs, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, startOfWeek, weekdayOf } from "@/lib/diet";
+import { Droplets } from "lucide-react";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
 import { DashboardTiles } from "@/components/dashboard-tiles";
 import { MacroBar } from "@/components/macro-bar";
@@ -215,9 +216,11 @@ export default async function DashboardPage({
   const hasMeasurements = measurementRows.length > 0;
 
   // ---------- Micha: cele i spożycie w bieżącym tygodniu ----------
-  const [goalRows, dietLogRows] = await Promise.all([
+  const [goalRows, dietLogRows, waterRows, settingsRows] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)),
+    db.select().from(waterLogs).where(eq(waterLogs.userId, user.id)),
+    db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1),
   ]);
   const goalByWeekday = new Map(goalRows.map((goal) => [goal.weekday, goal]));
   // Spożycie dzisiejsze (makro + kcal) oraz cel dzienny z flagą treningowy/wolny.
@@ -236,6 +239,10 @@ export default async function DashboardPage({
   );
   const todayWeekday = weekdayOf(now);
   const todayGoal = goalByWeekday.get(todayWeekday) ?? null;
+  const waterGoal = settingsRows[0]?.waterGoal ?? 2.5;
+  const todayWater = waterRows
+    .filter((w) => w.date >= todayStart && w.date < tomorrow)
+    .reduce((s, w) => s + (w.liters ?? 0), 0);
   const isTrainingDay = todayGoal?.trainingDay === 1;
   const anyDietData = dietLogRows.length > 0 || goalRows.length > 0;
 
@@ -450,9 +457,9 @@ export default async function DashboardPage({
           {
             id: "diet",
             label: "Micha",
-            defaultFull: true,
+            defaultSize: "l",
             node: (
-              <div className="panel p-5 sm:p-6">
+              <div className="panel p-5 sm:p-6" data-kcal-remaining={Math.max(0, (todayGoal?.kcalGoal ?? 0) - todaySum.kcal)}>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <UtensilsCrossed size={19} className="text-lime-400" />
@@ -513,6 +520,36 @@ export default async function DashboardPage({
                     <b>Micha</b>.
                   </p>
                 )}
+              </div>
+            ),
+          },
+          {
+            id: "water",
+            label: "Nawodnienie",
+            node: (
+              <div className="panel p-5 sm:p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 font-extrabold text-white">
+                    <Droplets size={19} className="text-sky-400" /> Nawodnienie
+                  </h2>
+                  <Link href="/nawodnienie" className="text-link">
+                    Otwórz <ArrowUpRight size={15} />
+                  </Link>
+                </div>
+                <div className="flex items-end justify-between">
+                  <b className="text-2xl font-black text-sky-300">
+                    {todayWater.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} l
+                  </b>
+                  <span className="text-xs text-slate-500">
+                    cel {waterGoal.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} l
+                  </span>
+                </div>
+                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/[.05]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-sky-500 to-sky-300 transition-all"
+                    style={{ width: `${Math.min(100, Math.round((todayWater / waterGoal) * 100))}%` }}
+                  />
+                </div>
               </div>
             ),
           },

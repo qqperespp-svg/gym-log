@@ -138,6 +138,7 @@ export const exercises = pgTable(
     reps: integer("reps").notNull(),
     weight: doublePrecision("weight").notNull().default(0),
     restSeconds: integer("rest_seconds").notNull().default(90),
+    grp: varchar("grp", { length: 8 }), // grupa superserii: A/B/C/...
   },
   (table) => [index("exercises_workout_idx").on(table.workoutId)],
 );
@@ -237,6 +238,7 @@ export const foodProducts = pgTable(
     carbs: doublePrecision("carbs").notNull().default(0), // na 100 g
     kcal: doublePrecision("kcal").notNull().default(0), // na 100 g
     isCustom: integer("is_custom").notNull().default(0),
+    isFavorite: integer("is_favorite").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
@@ -244,6 +246,80 @@ export const foodProducts = pgTable(
     index("food_products_name_idx").on(table.name),
     uniqueIndex("food_products_user_barcode_idx").on(table.userId, table.barcode),
   ],
+);
+
+export const waterLogs = pgTable(
+  "water_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    date: timestamp("date").notNull(),
+    liters: doublePrecision("liters").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("water_logs_user_date_idx").on(table.userId, table.date)],
+);
+
+export const recipes = pgTable(
+  "recipes",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 160 }).notNull(),
+    items: text("items"), // JSON: [{productId, grams, name}]
+    protein: doublePrecision("protein").notNull().default(0),
+    fat: doublePrecision("fat").notNull().default(0),
+    carbs: doublePrecision("carbs").notNull().default(0),
+    kcal: doublePrecision("kcal").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("recipes_user_idx").on(table.userId)],
+);
+
+export const progressPhotos = pgTable(
+  "progress_photos",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    date: timestamp("date").notNull().defaultNow(),
+    photo: text("photo"), // data URI (skompresowane zdjęcie)
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("progress_photos_user_idx").on(table.userId)],
+);
+
+export const userFavorites = pgTable(
+  "user_favorites",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => foodProducts.id, { onDelete: "cascade" }),
+  },
+  (table) => [uniqueIndex("user_favorites_user_product_idx").on(table.userId, table.productId)],
+);
+
+export const userSettings = pgTable(
+  "user_settings",
+  {
+    userId: integer("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lang: varchar("lang", { length: 8 }).notNull().default("pl"),
+    waterGoal: doublePrecision("water_goal").notNull().default(2.5), // litry dziennie
+    reminders: text("reminders"), // JSON: [{type:'water'|'meal', time:'12:00'}]
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
 );
 
 export type User = typeof users.$inferSelect;
@@ -257,3 +333,8 @@ export type BodyMeasurement = typeof bodyMeasurements.$inferSelect;
 export type DietGoal = typeof dietGoals.$inferSelect;
 export type DietLog = typeof dietLogs.$inferSelect;
 export type FoodProduct = typeof foodProducts.$inferSelect;
+export type WaterLog = typeof waterLogs.$inferSelect;
+export type Recipe = typeof recipes.$inferSelect;
+export type ProgressPhoto = typeof progressPhotos.$inferSelect;
+export type UserSettings = typeof userSettings.$inferSelect;
+export type UserFavorite = typeof userFavorites.$inferSelect;

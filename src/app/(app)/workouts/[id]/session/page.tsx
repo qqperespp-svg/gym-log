@@ -29,6 +29,7 @@ export default async function WorkoutSessionPage({
       exerciseId: exercises.id,
       name: exercises.name,
       restSeconds: exercises.restSeconds,
+      grp: exercises.grp,
       position: exercises.position,
       setId: exerciseSets.id,
       setNumber: exerciseSets.setNumber,
@@ -49,6 +50,7 @@ export default async function WorkoutSessionPage({
           id: row.exerciseId,
           name: row.name,
           restSeconds: row.restSeconds,
+          grp: row.grp ?? null,
           position: row.position,
           sets: [] as Array<{
             id: number;
@@ -71,7 +73,7 @@ export default async function WorkoutSessionPage({
         });
         map.set(row.exerciseId, current);
         return map;
-      }, new Map<number, { id: number; name: string; restSeconds: number; position: number; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: number | null; note: string | null; completed: boolean }> }>())
+      }, new Map<number, { id: number; name: string; restSeconds: number; grp: string | null; position: number; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: number | null; note: string | null; completed: boolean }> }>())
       .values(),
   ).sort((a, b) => a.position - b.position);
   return (

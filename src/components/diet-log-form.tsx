@@ -1,14 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Beef, Croissant, Droplets, Plus, Scale, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Beef, Croissant, Droplets, Plus, Search, Star, X } from "lucide-react";
 import { logDietEntryAction } from "@/actions/diet";
 import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
+import { suggestMealByHour } from "@/lib/i18n";
+import { enqueue } from "@/lib/offline-queue";
+import { productLabels } from "@/lib/labels";
 import type { FoodProduct } from "@/db/schema";
-
-function formatKcal(n: number): string {
-  return n.toLocaleString("pl-PL");
-}
 
 function norm(s: string): string {
   return s
@@ -19,27 +18,33 @@ function norm(s: string): string {
     .trim();
 }
 
-
-
 export function DietLogForm({
   products,
   meals,
   mealNames,
+  favoriteIds,
 }: {
   products: FoodProduct[];
   meals: number;
   mealNames: string[];
+  favoriteIds?: Set<number>;
 }) {
   const [proteinPer100, setProteinPer100] = useState("");
   const [fatPer100, setFatPer100] = useState("");
   const [carbsPer100, setCarbsPer100] = useState("");
   const [grams, setGrams] = useState("100");
   const [note, setNote] = useState("");
-  const [meal, setMeal] = useState("1");
+  const [meal, setMeal] = useState(() => String(suggestMealByHour()));
   const [query, setQuery] = useState("");
+  const [offlineNote, setOfflineNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onSynced = () => setOfflineNote("Zsynchronizowano wpisy offline. ✅");
+    window.addEventListener("gymrat:synced", onSynced);
+    return () => window.removeEventListener("gymrat:synced", onSynced);
+  }, []);
 
   const g = Math.max(0, Number(grams) || 0);
-  // Makro przeliczone na gramaturę (na 100 g → na podaną ilość).
   const computed = useMemo(
     () => ({
       protein: round1((Number(proteinPer100) || 0) * (g / 100)),
@@ -53,25 +58,68 @@ export function DietLogForm({
     [computed],
   );
 
+  const favorites = useMemo(
+    () => (favoriteIds ? products.filter((p) => favoriteIds.has(p.id)) : []),
+    [products, favoriteIds],
+  );
   const matches = useMemo(() => {
     const q = norm(query);
     if (q.length < 2) return [];
     return products.filter((p) => norm(p.name).includes(q)).slice(0, 8);
   }, [query, products]);
 
-  function pickProduct(p: FoodProduct) {
+  function fill(p: FoodProduct, gramsValue = "100") {
     setProteinPer100(String(p.protein));
     setFatPer100(String(p.fat));
     setCarbsPer100(String(p.carbs));
+    setGrams(gramsValue);
     setNote(p.barcode ? `${p.name} (${p.barcode})` : p.name);
     setQuery("");
+  }
+
+  async function submit(formData: FormData) {
+    if (!navigator.onLine) {
+      await enqueue({
+        kind: "diet",
+        date: String(formData.get("date") ?? new Date().toISOString().slice(0, 10)),
+        protein: computed.protein,
+        fat: computed.fat,
+        carbs: computed.carbs,
+        kcal,
+        mealNumber: Number(formData.get("meal")) || null,
+        note: String(formData.get("note") ?? "") || null,
+      });
+      setOfflineNote("Brak internetu — wpis zapisany lokalnie, zsynchronizuje się później. 📶");
+      return;
+    }
+    await logDietEntryAction(formData);
   }
 
   const mealOptions = Array.from({ length: Math.max(1, Math.min(meals, 10)) }, (_, i) => i + 1);
   const mealLabel = (m: number) => mealNames[m - 1] || `Posiłek ${m}`;
 
   return (
-    <form action={logDietEntryAction} className="space-y-4">
+    <form action={submit} className="space-y-4">
+      {favorites.length > 0 && (
+        <div className="rounded-xl border border-amber-400/15 bg-amber-400/[.05] p-3">
+          <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-amber-300/80">
+            <Star size={12} /> Ulubione — dodaj jednym kliknięciem
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {favorites.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => fill(p, "100")}
+                className="rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200 transition hover:bg-amber-400/20"
+              >
+                {p.name.slice(0, 24)} · {p.kcal} kcal
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
         <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
           <Search size={12} className="text-lime-400" /> Znajdź produkt z katalogu (po nazwie)
@@ -97,22 +145,31 @@ export function DietLogForm({
         </div>
         {matches.length > 0 && (
           <div className="mt-2 space-y-1">
-            {matches.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => pickProduct(p)}
-                className="flex w-full items-center justify-between gap-2 rounded-lg bg-white/[.03] px-3 py-2 text-left transition hover:bg-lime-400/10"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-bold text-white">{p.name}</span>
-                  {p.barcode && <span className="text-[10px] text-slate-500">kod: {p.barcode}</span>}
-                </span>
-                <span className="shrink-0 text-[11px] font-bold text-slate-400">
-                  {p.kcal} kcal · B{p.protein} T{p.fat} W{p.carbs}
-                </span>
-              </button>
-            ))}
+            {matches.map((p) => {
+              const labels = productLabels(p.protein, p.fat, p.carbs);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => fill(p)}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg bg-white/[.03] px-3 py-2 text-left transition hover:bg-lime-400/10"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-bold text-white">{p.name}</span>
+                    <span className="flex flex-wrap gap-1">
+                      {labels.slice(0, 2).map((l) => (
+                        <span key={l.key} className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${l.color}`}>
+                          {l.pl}
+                        </span>
+                      ))}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[11px] font-bold text-slate-400">
+                    {p.kcal} kcal · B{p.protein} T{p.fat} W{p.carbs}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -120,13 +177,7 @@ export function DietLogForm({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="field-label">
           Data
-          <input
-            type="date"
-            name="date"
-            defaultValue={new Date().toISOString().slice(0, 10)}
-            className="input"
-            required
-          />
+          <input type="date" name="date" defaultValue={new Date().toISOString().slice(0, 10)} className="input" required />
         </label>
         <label className="field-label">
           Posiłek
@@ -143,7 +194,7 @@ export function DietLogForm({
         <label className="field-label">
           Gramatura (g)
           <span className="input-shell !min-h-12">
-            <Scale size={16} />
+            <ScaleIcon />
             <input
               type="number"
               min="0"
@@ -223,26 +274,36 @@ export function DietLogForm({
         </label>
       </div>
 
-      {/* Podsumowanie wpisu przeliczone na gramaturę */}
       <div className="flex items-end justify-between gap-4 rounded-2xl border border-lime-400/15 bg-lime-400/[.06] px-4 py-3">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-wider text-lime-400/70">
             Wpis na {Math.round(g).toLocaleString("pl-PL")} g
           </p>
           <p className="mt-0.5 text-sm text-slate-300">
-            <b className="text-lime-300">{formatKcal(kcal)} kcal</b> · B {formatMacro(computed.protein)} g · T{" "}
-            {formatMacro(computed.fat)} g · W {formatMacro(computed.carbs)} g
+            <b className="text-lime-300">{kcal.toLocaleString("pl-PL")} kcal</b> · B {formatMacro(computed.protein)} g · T {formatMacro(computed.fat)} g · W {formatMacro(computed.carbs)} g
           </p>
+          {offlineNote && <p className="mt-1 text-xs text-sky-300">{offlineNote}</p>}
         </div>
         <button type="submit" className="button-primary shrink-0">
           <Plus size={17} /> Dodaj
         </button>
       </div>
 
-      {/* Przesyłane wartości = makro przeliczone na gramaturę */}
       <input type="hidden" name="protein" value={computed.protein} />
       <input type="hidden" name="fat" value={computed.fat} />
       <input type="hidden" name="carbs" value={computed.carbs} />
     </form>
+  );
+}
+
+function ScaleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
+      <path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z" />
+      <path d="M7 21h10" />
+      <path d="M12 3v18" />
+      <path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2" />
+    </svg>
   );
 }

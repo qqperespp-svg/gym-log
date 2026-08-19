@@ -22,6 +22,7 @@ type SerializedExercise = {
   definitionId: number | null;
   name: string;
   restSeconds: number;
+  grp?: string | null;
   sets: SerializedSet[];
 };
 type SerializedWorkout = {
@@ -89,6 +90,7 @@ async function insertWorkoutExercises(workoutId: number, data: SerializedWorkout
         reps: row.sets[0]?.reps ?? 0,
         weight: row.sets[0]?.weight ?? 0,
         restSeconds: clamp(row.restSeconds, 0, 600),
+        grp: row.grp ? String(row.grp).slice(0, 8) : null,
       })
       .returning();
     await db.insert(exerciseSets).values(

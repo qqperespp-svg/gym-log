@@ -117,7 +117,10 @@ export function SidebarNav({
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => applyTheme(theme === "dark" ? "light" : "dark", accent)}
+              onClick={() => {
+                const current = (document.documentElement.getAttribute("data-theme") as Theme) || theme;
+                applyTheme(current === "dark" ? "light" : "dark", accent);
+              }}
               className="grid size-9 place-items-center rounded-lg text-slate-300 transition hover:bg-white/10 hover:text-white"
               title={theme === "dark" ? "Włącz jasny motyw" : "Włącz ciemny motyw"}
               aria-label="Przełącz motyw jasny/ciemny"
@@ -139,7 +142,10 @@ export function SidebarNav({
               <button
                 key={key}
                 type="button"
-                onClick={() => applyTheme(theme, key)}
+                onClick={() => {
+                  const current = (document.documentElement.getAttribute("data-theme") as Theme) || theme;
+                  applyTheme(current, key);
+                }}
                 className={`size-5 rounded-full transition ${accent === key ? "ring-2 ring-white/70" : "hover:scale-110"}`}
                 style={{ backgroundColor: color }}
                 title={`Kolor motywu: ${key}`}

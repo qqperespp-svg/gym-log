@@ -102,35 +102,19 @@ export async function POST(request: Request) {
     return Response.json({ error: "Nie udało się odczytać zdjęcia." }, { status: 400 });
   }
 
-  // Wywołanie Google Gemini — próbuj kolejnych aktualnych modeli, aż któryś zadziała.
-  // (starsze modele, np. gemini-1.5-flash, są wycofywane przez Google i mogą zwracać 404)
-  const defaultModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash"];
-  const models = (process.env.GEMINI_MODEL || "").trim()
-    ? [process.env.GEMINI_MODEL!.trim()]
-    : defaultModels;
+  // ---------- Wybór modelu Gemini ----------
+  // Najpierw odczytujemy listę modeli dostępnych dla Twojego klucza i wybieramy
+  // najlepszy (zamiast zgadywać nazwy — starsze bywają wycofywane).
+  let model = await pickModel(apiKey);
 
+  // Wywołanie generowania.
   let lastDetail = "";
-  for (const model of models) {
+  for (const attempt of [model, ...(model === null ? [] : [null])]) {
+    const m = attempt ?? model;
+    if (!m) break;
     let res: Response;
     try {
-      res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { inlineData: { mimeType: mime, data: base64 } },
-                  { text: PROMPT },
-                ],
-              },
-            ],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
-          }),
-        },
-      );
+      res = await callGemini(m, apiKey, mime, base64);
     } catch {
       lastDetail = "Brak połączenia z AI — spróbuj ponownie.";
       continue;
@@ -145,12 +129,12 @@ export async function POST(request: Request) {
       if (!items.length) {
         return Response.json({ error: "Nie wykryto jedzenia na zdjęciu." }, { status: 422 });
       }
-      return Response.json({ items, model });
+      return Response.json({ items, model: m });
     }
 
     const detail = await res.text().catch(() => "");
-    lastDetail = `Model ${model}: ${detail.slice(0, 140)}`;
-    if (res.status !== 404) break; // inny błąd (auth, limit) — nie ma sensu próbować dalej
+    lastDetail = `Model ${m}: ${detail.slice(0, 140)}`;
+    if (res.status !== 404) break; // inny błąd (auth, limit) — dalsze próby nie pomogą
   }
 
   return Response.json(
@@ -158,9 +142,82 @@ export async function POST(request: Request) {
       error:
         "AI nie odpowiedziało poprawnie. " +
         lastDetail +
-        " (możesz wskazać model zmienną GEMINI_MODEL w Vercel, np. gemini-2.0-flash)",
+        " (sprawdź GEMINI_API_KEY i spróbuj ponownie; możesz też wymusić model zmienną GEMINI_MODEL)",
     },
     { status: 502 },
   );
+}
 
+// Pamięć podręczna wybranego modelu (per klucz) — nie listujemy przy każdym zdjęciu.
+const modelCache = new Map<string, string | null>();
+
+const PRIORITY = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.5-pro",
+  "gemini-1.5-flash-latest",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro-latest",
+];
+
+async function pickModel(apiKey: string): Promise<string | null> {
+  if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL.trim();
+  if (modelCache.has(apiKey)) return modelCache.get(apiKey)!;
+
+  let chosen: string | null = null;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+      { headers: { "Content-Type": "application/json" } },
+    );
+    if (res.ok) {
+      const data = (await res.json()) as { models?: Array<{ name?: string }> };
+      const names = (data.models ?? []).map((m) => String(m.name ?? "").replace(/^models\//, ""));
+      for (const p of PRIORITY) {
+        if (names.includes(p)) {
+          chosen = p;
+          break;
+        }
+      }
+      if (!chosen) {
+        const flash = names.filter((n) => n.includes("flash") && n.startsWith("gemini"));
+        chosen = flash[0] ?? names.find((n) => n.startsWith("gemini")) ?? null;
+      }
+    }
+  } catch {
+    chosen = null;
+  }
+  modelCache.set(apiKey, chosen);
+  return chosen;
+}
+
+async function callGemini(model: string, apiKey: string, mime: string, base64: string): Promise<Response> {
+  // Próbuj v1beta, a jeśli model w nim nie istnieje — v1 (różni klienci mają różną dostępność).
+  for (const version of ["v1beta", "v1"]) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/${version}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { inlineData: { mimeType: mime, data: base64 } },
+                { text: PROMPT },
+              ],
+            },
+          ],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+        }),
+      },
+    );
+    if (res.ok || res.status !== 404) return res; // sukces albo błąd nie-404
+  }
+  // oba wersje dały 404 — zwróć ostatnią odpowiedź
+  const last = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: "ping" }] }] }) },
+  );
+  return last;
 }

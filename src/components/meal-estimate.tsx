@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Camera, LoaderCircle, Plus, Sparkles, X } from "lucide-react";
+import { Camera, ImageUp, LoaderCircle, Plus, Sparkles, X } from "lucide-react";
 import { logMealEstimateAction } from "@/actions/diet";
 import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
 
@@ -92,7 +92,18 @@ export function MealEstimate({ meals, mealNames }: { meals: number; mealNames: s
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <label className="button-primary cursor-pointer">
-          <Sparkles size={16} /> Zeszacuj posiłek ze zdjęcia
+          <Camera size={16} /> Zrób zdjęcie posiłku
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            disabled={loading}
+            onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        <label className="button-secondary cursor-pointer">
+          <ImageUp size={16} /> Wgraj z galerii
           <input
             type="file"
             accept="image/*"

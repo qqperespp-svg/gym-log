@@ -1,0 +1,150 @@
+import { getSessionUser } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
+
+// Prosty limit: maks. 1 zdjęcie na 5 s na użytkownika.
+const RATE_MS = 5000;
+const lastCall = new Map<number, number>();
+
+const PROMPT = `Jesteś dietetykiem. Na podstawie zdjęcia posiłku oszacuj jego składniki.
+Odpowiedz WYŁĄCZNIE poprawnym JSON (bez żadnego dodatkowego tekstu ani znaczników), w formacie:
+[{"nazwa":"Pierś z kurczaka","gramy":150,"bialko_na_100g":30,"tluszcze_na_100g":3,"weglowodany_na_100g":0,"kcal_na_100g":140}]
+Wymagania:
+- Wypisz tylko produkty widoczne na zdjęciu (osobno każdy składnik).
+- "gramy" = szacunkowa ilość danego składnika w posiłku.
+- Makro i kcal podaj NA 100 GRAMÓW produktu (wartości przybliżone).
+- Jeśli na zdjęciu nie widać jedzenia, odpowiedz: []
+- Używaj polskich nazw produktów.`;
+
+type EstimateItem = {
+  name: string;
+  grams: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+  kcal: number;
+};
+
+function clamp(v: unknown, max = 999): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(max, n)) : 0;
+}
+
+function parseItems(text: string): EstimateItem[] {
+  const cleaned = text.replace(/```(?:json)?/gi, "").trim();
+  let arr: unknown;
+  try {
+    arr = JSON.parse(cleaned);
+  } catch {
+    const m = cleaned.match(/\[[\s\S]*\]/);
+    if (!m) return [];
+    try {
+      arr = JSON.parse(m[0]);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((it) => {
+      const o = it as Record<string, unknown>;
+      return {
+        name: String(o.nazwa ?? o.name ?? "Produkt").slice(0, 120),
+        grams: Math.round(clamp(o.gramy ?? o.grams, 2000)),
+        protein: Math.round(clamp(o.bialko_na_100g ?? o.protein, 100) * 10) / 10,
+        fat: Math.round(clamp(o.tluszcze_na_100g ?? o.fat, 100) * 10) / 10,
+        carbs: Math.round(clamp(o.weglowodany_na_100g ?? o.carbs, 100) * 10) / 10,
+        kcal: Math.round(clamp(o.kcal_na_100g ?? o.kcal, 900)),
+      };
+    })
+    .filter((it) => it.name && it.grams > 0);
+}
+
+export async function POST(request: Request) {
+  const user = await getSessionUser();
+  if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
+
+  const now = Date.now();
+  const last = lastCall.get(user.id) ?? 0;
+  if (now - last < RATE_MS) {
+    return Response.json({ error: "Poczekaj chwilę przed wysłaniem kolejnego zdjęcia." }, { status: 429 });
+  }
+  lastCall.set(user.id, now);
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return Response.json(
+      { error: "AI nie jest skonfigurowane — dodaj GEMINI_API_KEY w Vercel (Settings → Environment Variables)." },
+      { status: 503 },
+    );
+  }
+
+  // Odczyt zdjęcia (multipart albo JSON z base64).
+  let mime = "image/jpeg";
+  let base64 = "";
+  const contentType = request.headers.get("content-type") ?? "";
+  try {
+    if (contentType.includes("multipart/form-data")) {
+      const fd = await request.formData();
+      const file = fd.get("image");
+      if (!(file instanceof File)) return Response.json({ error: "Brak zdjęcia." }, { status: 400 });
+      mime = file.type || "image/jpeg";
+      const buf = Buffer.from(await file.arrayBuffer());
+      if (buf.length > 4_000_000) return Response.json({ error: "Zdjęcie jest za duże (max 4 MB)." }, { status: 400 });
+      base64 = buf.toString("base64");
+    } else {
+      const body = await request.json();
+      base64 = String(body.image ?? "");
+      mime = String(body.mime ?? "image/jpeg");
+      if (!base64 || base64.length > 6_000_000) return Response.json({ error: "Zdjęcie jest za duże lub puste." }, { status: 400 });
+    }
+  } catch {
+    return Response.json({ error: "Nie udało się odczytać zdjęcia." }, { status: 400 });
+  }
+
+  // Wywołanie Google Gemini.
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { inlineData: { mimeType: mime, data: base64 } },
+                { text: PROMPT },
+              ],
+            },
+          ],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+        }),
+      },
+    );
+  } catch {
+    return Response.json({ error: "Brak połączenia z AI — spróbuj ponownie." }, { status: 502 });
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    return Response.json(
+      { error: "AI nie odpowiedziało poprawnie. Spróbuj ponownie." + (detail ? ` (${detail.slice(0, 160)})` : "") },
+      { status: 502 },
+    );
+  }
+
+  const data = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const text =
+    data?.candidates?.[0]?.content?.parts
+      ?.map((p) => p.text ?? "")
+      .join("") ?? "";
+  const items = parseItems(text);
+  if (!items.length) {
+    return Response.json({ error: "Nie wykryto jedzenia na zdjęciu." }, { status: 422 });
+  }
+  return Response.json({ items });
+}

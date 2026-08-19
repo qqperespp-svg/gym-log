@@ -273,3 +273,37 @@ export async function logRecipeAction(formData: FormData): Promise<void> {
   revalidatePath("/dashboard");
   redirect("/micha?saved=1");
 }
+
+// ---------- Szacowanie ze zdjęcia (AI/Gemini) — dodanie wykrytych produktów ----------
+
+export async function logMealEstimateAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const dateStr = String(formData.get("date") ?? "").trim();
+  const mealNumber = readMealNumber(formData);
+  let items: Array<{ name: string; grams: number; protein: number; fat: number; carbs: number; kcal: number }> = [];
+  try {
+    items = JSON.parse(String(formData.get("items") ?? "[]"));
+  } catch {
+    redirect("/micha?saved=1");
+  }
+  if (!dateStr || !items.length) redirect("/micha?saved=1");
+  for (const it of items) {
+    const g = Math.max(0, Number(it.grams) || 0) / 100;
+    const protein = Math.round((Number(it.protein) || 0) * g * 10) / 10;
+    const fat = Math.round((Number(it.fat) || 0) * g * 10) / 10;
+    const carbs = Math.round((Number(it.carbs) || 0) * g * 10) / 10;
+    await db.insert(dietLogs).values({
+      userId: user.id,
+      date: new Date(`${dateStr}T12:00:00`),
+      protein,
+      fat,
+      carbs,
+      kcal: kcalFromMacros(protein, fat, carbs),
+      mealNumber,
+      note: String(it.name ?? "Posiłek").slice(0, 200),
+    });
+  }
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+  redirect("/micha?saved=1");
+}

@@ -14,6 +14,7 @@ import { BarcodeScanner } from "@/components/barcode-scanner";
 import { FoodCatalogSearch } from "@/components/food-catalog-search";
 import { MichaTabs } from "@/components/micha-tabs";
 import { TdeeCalculator } from "@/components/tdee-calculator";
+import { MealEstimate } from "@/components/meal-estimate";
 import { RecipeForm, RecipeItem } from "@/components/recipe-form";
 
 export const dynamic = "force-dynamic";
@@ -385,6 +386,15 @@ export default async function MichaPage({
                 wybierz numer posiłku i dodaj do dziennika.
               </p>
               <BarcodeScanner products={products} meals={todayMeals} mealNames={todayMealNames} />
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">Zeszacuj posiłek ze zdjęcia (AI)</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Zrób zdjęcie talerza, a Google Gemini rozpozna składniki i oszacuje makro oraz kcal.
+                Wymaga skonfigurowanego klucza <b>GEMINI_API_KEY</b> w Vercel.
+              </p>
+              <MealEstimate meals={todayMeals} mealNames={todayMealNames} />
             </section>
 
             <section className="panel p-5 sm:p-7">

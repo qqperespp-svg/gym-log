@@ -71,10 +71,25 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
   };
 
   try {
-    const stepsData = await aggregate(
-      "com.google.step_count.delta",
+    // Wybierz źródło kroków = ta sama liczba, którą pokazuje Google Fit.
+    // `merge_step_deltas` SUmuje kroki ze wszystkich urządzeń (np. Google Health
+    // + Mi Fitness), co zawyża wynik ~2x; `estimated_steps` to pojedyncza
+    // najlepsza estymata Google — zgodna z aplikacją Google Fit.
+    const stepSources = [
+      "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps",
       "derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas",
-    );
+    ];
+    let stepsData: Awaited<ReturnType<typeof aggregate>> | null = null;
+    for (const ds of stepSources) {
+      const data = await aggregate("com.google.step_count.delta", ds);
+      const sum = (data.bucket ?? []).reduce(
+        (s, b) => s + (b.dataset?.[0]?.point ?? []).reduce((x, p) => x + (p.value?.[0]?.intVal ?? p.value?.[0]?.fpVal ?? 0), 0),
+        0,
+      );
+      if (sum > 0) { stepsData = data; break; }
+    }
+    if (!stepsData) stepsData = await aggregate("com.google.step_count.delta", stepSources[1]);
+
     let totalSteps = 0;
     for (const bucket of stepsData.bucket ?? []) {
       // bucket.startTimeMillis = początek lokalnego dnia; data = lokalne południe (start + 12 h).

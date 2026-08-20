@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
-import { ChevronDown, Dumbbell, GripVertical, Plus, Save, Trash2 } from "lucide-react";
+import { Check, Dumbbell, GripVertical, Plus, Save, Search, Trash2, X } from "lucide-react";
 import type { ProgramFormState } from "@/actions/programs";
 import { SubmitButton } from "@/components/submit-button";
 
@@ -11,22 +11,33 @@ type Row = {
   key: string;
   definitionId: number;
   name: string;
+  query: string;
   targetSets: number;
   targetReps: number;
   targetWeight: number;
   restSeconds: number;
 };
-type Initial = { name: string; description: string; exercises: Omit<Row, "key">[] };
+type Initial = { name: string; description: string; exercises: Omit<Row, "key" | "query">[] };
 
 const emptyRow = (): Row => ({
   key: crypto.randomUUID(),
   definitionId: 0,
   name: "",
+  query: "",
   targetSets: 3,
   targetReps: 10,
   targetWeight: 0,
   restSeconds: 90,
 });
+
+function norm(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
 
 export function ProgramForm({
   action,
@@ -41,7 +52,7 @@ export function ProgramForm({
 }) {
   const [state, formAction] = useActionState(action, undefined);
   const [rows, setRows] = useState<Row[]>(
-    initial?.exercises.map((item) => ({ ...item, key: crypto.randomUUID() })) ?? [emptyRow()],
+    initial?.exercises.map((item) => ({ ...item, key: crypto.randomUUID(), query: "" })) ?? [emptyRow()],
   );
   const groups = useMemo(
     () => Array.from(new Set(library.map((item) => item.muscleGroup))).sort((a, b) => a.localeCompare(b, "pl")),
@@ -49,7 +60,7 @@ export function ProgramForm({
   );
   const update = (key: string, patch: Partial<Row>) =>
     setRows((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
-  const serialized = rows.map(({ key: _key, ...item }) => ({
+  const serialized = rows.map(({ key: _key, query: _q, ...item }) => ({
     ...item,
     definitionId: item.definitionId || null,
   }));
@@ -117,34 +128,66 @@ export function ProgramForm({
                 </button>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-                <label className="field-label sm:col-span-2 lg:col-span-3">
-                  Ćwiczenie
-                  <span className="select-shell">
-                    <select
-                      value={row.definitionId}
-                      onChange={(event) => {
-                        const id = Number(event.target.value);
-                        const selected = library.find((item) => item.id === id);
-                        update(row.key, { definitionId: id, name: selected?.name ?? "" });
-                      }}
-                      required
-                    >
-                      <option value={0}>Wybierz ćwiczenie</option>
-                      {groups.map((group) => (
-                        <optgroup key={group} label={group}>
-                          {library
-                            .filter((item) => item.muscleGroup === group)
-                            .map((item) => (
-                              <option value={item.id} key={item.id}>
-                                {item.name}
-                              </option>
-                            ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <ChevronDown size={16} />
-                  </span>
-                </label>
+                <div className="relative sm:col-span-2 lg:col-span-3">
+                  <label className="field-label">
+                    Ćwiczenie
+                    <div className="relative">
+                      <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        className="input pl-10"
+                        type="text"
+                        placeholder="Szukaj ćwiczenia…"
+                        value={row.query}
+                        onChange={(event) => update(row.key, { query: event.target.value })}
+                      />
+                      {row.query && (
+                        <button
+                          type="button"
+                          onClick={() => update(row.key, { query: "" })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                          aria-label="Wyczyść"
+                        >
+                          <X size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </label>
+
+                  {/* Wybrane ćwiczenie */}
+                  {!row.query && row.definitionId > 0 && (
+                    <p className="mt-2 flex items-center gap-2 rounded-lg bg-lime-400/[.06] px-3 py-2 text-sm font-bold text-lime-300">
+                      <Check size={14} /> {row.name}
+                    </p>
+                  )}
+
+                  {/* Podpowiedzi */}
+                  {row.query.trim().length >= 2 && (
+                    <div className="absolute z-20 mt-1 w-full space-y-1 rounded-xl border border-white/10 bg-[#11171f] p-2 shadow-2xl">
+                      {library
+                        .filter((item) => norm(item.name).includes(norm(row.query)))
+                        .slice(0, 8)
+                        .map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              update(row.key, { definitionId: item.id, name: item.name, query: "" });
+                            }}
+                            className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/5"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-bold text-white">{item.name}</span>
+                              <span className="text-[10px] text-slate-500">{item.muscleGroup}</span>
+                            </span>
+                            <span className="shrink-0 text-[10px] text-slate-500">{item.equipment}</span>
+                          </button>
+                        ))}
+                      {library.filter((item) => norm(item.name).includes(norm(row.query))).length === 0 && (
+                        <p className="px-3 py-2 text-sm text-slate-500">Brak ćwiczeń pasujących do zapytania.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <label className="field-label">
                   Serie
                   <input

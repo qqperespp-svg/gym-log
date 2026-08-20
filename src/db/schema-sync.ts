@@ -376,6 +376,61 @@ async function runSchemaSync(): Promise<void> {
       "user_favorites unique",
       sql`CREATE UNIQUE INDEX IF NOT EXISTS user_favorites_user_product_idx ON user_favorites (user_id, product_id)`,
     ],
+    // ---- Logowanie bez hasła (magic link) + integracje (Google Fit) ----
+    [
+      "magic_tokens",
+      sql`
+        CREATE TABLE IF NOT EXISTS magic_tokens (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token varchar(64) NOT NULL,
+          expires_at timestamp NOT NULL,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "magic_tokens.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS magic_tokens_user_idx ON magic_tokens (user_id)`,
+    ],
+    [
+      "integrations",
+      sql`
+        CREATE TABLE IF NOT EXISTS integrations (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider varchar(24) NOT NULL,
+          access_token text,
+          refresh_token text,
+          scope text,
+          connected_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "integrations.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS integrations_user_idx ON integrations (user_id)`,
+    ],
+    [
+      "fitness_logs",
+      sql`
+        CREATE TABLE IF NOT EXISTS fitness_logs (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          date timestamp NOT NULL,
+          steps integer NOT NULL DEFAULT 0,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "fitness_logs.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS fitness_logs_user_idx ON fitness_logs (user_id)`,
+    ],
+    [
+      "fitness_logs.user_id+date unique",
+      sql`CREATE UNIQUE INDEX IF NOT EXISTS fitness_logs_user_date_idx ON fitness_logs (user_id, date)`,
+    ],
   ];
 
   for (const [label, statement] of steps) {

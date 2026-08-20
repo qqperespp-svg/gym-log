@@ -2,8 +2,8 @@
 const dict = {
   pl: {
     "nav.dashboard": "Dashboard",
-    "nav.workouts": "Treningi",
-    "nav.programs": "Programy",
+    "nav.workouts": "Harmonogram treningów",
+    "nav.programs": "Plany treningowe",
     "nav.exercises": "Ćwiczenia",
     "nav.body": "Ciało",
     "nav.micha": "Micha",
@@ -23,8 +23,8 @@ const dict = {
   },
   en: {
     "nav.dashboard": "Dashboard",
-    "nav.workouts": "Workouts",
-    "nav.programs": "Programs",
+    "nav.workouts": "Workout schedule",
+    "nav.programs": "Training plans",
     "nav.exercises": "Exercises",
     "nav.body": "Body",
     "nav.micha": "Food",

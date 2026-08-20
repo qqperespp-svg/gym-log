@@ -1,10 +1,12 @@
 "use server";
 
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { magicTokens, users } from "@/db/schema";
 import { ensureDbSchema } from "@/db/schema-sync";
 import { ensureDemoUser, ensureExerciseCatalog, seedStarterData } from "@/db/seed";
 import { createSession, destroySession, hashPassword, verifyPassword } from "@/lib/auth";
+import { sendMagicLinkEmail } from "@/lib/mail";
+import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
@@ -120,4 +122,59 @@ export async function demoLoginAction(): Promise<void> {
 export async function logoutAction(): Promise<void> {
   await destroySession();
   redirect("/login");
+}
+
+
+// ---------- Logowanie bez hasła (magic link) ----------
+
+export type MagicState =
+  | { error?: string; success?: boolean; loginUrl?: string; email?: string }
+  | undefined;
+
+const MAGIC_TTL_MS = 15 * 60 * 1000; // 15 minut
+
+export async function sendMagicLinkAction(_: MagicState, formData: FormData): Promise<MagicState> {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: "Podaj poprawny adres e-mail.", email };
+  }
+  await ensureDbSchema().catch(() => {});
+  const [user] = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+  if (!user) return { error: "Nie znaleziono konta z tym adresem e-mail.", email };
+
+  await db.delete(magicTokens).where(eq(magicTokens.userId, user.id));
+  const token = randomBytes(32).toString("hex");
+  await db.insert(magicTokens).values({
+    userId: user.id,
+    token,
+    expiresAt: new Date(Date.now() + MAGIC_TTL_MS),
+  });
+  const origin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
+  const path = `/login/magic/${token}`;
+  const result = await sendMagicLinkEmail(email, `${origin}${path}`);
+  if (result.sent) return { success: true, email };
+  return { success: true, email, loginUrl: path }; // tryb demo: link na ekranie
+}
+
+/** Potwierdza magic link: sprawdza token i tworzy sesję (akcja — może ustawić ciasteczko). */
+export async function completeMagicLoginAction(
+  token: string,
+  _: { error?: string } | undefined,
+): Promise<{ error?: string } | undefined> {
+  await ensureDbSchema().catch(() => {});
+  const [row] = await db
+    .select({ userId: magicTokens.userId, expiresAt: magicTokens.expiresAt })
+    .from(magicTokens)
+    .where(eq(magicTokens.token, token))
+    .limit(1);
+  if (!row || row.expiresAt.getTime() < Date.now()) {
+    return { error: "Link wygasł lub jest nieprawidłowy." };
+  }
+  await createSession(row.userId);
+  await db.delete(magicTokens).where(eq(magicTokens.token, token));
+  redirect("/dashboard");
 }

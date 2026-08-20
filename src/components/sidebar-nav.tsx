@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   CalendarDays,
@@ -11,7 +11,6 @@ import {
   History,
   Layers3,
   LayoutDashboard,
-  LibraryBig,
   LogOut,
   Menu,
   Moon,
@@ -38,6 +37,7 @@ export function SidebarNav({
   accent: Accent;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   // Bieżący motyw/kolor — inicjowane z serwera, ale aktualizowane na kliknięcie
   // (propy z serwera są stałe i nie zmieniają się po zmianie w przeglądarce).
@@ -69,9 +69,8 @@ export function SidebarNav({
     { href: "/dashboard", label: t(lang, "nav.dashboard"), icon: LayoutDashboard },
     { href: "/workouts", label: t(lang, "nav.workouts"), icon: CalendarDays },
     { href: "/programs", label: t(lang, "nav.programs"), icon: Layers3 },
-    { href: "/exercises", label: t(lang, "nav.exercises"), icon: LibraryBig },
-    { href: "/body", label: t(lang, "nav.body"), icon: Ruler },
     { href: "/micha", label: t(lang, "nav.micha"), icon: UtensilsCrossed },
+    { href: "/body", label: t(lang, "nav.body"), icon: Ruler },
     { href: "/nawodnienie", label: t(lang, "nav.hydration"), icon: Droplets },
     { href: "/history", label: t(lang, "nav.history"), icon: History },
     { href: "/settings", label: t(lang, "nav.settings"), icon: Settings },
@@ -121,6 +120,8 @@ export function SidebarNav({
             <Link
               key={href}
               href={href}
+              onMouseEnter={() => router.prefetch(href)}
+              onFocus={() => router.prefetch(href)}
               onClick={() => setOpen(false)}
               className={`nav-link ${active ? "nav-link-active" : ""}`}
             >

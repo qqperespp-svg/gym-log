@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
-import { CalendarPlus, Dumbbell, Edit3, Layers3, Plus, Trash2 } from "lucide-react";
+import { CalendarPlus, Dumbbell, Edit3, FileDown, Layers3, Plus, Trash2 } from "lucide-react";
 import { deleteProgramAction } from "@/actions/programs";
 
 type Item = { id: number; name: string; description: string; exerciseCount: number; totalSets: number };
@@ -65,6 +65,9 @@ export function ProgramList({ programs }: { programs: Item[] }) {
             </Link>
             <Link href={`/programs/${item.id}/edit`} className="button-secondary text-sm">
               <Edit3 size={16} /> Edytuj
+            </Link>
+            <Link href={`/programs/${item.id}/print`} className="button-secondary text-sm">
+              <FileDown size={16} /> PDF
             </Link>
           </div>
         </article>

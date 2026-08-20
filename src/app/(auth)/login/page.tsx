@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { AuthForm } from "@/components/auth-form";
+import { MagicLoginForm } from "@/components/magic-login-form";
 import { demoLoginAction } from "@/actions/auth";
 import { ensureDemoUser } from "@/db/seed";
 import { getSessionUser } from "@/lib/auth";
@@ -21,6 +22,7 @@ export default async function LoginPage({
         </div>
       )}
       <AuthForm mode="login" />
+      <MagicLoginForm />
       <div className="mt-7 rounded-2xl border border-lime-400/15 bg-lime-400/[.06] px-4 py-4 text-center text-xs leading-5 text-slate-400">
         <b className="text-lime-300">Konto demo:</b> demo@gymrat.pl · demo1234
         <br />

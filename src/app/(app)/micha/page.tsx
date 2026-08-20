@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, desc, eq, isNull, or } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, foodProducts, recipes, userFavorites, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -230,7 +230,12 @@ export default async function MichaPage({
             </section>
 
             <section className="panel p-5 sm:p-7">
-              <h2 className="font-extrabold text-white mb-1">Wpisy z posiłkami</h2>
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-extrabold text-white">Wpisy z posiłkami</h2>
+                <Link href="/micha/print" className="button-secondary px-3 py-1.5 text-xs">
+                  <FileDown size={14} /> Eksport PDF
+                </Link>
+              </div>
               <p className="mb-5 text-sm text-slate-500">
                 Historia wpisów spożycia — z podziałem na posiłki.
               </p>

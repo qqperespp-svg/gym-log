@@ -431,3 +431,17 @@ textarea.input { line-height: 1.6; }
 :root[data-accent="amber"] .nav-link-active { background-color: #fbbf2414 !important; color: #fcd34d !important; }
 :root[data-accent="emerald"] .nav-link-active { background-color: #34d39914 !important; color: #6ee7b7 !important; }
 :root[data-theme="light"] .nav-link-active { background-color: rgba(163,230,53,.15) !important; color: #0f172a !important; }
+
+/* ============ DRUK / PDF ============ */
+@media print {
+  aside, nav, form, button, .print-hide { display: none !important; }
+  main { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+  body { background: #ffffff !important; color: #000000 !important; }
+  .panel, .stat-card { border: 1px solid #d1d5db !important; box-shadow: none !important; background: #ffffff !important; }
+  .text-white, .text-slate-100, .text-slate-200, .text-slate-300 { color: #111827 !important; }
+  .text-slate-400, .text-slate-500, .text-slate-600 { color: #4b5563 !important; }
+  .text-lime-300, .text-lime-400, .text-sky-300, .text-sky-400, .text-emerald-300, .text-amber-300, .text-rose-300 { color: #111827 !important; }
+  .bg-lime-400, .bg-lime-400\/10, .bg-lime-400\/15, .bg-black\/15 { background: #f3f4f6 !important; }
+  [class*="bg-white/["] { background: #f3f4f6 !important; }
+  .rounded-2xl, .rounded-xl, .rounded-lg { border-radius: 8px !important; }
+}

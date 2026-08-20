@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { ArrowLeft, Bell, CheckCircle2, Download, Languages, Palette } from "lucide-react";
 import { db } from "@/db";
-import { userSettings } from "@/db/schema";
+import { fitnessLogs, integrations, userSettings } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { exportDataAction, saveSettingsAction, saveTdeeAction } from "@/actions/settings";
+import { disconnectGoogleFitAction, syncGoogleFitAction } from "@/actions/integrations";
+import { Activity, Link2, Unlink } from "lucide-react";
 import { ImportForm } from "@/components/import-form";
 
 export const dynamic = "force-dynamic";
@@ -12,13 +14,19 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; fit_error?: string }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
   const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1);
   const lang = settings?.lang === "en" ? "en" : "pl";
   const themeSetting = settings?.theme === "light" ? "light" : "dark";
+  const [gfit, stepsRows] = await Promise.all([
+    db.select().from(integrations).where(eq(integrations.userId, user.id)).limit(1),
+    db.select().from(fitnessLogs).where(eq(fitnessLogs.userId, user.id)).orderBy(desc(fitnessLogs.date)).limit(1),
+  ]);
+  const googleFit = gfit[0] ?? null;
+  const lastSteps = stepsRows[0] ?? null;
   const accentSetting = settings?.accent ?? "lime";
   const waterGoal = settings?.waterGoal ?? 2.5;
   let reminders: string[] = [];
@@ -147,6 +155,80 @@ export default async function SettingsPage({
             <button type="submit" className="button-primary">Zapisz motyw</button>
           </div>
         </form>
+      </section>
+
+      <section className="panel p-5 sm:p-7">
+        <h2 className="mb-1 flex items-center gap-2 font-extrabold text-white">
+          <Activity size={18} className="text-lime-400" /> Integracje
+        </h2>
+        <p className="mb-5 text-sm text-slate-500">
+          Podłącz urządzenia i aplikacje zdrowotne, żeby dane trafiały do GYMRAT automatycznie.
+        </p>
+        {params.fit_error === "1" && (
+          <p className="mb-4 rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-300">
+            Nie udało się połączyć Google Fit — sprawdź zmienne GOOGLE_FIT_CLIENT_ID / GOOGLE_FIT_CLIENT_SECRET w Vercel.
+          </p>
+        )}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-white/[.07] bg-black/15 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 place-items-center rounded-xl bg-white/[.05] text-slate-300">F</span>
+                <div>
+                  <b className="block text-sm font-extrabold text-white">Google Fit</b>
+                  <p className="text-xs text-slate-500">Kroki i waga — synchronizacja ręczna</p>
+                </div>
+              </div>
+              {googleFit ? (
+                <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                  Połączono
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              {lastSteps
+                ? `Ostatnia synchronizacja: ${lastSteps.steps.toLocaleString("pl-PL")} kroków (${lastSteps.date.toLocaleDateString("pl-PL")})`
+                : googleFit
+                  ? "Brak danych — kliknij „Zsynchronizuj”."
+                  : "Połącz, aby importować kroki i wagę z aplikacji Google Fit / Health Connect."}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {googleFit ? (
+                <>
+                  <form action={syncGoogleFitAction}>
+                    <button type="submit" className="button-primary px-4 py-2 text-sm">
+                      <Link2 size={15} /> Zsynchronizuj
+                    </button>
+                  </form>
+                  <form action={disconnectGoogleFitAction}>
+                    <button type="submit" className="button-secondary px-4 py-2 text-sm">
+                      <Unlink size={15} /> Rozłącz
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <a href="/api/integrations/gfit/auth" className="button-primary px-4 py-2 text-sm">
+                  <Link2 size={15} /> Połącz Google Fit
+                </a>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/[.07] bg-black/15 p-4">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-xl bg-white/[.05] text-slate-300">Mi</span>
+              <div>
+                <b className="block text-sm font-extrabold text-white">Mi Fitness (Xiaomi)</b>
+                <p className="text-xs text-slate-500">Zegarki i opaski Xiaomi</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Xiaomi nie udostępnia publicznego API dla Mi Fitness. Najłatwiej: w aplikacji Mi Fitness
+              włącz synchronizację z <b>Google Fit / Health Connect</b>, a dane (kroki, waga) pobierzesz
+              tu przez integrację Google Fit obok.
+            </p>
+          </div>
+        </div>
       </section>
     </div>
   );

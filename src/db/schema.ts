@@ -324,6 +324,53 @@ export const userSettings = pgTable(
   },
 );
 
+export const magicTokens = pgTable(
+  "magic_tokens",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: varchar("token", { length: 64 }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("magic_tokens_user_idx").on(table.userId)],
+);
+
+export const integrations = pgTable(
+  "integrations",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 24 }).notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    scope: text("scope"),
+    connectedAt: timestamp("connected_at").notNull().defaultNow(),
+  },
+  (table) => [index("integrations_user_idx").on(table.userId)],
+);
+
+export const fitnessLogs = pgTable(
+  "fitness_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    date: timestamp("date").notNull(),
+    steps: integer("steps").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("fitness_logs_user_idx").on(table.userId),
+    uniqueIndex("fitness_logs_user_date_idx").on(table.userId, table.date),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Workout = typeof workouts.$inferSelect;
 export type WorkoutExercise = typeof exercises.$inferSelect;
@@ -340,3 +387,6 @@ export type Recipe = typeof recipes.$inferSelect;
 export type ProgressPhoto = typeof progressPhotos.$inferSelect;
 export type UserSettings = typeof userSettings.$inferSelect;
 export type UserFavorite = typeof userFavorites.$inferSelect;
+export type MagicToken = typeof magicTokens.$inferSelect;
+export type Integration = typeof integrations.$inferSelect;
+export type FitnessLog = typeof fitnessLogs.$inferSelect;

@@ -41,12 +41,16 @@ export function StepsCard({ logs }: { logs: FitnessLog[] }) {
   }
 
   // Mapa kroków po dacie (klucz YYYY-MM-DD).
+  // Bierzemy MAKSIMUM, nie sumę: gdyby w bazie znalazły się dwa wiersze tego
+  // samego dnia (dawna usterka — sync z Ustawień i z dashboardu zapisywał
+  // dzień pod dwoma timestampami), suma podwajała wynik; max daje właściwą
+  // wartość (kroki w ciągu dnia tylko rosną, więc max = najnowszy zrzut).
   const byDate = useMemo(() => {
     const map = new Map<string, number>();
     for (const l of logs) {
       const d = startOfDay(new Date(l.date));
       const key = localKey(d);
-      map.set(key, (map.get(key) ?? 0) + (l.steps ?? 0));
+      map.set(key, Math.max(map.get(key) ?? 0, l.steps ?? 0));
     }
     return map;
   }, [logs]);

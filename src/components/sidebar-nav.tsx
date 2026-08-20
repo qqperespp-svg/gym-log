@@ -109,7 +109,7 @@ export function SidebarNav({
           <Plus size={17} /> {t(lang, "nav.newWorkout")}
         </Link>
       </div>
-      <nav className="flex-1 space-y-1 px-5 py-7">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-5 py-7">
         <p className="mb-3 px-3 text-[10px] font-extrabold uppercase tracking-[.2em] text-slate-600">
           {lang === "en" ? "Navigation" : "Nawigacja"}
         </p>
@@ -127,7 +127,7 @@ export function SidebarNav({
             >
               <Icon size={19} />
               <span>{label}</span>
-              {active && <span className="ml-auto size-1.5 rounded-full bg-lime-400" />}
+              {active && <span className="ml-auto size-1.5 rounded-full bg-current" />}
             </Link>
           );
         })}

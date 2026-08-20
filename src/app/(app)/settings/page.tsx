@@ -5,9 +5,10 @@ import { db } from "@/db";
 import { fitnessLogs, integrations, userSettings } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { exportDataAction, saveSettingsAction, saveTdeeAction } from "@/actions/settings";
-import { disconnectGoogleFitAction, syncGoogleFitAction } from "@/actions/integrations";
+import { disconnectGoogleFitAction } from "@/actions/integrations";
 import { Activity, Link2, Unlink } from "lucide-react";
 import { ImportForm } from "@/components/import-form";
+import { GoogleFitSyncForm } from "@/components/google-fit-sync-form";
 
 export const dynamic = "force-dynamic";
 
@@ -195,11 +196,7 @@ export default async function SettingsPage({
             <div className="mt-3 flex flex-wrap gap-2">
               {googleFit ? (
                 <>
-                  <form action={syncGoogleFitAction}>
-                    <button type="submit" className="button-primary px-4 py-2 text-sm">
-                      <Link2 size={15} /> Zsynchronizuj
-                    </button>
-                  </form>
+                  <GoogleFitSyncForm />
                   <form action={disconnectGoogleFitAction}>
                     <button type="submit" className="button-secondary px-4 py-2 text-sm">
                       <Unlink size={15} /> Rozłącz

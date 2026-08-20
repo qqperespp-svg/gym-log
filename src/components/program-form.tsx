@@ -162,7 +162,7 @@ export function ProgramForm({
 
                   {/* Podpowiedzi */}
                   {row.query.trim().length >= 2 && (
-                    <div className="absolute z-20 mt-1 w-full space-y-1 rounded-xl border border-white/10 bg-[#11171f] p-2 shadow-2xl">
+                    <div className="absolute z-20 mt-1 max-h-56 w-full space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-white/10 bg-[#11171f] p-2 shadow-2xl">
                       {library
                         .filter((item) => norm(item.name).includes(norm(row.query)))
                         .slice(0, 8)

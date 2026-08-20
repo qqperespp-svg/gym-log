@@ -3,7 +3,7 @@
 import { db } from "@/db";
 import { bodyMeasurements, fitnessLogs, integrations } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, lte } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -53,7 +53,9 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
   // Lokalna północ dzisiaj (w strefie użytkownika) — buckety od niej po 24 h = lokalne dni.
   const localMidnightToday = new Date();
   localMidnightToday.setHours(0, 0, 0, 0);
-  const start = localMidnightToday.getTime() - tzOffsetMin * 60000 - 6 * 86400000;
+  // Okno 31 dni: pokrywa 7 dni widocznych na dashboardzie + czyści starsze duplikaty
+  // (wiersze zapisane wcześniej z błędną konwencją dat UTC).
+  const start = localMidnightToday.getTime() - tzOffsetMin * 60000 - 30 * 86400000;
   const end = now;
   const aggregate = async (dataTypeName: string, dataSourceId: string) => {
     const res = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
@@ -89,6 +91,22 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
       if (sum > 0) { stepsData = data; break; }
     }
     if (!stepsData) stepsData = await aggregate("com.google.step_count.delta", stepSources[1]);
+
+    // Ważne: usuń stare wiersze w oknie synchronizacji, zanim zapiszemy nowe.
+    // Wcześniej te same dni bywały zapisywane pod dwoma różnymi timestampami
+    // (sync z Ustawień: południe UTC, sync z dashboardu: lokalne południe),
+    // przez co kafelek sumował oba wiersze i pokazywał ~2x więcej kroków.
+    const windowStart = start - 24 * 3600000;
+    const windowEnd = end + 24 * 3600000;
+    await db
+      .delete(fitnessLogs)
+      .where(
+        and(
+          eq(fitnessLogs.userId, userId),
+          gte(fitnessLogs.date, new Date(windowStart)),
+          lte(fitnessLogs.date, new Date(windowEnd)),
+        ),
+      );
 
     let totalSteps = 0;
     for (const bucket of stepsData.bucket ?? []) {
@@ -144,10 +162,13 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
   }
 }
 
-/** Akcja dla Ustawień (form) — po synchronizacji przekierowuje z komunikatem. */
-export async function syncGoogleFitAction(): Promise<void> {
+/** Akcja dla Ustawień (form) — po synchronizacji przekierowuje z komunikatem.
+ *  `formData.tz` = przesunięcie strefy w minutach (jak z dashboardu), aby daty
+ *  dni były spójne (lokalne południe) niezależnie od tego, skąd zsynchronizowano. */
+export async function syncGoogleFitAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const result = await performGoogleFitSync(user.id, 0);
+  const tzOffsetMin = Number(formData.get("tz") ?? 0) || 0;
+  const result = await performGoogleFitSync(user.id, tzOffsetMin);
   redirect(result.error ? "/settings?fit_error=3" : "/settings?saved=1");
 }
 

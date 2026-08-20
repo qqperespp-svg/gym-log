@@ -8,7 +8,9 @@ import {
   Clock3,
   Layers3,
   Plus,
+  Search,
   Trash2,
+  X,
 } from "lucide-react";
 import type { WorkoutFormState } from "@/actions/workouts";
 import type { PreviousSet } from "@/lib/workout-data";
@@ -16,7 +18,7 @@ import { SubmitButton } from "@/components/submit-button";
 
 type LibraryItem = { id: number; name: string; muscleGroup: string; equipment: string };
 type SetRow = { key: string; reps: number; weight: number; rir: number | null; note: string; completed: boolean };
-type ExerciseRow = { key: string; definitionId: number; name: string; restSeconds: number; grp: string | null; sets: SetRow[] };
+type ExerciseRow = { key: string; definitionId: number; name: string; query: string; restSeconds: number; grp: string | null; sets: SetRow[] };
 type Program = {
   id: number;
   name: string;
@@ -54,6 +56,15 @@ type Props = {
   mode: "create" | "edit";
 };
 
+function norm(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 const makeSet = (data?: Partial<Omit<SetRow, "key">>): SetRow => ({
   key: crypto.randomUUID(),
   reps: data?.reps ?? 10,
@@ -66,6 +77,7 @@ const makeExercise = (): ExerciseRow => ({
   key: crypto.randomUUID(),
   definitionId: 0,
   name: "",
+  query: "",
   restSeconds: 90,
   grp: null,
   sets: [makeSet(), makeSet(), makeSet()],
@@ -88,6 +100,7 @@ export function WorkoutForm({
     initial?.exercises.map((item) => ({
       ...item,
       key: crypto.randomUUID(),
+      query: "",
       grp: (item as { grp?: string | null }).grp ?? null,
       sets: item.sets.map((set) => makeSet(set)),
     })) ?? [makeExercise()],
@@ -140,6 +153,7 @@ export function WorkoutForm({
         key: crypto.randomUUID(),
         definitionId: item.definitionId,
         name: item.name,
+        query: "",
         restSeconds: item.restSeconds,
         grp: null,
         sets: previousSets(item.definitionId, item.targetSets, {
@@ -167,7 +181,7 @@ export function WorkoutForm({
     }
     updateExercise(key, { sets: next });
   }
-  const serialized = rows.map((row) => ({
+  const serialized = rows.map(({ query: _q, ...row }) => ({
     definitionId: row.definitionId || null,
     name: row.name,
     restSeconds: row.restSeconds,
@@ -299,26 +313,61 @@ export function WorkoutForm({
                 <p className="mb-2 text-[10px] font-black uppercase tracking-[.18em] text-lime-400">
                   Ćwiczenie {exerciseIndex + 1}
                 </p>
-                <label className="select-shell">
-                  <select
-                    value={row.definitionId}
-                    onChange={(event) => chooseExercise(row.key, Number(event.target.value))}
-                  >
-                    <option value={0}>Wybierz z biblioteki…</option>
-                    {groups.map((group) => (
-                      <optgroup key={group} label={group}>
-                        {library
-                          .filter((item) => item.muscleGroup === group)
-                          .map((item) => (
-                            <option value={item.id} key={item.id}>
-                              {item.name}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <ChevronDown size={16} />
-                </label>
+                <div className="relative">
+                  <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    className="input pl-10"
+                    type="text"
+                    placeholder="Szukaj ćwiczenia…"
+                    value={row.query}
+                    onChange={(event) => updateExercise(row.key, { query: event.target.value })}
+                  />
+                  {row.query && (
+                    <button
+                      type="button"
+                      onClick={() => updateExercise(row.key, { query: "" })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                      aria-label="Wyczyść"
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Wybrane ćwiczenie */}
+                {!row.query && row.definitionId > 0 && (
+                  <p className="mt-2 flex items-center gap-2 rounded-lg bg-lime-400/[.06] px-3 py-2 text-sm font-bold text-lime-300">
+                    <Check size={14} /> {row.name}
+                  </p>
+                )}
+
+                {/* Podpowiedzi */}
+                {row.query.trim().length >= 2 && (
+                  <div className="absolute z-20 mt-1 max-h-56 w-full space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-white/10 bg-[#11171f] p-2 shadow-2xl">
+                    {library
+                      .filter((item) => norm(item.name).includes(norm(row.query)))
+                      .slice(0, 8)
+                      .map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            updateExercise(row.key, { definitionId: item.id, name: item.name, query: "" });
+                          }}
+                          className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/5"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-bold text-white">{item.name}</span>
+                            <span className="text-[10px] text-slate-500">{item.muscleGroup}</span>
+                          </span>
+                          <span className="shrink-0 text-[10px] text-slate-500">{item.equipment}</span>
+                        </button>
+                      ))}
+                    {library.filter((item) => norm(item.name).includes(norm(row.query))).length === 0 && (
+                      <p className="px-3 py-2 text-sm text-slate-500">Brak ćwiczeń pasujących do zapytania.</p>
+                    )}
+                  </div>
+                )}
               </div>
               <label className="field-label w-full sm:w-28">
                 Liczba serii

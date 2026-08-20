@@ -73,24 +73,63 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
   };
 
   try {
-    // Wybierz źródło kroków = ta sama liczba, którą pokazuje Google Fit.
-    // `merge_step_deltas` SUmuje kroki ze wszystkich urządzeń (np. Google Health
-    // + Mi Fitness), co zawyża wynik ~2x; `estimated_steps` to pojedyncza
-    // najlepsza estymata Google — zgodna z aplikacją Google Fit.
-    const stepSources = [
+    // ============ KROKI: priorytet Mi Fitness (opaska), fallback Google Fit ============
+    // Aplikacje Xiaomi (Mi Fitness / Mi Fit / Zepp) zapisują kroki do Google Fit
+    // pod własnymi źródłami RAW, np. `com.xiaomi.wearable:health_platform`.
+    // Wykrywamy je dynamicznie (lista źródeł), pytamy o nie OSOBNO od estymaty
+    // Google i dla każdego dnia wybieramy: Mi Fitness, a gdy opaska nie
+    // zsynchronizowała się danego dnia (wartość 0) → estymata Google Fit.
+    // NIGDY nie sumujemy obu źródeł tego samego dnia.
+    const XIAOMI_PACKAGES = [
+      "com.xiaomi.wearable", // Mi Fitness (nowa aplikacja)
+      "com.xiaomi.hm.health", // Mi Fit / Zepp Life (starsza)
+      "com.huami.watch.hmwatchmanager", // Amazfit / Zepp
+    ];
+    let xiaomiIds: string[] = [];
+    try {
+      const res = await fetch(
+        "https://www.googleapis.com/fitness/v1/users/me/dataSources?dataTypeName=com.google.step_count.delta",
+        { headers: { Authorization: `Bearer ${access}` } },
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          dataSource?: Array<{ type?: string; dataStreamId?: string; application?: { packageName?: string } }>;
+        };
+        const raw = data.dataSource ?? [];
+        xiaomiIds = XIAOMI_PACKAGES.flatMap((pkg) =>
+          raw.filter((s) => s.type === "raw" && s.application?.packageName === pkg)
+            .map((s) => s.dataStreamId ?? ""),
+        ).filter(Boolean);
+      }
+    } catch {
+      xiaomiIds = []; // wykrywanie opcjonalne — bez niego działa fallback do Google Fit
+    }
+
+    // Kolejność w aggregateBy odpowiada indeksom datasetów w odpowiedzi:
+    // [0] = estimated_steps (estymata Google), [1] = merge_step_deltas (zapas),
+    // [2..] = źródła Xiaomi.
+    const stepIds = [
       "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps",
       "derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas",
+      ...xiaomiIds,
     ];
-    let stepsData: Awaited<ReturnType<typeof aggregate>> | null = null;
-    for (const ds of stepSources) {
-      const data = await aggregate("com.google.step_count.delta", ds);
-      const sum = (data.bucket ?? []).reduce(
-        (s, b) => s + (b.dataset?.[0]?.point ?? []).reduce((x, p) => x + (p.value?.[0]?.intVal ?? p.value?.[0]?.fpVal ?? 0), 0),
-        0,
-      );
-      if (sum > 0) { stepsData = data; break; }
-    }
-    if (!stepsData) stepsData = await aggregate("com.google.step_count.delta", stepSources[1]);
+    const stepsRes = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        aggregateBy: stepIds.map((dataSourceId) => ({ dataTypeName: "com.google.step_count.delta", dataSourceId })),
+        bucketByTime: { durationMillis: 86400000 },
+        startTimeMillis: start,
+        endTimeMillis: end,
+      }),
+    });
+    if (!stepsRes.ok) throw new Error("Google Fit odmówił dostępu (" + stepsRes.status + ").");
+    const stepsData = (await stepsRes.json()) as { bucket?: Array<{ startTimeMillis?: string; dataset?: Array<{ point?: Array<{ value?: Array<{ intVal?: number; fpVal?: number }> }> }> }> };
+
+    const sumPoints = (ds?: { point?: Array<{ value?: Array<{ intVal?: number; fpVal?: number }> }> }) =>
+      (ds?.point ?? []).reduce((s, p) => s + (p.value?.[0]?.intVal ?? p.value?.[0]?.fpVal ?? 0), 0);
+    const dsAt = (dss: NonNullable<typeof stepsData.bucket>[number]["dataset"], i: number) =>
+      dss && dss[i] ? sumPoints(dss[i]) : 0;
 
     // Ważne: usuń stare wiersze w oknie synchronizacji, zanim zapiszemy nowe.
     // Wcześniej te same dni bywały zapisywane pod dwoma różnymi timestampami
@@ -108,20 +147,40 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
         ),
       );
 
+    // Próg „ostatnie 7 dni” — do podsumowania w komunikacie.
+    const weekStart = localMidnightToday.getTime() - tzOffsetMin * 60000 - 6 * 86400000;
     let totalSteps = 0;
+    let weekSteps = 0;
+    let miFitDays = 0;
+    let daysWithSteps = 0;
     for (const bucket of stepsData.bucket ?? []) {
-      // bucket.startTimeMillis = początek lokalnego dnia; data = lokalne południe (start + 12 h).
-      const date = new Date(Number(bucket.startTimeMillis) + 12 * 3600000);
-      const steps = (bucket.dataset?.[0]?.point ?? []).reduce(
-        (s, p) => s + (p.value?.[0]?.intVal ?? p.value?.[0]?.fpVal ?? 0),
-        0,
-      );
+      const dss = bucket.dataset ?? [];
+      const googleEst = dsAt(dss, 0); // estimated_steps
+      const googleMerge = dsAt(dss, 1); // merge_step_deltas (zapas)
+      // Mi Fitness: max po źródłach Xiaomi — NIE suma (kilka aplikacji Xiaomi = ta sama opaska).
+      const xiaomi = xiaomiIds.length ? Math.max(...stepIds.slice(2).map((_, i) => dsAt(dss, 2 + i))) : 0;
+
+      // Priorytet dnia: Mi Fitness > estymata Google > merge (zapas).
+      const steps = xiaomi > 0 ? xiaomi : googleEst > 0 ? googleEst : googleMerge;
+
+      if (xiaomi > 0) miFitDays++;
+      if (steps > 0) daysWithSteps++;
       totalSteps += steps;
+      const bStart = Number(bucket.startTimeMillis);
+      if (bStart >= weekStart) weekSteps += steps;
+
+      // bucket.startTimeMillis = początek lokalnego dnia; data = lokalne południe (start + 12 h).
+      const date = new Date(bStart + 12 * 3600000);
       await db
         .insert(fitnessLogs)
         .values({ userId, date, steps: Math.round(steps) })
         .onConflictDoUpdate({ target: [fitnessLogs.userId, fitnessLogs.date], set: { steps: Math.round(steps) } });
     }
+    const sourceLabel =
+      miFitDays > 0
+        ? `Mi Fitness${daysWithSteps > miFitDays ? " (dni bez sync opaski: Google Fit)" : ""}`
+        : "Google Fit (brak danych Mi Fitness)";
+    const summarySteps = weekSteps > 0 ? weekSteps : totalSteps;
 
     let weightKg: number | null = null;
     try {
@@ -156,7 +215,9 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
 
     revalidatePath("/settings");
     revalidatePath("/dashboard");
-    return { summary: `Zapisano: ${totalSteps.toLocaleString("pl-PL")} kroków (7 dni)${weightKg ? `, waga ${weightKg.toFixed(1)} kg` : ""}.` };
+    return {
+      summary: `Zapisano: ${summarySteps.toLocaleString("pl-PL")} kroków (7 dni, źródło: ${sourceLabel})${weightKg ? `, waga ${weightKg.toFixed(1)} kg` : ""}.`,
+    };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Błąd synchronizacji Google Fit." };
   }

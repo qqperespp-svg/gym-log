@@ -224,6 +224,10 @@ export default async function SettingsPage({
               włącz synchronizację z <b>Google Fit / Health Connect</b>, a dane (kroki, waga) pobierzesz
               tu przez integrację Google Fit obok.
             </p>
+            <p className="mt-2 text-xs leading-5 text-lime-300/90">
+              Kroki: priorytet <b>Mi Fitness (opaska)</b>, a w dni bez synchronizacji opaski —
+              Google Fit. Źródła nie są sumowane.
+            </p>
           </div>
         </div>
       </section>

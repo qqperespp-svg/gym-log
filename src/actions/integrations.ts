@@ -27,15 +27,14 @@ async function refreshGoogleToken(refreshToken: string): Promise<string> {
   return data.access_token;
 }
 
-/** Zsynchronizuj ostatnie 7 dni z Google Fit (kroki + waga). */
-export async function syncGoogleFitAction(): Promise<void> {
-  const user = await requireUser();
+/** Wspólna logika synchronizacji Google Fit — zwraca wynik bez redirectu. */
+async function performGoogleFitSync(userId: number): Promise<{ error?: string; summary?: string }> {
   const [integration] = await db
     .select()
     .from(integrations)
-    .where(and(eq(integrations.userId, user.id), eq(integrations.provider, "google_fit")))
+    .where(and(eq(integrations.userId, userId), eq(integrations.provider, "google_fit")))
     .limit(1);
-  if (!integration?.accessToken) redirect("/settings?fit_error=2");
+  if (!integration?.accessToken) return { error: "Najpierw połącz Google Fit (Ustawienia → Integracje)." };
 
   let access = integration.accessToken;
   if (integration.refreshToken) {
@@ -46,7 +45,7 @@ export async function syncGoogleFitAction(): Promise<void> {
         .set({ accessToken: access })
         .where(eq(integrations.id, integration.id));
     } catch {
-      redirect("/settings?fit_error=3");
+      return { error: "Nie udało się odświeżyć tokenu Google — połącz Google Fit ponownie." };
     }
   }
 
@@ -83,11 +82,10 @@ export async function syncGoogleFitAction(): Promise<void> {
       const date = new Date(dayStart);
       await db
         .insert(fitnessLogs)
-        .values({ userId: user.id, date, steps: Math.round(steps) })
+        .values({ userId, date, steps: Math.round(steps) })
         .onConflictDoUpdate({ target: [fitnessLogs.userId, fitnessLogs.date], set: { steps: Math.round(steps) } });
     }
 
-    // Waga — ostatni punkt
     let weightKg: number | null = null;
     try {
       const weightData = await aggregate(
@@ -98,7 +96,7 @@ export async function syncGoogleFitAction(): Promise<void> {
       const latest = all[all.length - 1];
       weightKg = latest?.value?.[0]?.fpVal ?? null;
     } catch {
-      weightKg = null; // brak zgody na dane o wadze — nie przerywaj
+      weightKg = null;
     }
 
     if (weightKg && weightKg > 20 && weightKg < 300) {
@@ -108,11 +106,11 @@ export async function syncGoogleFitAction(): Promise<void> {
       const existing = await db
         .select({ id: bodyMeasurements.id })
         .from(bodyMeasurements)
-        .where(and(eq(bodyMeasurements.userId, user.id), eq(bodyMeasurements.date, todayStart)))
+        .where(and(eq(bodyMeasurements.userId, userId), eq(bodyMeasurements.date, todayStart)))
         .limit(1);
       if (!existing.length) {
         await db.insert(bodyMeasurements).values({
-          userId: user.id,
+          userId,
           weightKg: Math.round(weightKg * 10) / 10,
           date: todayStart,
         });
@@ -120,10 +118,26 @@ export async function syncGoogleFitAction(): Promise<void> {
     }
 
     revalidatePath("/settings");
-    redirect(`/settings?saved=1`);
+    revalidatePath("/dashboard");
+    return { summary: `Zapisano: ${totalSteps.toLocaleString("pl-PL")} kroków (7 dni)${weightKg ? `, waga ${weightKg.toFixed(1)} kg` : ""}.` };
   } catch (e) {
-    redirect(`/settings?fit_error=3`);
+    return { error: e instanceof Error ? e.message : "Błąd synchronizacji Google Fit." };
   }
+}
+
+/** Akcja dla Ustawień (form) — po synchronizacji przekierowuje z komunikatem. */
+export async function syncGoogleFitAction(): Promise<void> {
+  const user = await requireUser();
+  const result = await performGoogleFitSync(user.id);
+  redirect(result.error ? "/settings?fit_error=3" : "/settings?saved=1");
+}
+
+/** Akcja dla dashboardu — zwraca wynik (bez redirectu), odświeża dane. */
+export async function syncGoogleFitNowAction(): Promise<{ ok: boolean; message: string }> {
+  const user = await requireUser();
+  const result = await performGoogleFitSync(user.id);
+  if (result.error) return { ok: false, message: result.error };
+  return { ok: true, message: result.summary ?? "Zsynchronizowano." };
 }
 
 export async function disconnectGoogleFitAction(): Promise<void> {

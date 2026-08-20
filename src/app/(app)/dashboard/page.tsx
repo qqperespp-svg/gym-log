@@ -15,13 +15,14 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { db } from "@/db";
-import { bodyMeasurements, dietGoals, dietLogs, exercises, exerciseSets, userSettings, waterLogs, workouts } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, exercises, exerciseSets, fitnessLogs, userSettings, waterLogs, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, startOfWeek, weekdayOf } from "@/lib/diet";
 import { Droplets } from "lucide-react";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
 import { DashboardTiles } from "@/components/dashboard-tiles";
 import { MacroBar } from "@/components/macro-bar";
+import { StepsCard } from "@/components/steps-card";
 
 export const dynamic = "force-dynamic";
 
@@ -216,11 +217,12 @@ export default async function DashboardPage({
   const hasMeasurements = measurementRows.length > 0;
 
   // ---------- Micha: cele i spożycie w bieżącym tygodniu ----------
-  const [goalRows, dietLogRows, waterRows, settingsRows] = await Promise.all([
+  const [goalRows, dietLogRows, waterRows, settingsRows, fitnessRows] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)),
     db.select().from(waterLogs).where(eq(waterLogs.userId, user.id)),
     db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1),
+    db.select().from(fitnessLogs).where(eq(fitnessLogs.userId, user.id)).orderBy(desc(fitnessLogs.date)).limit(60),
   ]);
   const goalByWeekday = new Map(goalRows.map((goal) => [goal.weekday, goal]));
   // Spożycie dzisiejsze (makro + kcal) oraz cel dzienny z flagą treningowy/wolny.
@@ -522,6 +524,11 @@ export default async function DashboardPage({
                 )}
               </div>
             ),
+          },
+          {
+            id: "steps",
+            label: "Kroki",
+            node: <StepsCard logs={fitnessRows} />,
           },
           {
             id: "water",

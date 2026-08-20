@@ -13,6 +13,11 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/** Klucz daty LOKALNEJ (YYYY-MM-DD) — bez przesunięcia UTC. */
+function localKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function fmtDay(d: Date): string {
   return d.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
 }
@@ -27,7 +32,7 @@ export function StepsCard({ logs }: { logs: FitnessLog[] }) {
   function doSync() {
     setMsg(null);
     startSync(async () => {
-      const res = await syncGoogleFitNowAction();
+      const res = await syncGoogleFitNowAction(-new Date().getTimezoneOffset());
       setMsg({ ok: res.ok, text: res.message });
       if (res.ok) router.refresh(); // odśwież dane kafelka po synchronizacji
       if (msgTimer.current) clearTimeout(msgTimer.current);
@@ -40,24 +45,24 @@ export function StepsCard({ logs }: { logs: FitnessLog[] }) {
     const map = new Map<string, number>();
     for (const l of logs) {
       const d = startOfDay(new Date(l.date));
-      const key = d.toISOString().slice(0, 10);
+      const key = localKey(d);
       map.set(key, (map.get(key) ?? 0) + (l.steps ?? 0));
     }
     return map;
   }, [logs]);
 
-  const key = day.toISOString().slice(0, 10);
+  const key = localKey(day);
   const steps = byDate.get(key) ?? 0;
   const pct = Math.min(100, Math.round((steps / STEP_GOAL) * 100));
   const remaining = Math.max(0, STEP_GOAL - steps);
-  const isToday = key === startOfDay(new Date()).toISOString().slice(0, 10);
+  const isToday = key === localKey(new Date());
 
   // 7 dni do szybkiego podglądu (od najbliższego poniedziałku? prościej: ostatnie 7 dni wstecz)
   const week = useMemo(
     () =>
       Array.from({ length: 7 }, (_, i) => {
         const d = new Date(day.getTime() - (6 - i) * DAY_MS);
-        return { date: d, key: d.toISOString().slice(0, 10), steps: byDate.get(d.toISOString().slice(0, 10)) ?? 0 };
+        return { date: d, key: localKey(d), steps: byDate.get(localKey(d)) ?? 0 };
       }),
     [day, byDate],
   );

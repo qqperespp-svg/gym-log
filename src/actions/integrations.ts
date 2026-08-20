@@ -28,7 +28,7 @@ async function refreshGoogleToken(refreshToken: string): Promise<string> {
 }
 
 /** Wspólna logika synchronizacji Google Fit — zwraca wynik bez redirectu. */
-async function performGoogleFitSync(userId: number): Promise<{ error?: string; summary?: string }> {
+async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ error?: string; summary?: string }> {
   const [integration] = await db
     .select()
     .from(integrations)
@@ -50,7 +50,11 @@ async function performGoogleFitSync(userId: number): Promise<{ error?: string; s
   }
 
   const now = Date.now();
-  const start = now - 7 * 86400000;
+  // Lokalna północ dzisiaj (w strefie użytkownika) — buckety od niej po 24 h = lokalne dni.
+  const localMidnightToday = new Date();
+  localMidnightToday.setHours(0, 0, 0, 0);
+  const start = localMidnightToday.getTime() - tzOffsetMin * 60000 - 6 * 86400000;
+  const end = now;
   const aggregate = async (dataTypeName: string, dataSourceId: string) => {
     const res = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
       method: "POST",
@@ -59,7 +63,7 @@ async function performGoogleFitSync(userId: number): Promise<{ error?: string; s
         aggregateBy: [{ dataTypeName, dataSourceId }],
         bucketByTime: { durationMillis: 86400000 },
         startTimeMillis: start,
-        endTimeMillis: now,
+        endTimeMillis: end,
       }),
     });
     if (!res.ok) throw new Error("Google Fit odmówił dostępu (" + res.status + ").");
@@ -73,13 +77,13 @@ async function performGoogleFitSync(userId: number): Promise<{ error?: string; s
     );
     let totalSteps = 0;
     for (const bucket of stepsData.bucket ?? []) {
-      const dayStart = new Date(Number(bucket.startTimeMillis)).setHours(12, 0, 0, 0);
+      // bucket.startTimeMillis = początek lokalnego dnia; data = lokalne południe (start + 12 h).
+      const date = new Date(Number(bucket.startTimeMillis) + 12 * 3600000);
       const steps = (bucket.dataset?.[0]?.point ?? []).reduce(
         (s, p) => s + (p.value?.[0]?.intVal ?? p.value?.[0]?.fpVal ?? 0),
         0,
       );
       totalSteps += steps;
-      const date = new Date(dayStart);
       await db
         .insert(fitnessLogs)
         .values({ userId, date, steps: Math.round(steps) })
@@ -128,14 +132,14 @@ async function performGoogleFitSync(userId: number): Promise<{ error?: string; s
 /** Akcja dla Ustawień (form) — po synchronizacji przekierowuje z komunikatem. */
 export async function syncGoogleFitAction(): Promise<void> {
   const user = await requireUser();
-  const result = await performGoogleFitSync(user.id);
+  const result = await performGoogleFitSync(user.id, 0);
   redirect(result.error ? "/settings?fit_error=3" : "/settings?saved=1");
 }
 
 /** Akcja dla dashboardu — zwraca wynik (bez redirectu), odświeża dane. */
-export async function syncGoogleFitNowAction(): Promise<{ ok: boolean; message: string }> {
+export async function syncGoogleFitNowAction(tzOffsetMin = 0): Promise<{ ok: boolean; message: string }> {
   const user = await requireUser();
-  const result = await performGoogleFitSync(user.id);
+  const result = await performGoogleFitSync(user.id, tzOffsetMin);
   if (result.error) return { ok: false, message: result.error };
   return { ok: true, message: result.summary ?? "Zsynchronizowano." };
 }

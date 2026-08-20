@@ -34,7 +34,7 @@ export default async function HydrationPage({
         <Link href="/dashboard" className="mb-5 inline-flex items-center gap-2 text-sm text-slate-500 hover:text-white">
           <ArrowLeft size={16} /> Wróć do dashboardu
         </Link>
-        <p className="eyebrow">Hydration</p>
+        <p className="eyebrow">Nawodnienie</p>
         <h1 className="page-title flex items-center gap-3">
           <Droplets size={32} className="text-sky-400" /> Nawodnienie
         </h1>

@@ -384,20 +384,19 @@ export default async function MichaPage({
         wprowadzanie={
           <>
             <section className="panel p-5 sm:p-7">
-              <h2 className="font-extrabold text-white mb-1">Skanuj kod kreskowy</h2>
+              <h2 className="font-extrabold text-white mb-1">Kod kreskowy</h2>
               <p className="mb-5 text-sm text-slate-500">
-                Jak w Fitatu — zeskanuj kod produktu, a makro i kcal podstawią się automatycznie
-                (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz gramaturę,
-                wybierz numer posiłku i dodaj do dziennika.
+                Jak w Fitatu — zeskanuj kod kreskowy lub kod QR produktu, a makro i kcal podstawią się
+                automatycznie (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz
+                gramaturę, wybierz numer posiłku i dodaj do dziennika.
               </p>
               <BarcodeScanner products={products} meals={todayMeals} mealNames={todayMealNames} />
             </section>
 
             <section className="panel p-5 sm:p-7">
-              <h2 className="font-extrabold text-white mb-1">Zeszacuj posiłek ze zdjęcia (AI)</h2>
+              <h2 className="font-extrabold text-white mb-1">Szacuj makro ze zdjęcia (AI)</h2>
               <p className="mb-5 text-sm text-slate-500">
                 Zrób zdjęcie talerza, a Google Gemini rozpozna składniki i oszacuje makro oraz kcal.
-                Wymaga skonfigurowanego klucza <b>GEMINI_API_KEY</b> w Vercel.
               </p>
               <MealEstimate meals={todayMeals} mealNames={todayMealNames} />
             </section>

@@ -225,8 +225,9 @@ export default async function SettingsPage({
               tu przez integrację Google Fit obok.
             </p>
             <p className="mt-2 text-xs leading-5 text-lime-300/90">
-              Kroki: priorytet <b>Mi Fitness (opaska)</b>, a w dni bez synchronizacji opaski —
-              Google Fit. Źródła nie są sumowane.
+              Kroki: pokazywana jest <b>najświeższa dostępna wartość</b> (opaska Mi Fitness lub
+              estymata Google — <b>nigdy nie sumowane</b>). Aby opaska wysłała najnowsze kroki,
+              otwórz aplikację Mi Fitness — Gymrat zsynchronizuje się automatycznie po powrocie.
             </p>
           </div>
         </div>

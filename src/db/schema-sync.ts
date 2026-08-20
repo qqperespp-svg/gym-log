@@ -431,6 +431,20 @@ async function runSchemaSync(): Promise<void> {
       "fitness_logs.user_id+date unique",
       sql`CREATE UNIQUE INDEX IF NOT EXISTS fitness_logs_user_date_idx ON fitness_logs (user_id, date)`,
     ],
+    [
+      "fitness_logs dedupe (podwójne wiersze dnia)",
+      sql`
+        DELETE FROM fitness_logs fl
+        WHERE EXTRACT(HOUR FROM fl.date AT TIME ZONE 'UTC') = 12
+          AND EXISTS (
+            SELECT 1 FROM fitness_logs fl2
+            WHERE fl2.user_id = fl.user_id
+              AND fl2.id <> fl.id
+              AND (fl2.date AT TIME ZONE 'Europe/Warsaw')::date
+                = (fl.date AT TIME ZONE 'Europe/Warsaw')::date
+          )
+      `,
+    ],
   ];
 
   for (const [label, statement] of steps) {

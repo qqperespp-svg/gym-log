@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Barcode, Camera, ImagePlus, LoaderCircle, ScanLine, Search, X } from "lucide-react";
+import { Barcode, Camera, ImagePlus, LoaderCircle, QrCode, ScanLine, Search, X } from "lucide-react";
 import { logScannedEntryAction } from "@/actions/diet";
 import { formatMacro, round1 } from "@/lib/diet";
 import type { FoodProduct } from "@/db/schema";
@@ -74,6 +74,29 @@ function waitForVideoFrames(video: HTMLVideoElement, timeout = 7000): Promise<vo
   });
 }
 
+/**
+ * Wyciąga kod produktu z treści kodu QR. Kody QR na produktach rzadko zawierają
+ * sam numer — zwykle to URL (GS1 Digital Link, Open Food Facts itp.).
+ */
+function extractCodeFromQR(text: string): string | null {
+  /** GTIN-14 z wiodącym zerem (wskaźnik opakowania 0) = ten sam produkt co EAN-13. */
+  const normalize = (c: string): string =>
+    c.length === 14 && c.startsWith("0") ? c.slice(1) : c;
+
+  const t = text.trim();
+  if (/^\d{8,14}$/.test(t)) return normalize(t); // czysty numer (EAN-8/12/13, GTIN-14)
+  // GS1 Digital Link: https://id.gs1.org/01/05901234567890...
+  const gs1 = t.match(/\/01\/(\d{12,14})/);
+  if (gs1) return normalize(gs1[1]);
+  // Open Food Facts / inne: .../product/5902409703887
+  const off = t.match(/\/product\/(\d{8,14})/);
+  if (off) return normalize(off[1]);
+  // Dowolny ciąg cyfr 8–14 w tekście (np. „EAN: 5902409703887").
+  const any = t.match(/\d{13,14}|\d{12}|\d{8}/);
+  if (any) return normalize(any[0]);
+  return null;
+}
+
 export function BarcodeScanner({
   products,
   meals,
@@ -89,6 +112,7 @@ export function BarcodeScanner({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [scanning, setScanning] = useState(false);
+  const [scanMode, setScanMode] = useState<"barcode" | "qr">("barcode");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +220,20 @@ export function BarcodeScanner({
     }
   }
 
-  async function startCamera() {
+  /** Uruchamia skaner kodu QR i wyszukuje produkt po kodzie wyciągniętym z treści QR. */
+  async function lookupQR(text: string) {
+    const code = extractCodeFromQR(text);
+    if (!code) {
+      setError("Nie znaleziono kodu produktu w tym kodzie QR.");
+      return;
+    }
+    await lookup(code);
+  }
+
+  async function startCamera(mode: "barcode" | "qr" = "barcode") {
+    // Przełączanie trybu — zatrzymaj bieżący strumień przed startem nowego.
+    if (streamRef.current) await stopCamera();
+    setScanMode(mode);
     setError(null);
     setProduct(null);
     const video = videoRef.current;
@@ -247,7 +284,7 @@ export function BarcodeScanner({
       reader.decodeFromStream(stream, video, (result) => {
         if (result) {
           const code = result.getText().trim();
-          void stopCamera().then(() => lookup(code));
+          void stopCamera().then(() => (mode === "qr" ? lookupQR(code) : lookup(code)));
         }
       });
     } catch (e) {
@@ -271,7 +308,14 @@ export function BarcodeScanner({
         URL.revokeObjectURL(url);
       }
       if (result) {
-        await lookup(result.getText().trim());
+        const raw = result.getText().trim();
+        if (/^\d{8,14}$/.test(raw)) {
+          await lookup(raw); // zwykły kod kreskowy (czysty numer)
+        } else {
+          const code = extractCodeFromQR(raw); // kod QR (może być URL-em)
+          if (code) await lookup(code);
+          else setError("Nie znaleziono kodu produktu w tym kodzie.");
+        }
       } else {
         setError("Nie rozpoznano kodu na zdjęciu.");
       }
@@ -300,17 +344,21 @@ export function BarcodeScanner({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={scanning ? stopCamera : startCamera}
+          onClick={() =>
+            scanning && scanMode === "barcode"
+              ? void stopCamera()
+              : void startCamera("barcode")
+          }
           disabled={loading}
-          className={`${scanning ? "button-secondary" : "button-primary"} px-4 py-2.5 text-sm`}
+          className={`${scanning && scanMode === "barcode" ? "button-secondary" : "button-primary"} px-4 py-2.5 text-sm`}
         >
-          {scanning ? (
+          {scanning && scanMode === "barcode" ? (
             <>
               <X size={16} /> Zatrzymaj skanowanie
             </>
           ) : (
             <>
-              <ScanLine size={16} /> Skanuj kod kreskowy
+              <ScanLine size={16} /> Kod kreskowy
             </>
           )}
         </button>
@@ -351,6 +399,33 @@ export function BarcodeScanner({
         </button>
       </div>
 
+      {/* Skaner kodów QR — osobny przycisk pod skanerem kodu kreskowego. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            scanning && scanMode === "qr"
+              ? void stopCamera()
+              : void startCamera("qr")
+          }
+          disabled={loading}
+          className={`${scanning && scanMode === "qr" ? "button-secondary" : "button-primary"} px-4 py-2.5 text-sm`}
+        >
+          {scanning && scanMode === "qr" ? (
+            <>
+              <X size={16} /> Zatrzymaj skanowanie
+            </>
+          ) : (
+            <>
+              <QrCode size={16} /> Skanuj kod QR
+            </>
+          )}
+        </button>
+        <span className="text-xs text-slate-500">
+          Dla produktów z kodem QR zamiast kreskowego (obsługuje linki GS1 i Open Food Facts).
+        </span>
+      </div>
+
       {/* Wideo zawsze w DOM — ref musi istnieć, zanim getUserMedia zwróci strumień. */}
       <div
         className={`relative overflow-hidden rounded-2xl border border-lime-400/25 bg-black/40 ${
@@ -366,7 +441,7 @@ export function BarcodeScanner({
         />
         <div className="pointer-events-none absolute inset-x-0 top-1/2 h-16 -translate-y-1/2 border-y-2 border-lime-400/80" />
         <p className="absolute inset-x-0 bottom-2 text-center text-xs font-bold text-lime-300">
-          Skieruj aparat na kod kreskowy
+          {scanMode === "qr" ? "Skieruj aparat na kod QR" : "Skieruj aparat na kod kreskowy"}
         </p>
       </div>
 

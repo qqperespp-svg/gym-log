@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronLeft, ChevronRight, Footprints, LoaderCircle, RefreshCw, XCircle } from "lucide-react";
 import { syncGoogleFitNowAction } from "@/actions/integrations";
@@ -8,6 +8,8 @@ import type { FitnessLog } from "@/db/schema";
 
 const DAY_MS = 86400000;
 const STEP_GOAL = 10000;
+const SYNC_KEY = "gymrat:steps-last-sync";
+const AUTO_SYNC_MIN = 15; // minimalny odstęp automatycznej synchronizacji (minuty)
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -22,6 +24,15 @@ function fmtDay(d: Date): string {
   return d.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
 }
 
+function lastSyncAt(): number {
+  try {
+    const v = Number(localStorage.getItem(SYNC_KEY) ?? 0);
+    return Number.isFinite(v) ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function StepsCard({ logs }: { logs: FitnessLog[] }) {
   const [day, setDay] = useState<Date>(() => startOfDay(new Date()));
   const [syncing, startSync] = useTransition();
@@ -29,16 +40,50 @@ export function StepsCard({ logs }: { logs: FitnessLog[] }) {
   const router = useRouter();
   const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function doSync() {
-    setMsg(null);
+  // Auto-sync: tylko gdy integracja była już używana (są dane) i minął odstęp.
+  const hasSyncHistory = logs.length > 0;
+
+  /** `auto` = cicha synchronizacja w tle (bez komunikatu). */
+  function doSync(auto = false) {
+    if (syncing) return;
+    if (!auto) setMsg(null);
     startSync(async () => {
       const res = await syncGoogleFitNowAction(-new Date().getTimezoneOffset());
-      setMsg({ ok: res.ok, text: res.message });
-      if (res.ok) router.refresh(); // odśwież dane kafelka po synchronizacji
-      if (msgTimer.current) clearTimeout(msgTimer.current);
-      msgTimer.current = setTimeout(() => setMsg(null), 8000);
+      if (res.ok) {
+        try {
+          localStorage.setItem(SYNC_KEY, String(Date.now()));
+        } catch {
+          /* ignore */
+        }
+        if (!auto) setMsg({ ok: true, text: res.message });
+        router.refresh(); // odśwież dane kafelka po synchronizacji
+      } else if (!auto) {
+        setMsg({ ok: false, text: res.message });
+      }
+      if (!auto) {
+        if (msgTimer.current) clearTimeout(msgTimer.current);
+        msgTimer.current = setTimeout(() => setMsg(null), 8000);
+      }
     });
   }
+
+  // Po otwarciu Mi Fitness (który wysyła kroki do Google Fit) i powrocie do
+  // aplikacji automatycznie pobieramy najnowsze kroki — bez klikania ⟳.
+  useEffect(() => {
+    if (!hasSyncHistory) return;
+    const maybeAutoSync = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastSyncAt() > AUTO_SYNC_MIN * 60000) doSync(true);
+    };
+    maybeAutoSync();
+    document.addEventListener("visibilitychange", maybeAutoSync);
+    window.addEventListener("focus", maybeAutoSync);
+    return () => {
+      document.removeEventListener("visibilitychange", maybeAutoSync);
+      window.removeEventListener("focus", maybeAutoSync);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSyncHistory]);
 
   // Mapa kroków po dacie (klucz YYYY-MM-DD).
   // Bierzemy MAKSIMUM, nie sumę: gdyby w bazie znalazły się dwa wiersze tego
@@ -80,7 +125,7 @@ export function StepsCard({ logs }: { logs: FitnessLog[] }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={doSync}
+            onClick={() => doSync()}
             disabled={syncing}
             className="icon-button text-lime-400 hover:bg-lime-400/10 disabled:opacity-40"
             title="Synchronizuj kroki z Google Fit"
@@ -174,6 +219,13 @@ export function StepsCard({ logs }: { logs: FitnessLog[] }) {
           );
         })}
       </div>
+
+      {hasSyncHistory && (
+        <p className="mt-4 border-t border-white/[.05] pt-3 text-[11px] leading-4 text-slate-500">
+          Opaska wysyła kroki do Google Fit po otwarciu aplikacji Mi Fitness — po powrocie Gymrat
+          zsynchronizuje się automatycznie. Źródła nigdy nie są sumowane.
+        </p>
+      )}
     </div>
   );
 }

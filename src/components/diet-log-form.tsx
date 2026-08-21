@@ -8,18 +8,10 @@ import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
 import { suggestMealByHour } from "@/lib/i18n";
 import { enqueue } from "@/lib/offline-queue";
 import { productLabels } from "@/lib/labels";
+import { matchesWords } from "@/lib/search";
 import { lookupProductByCode } from "@/lib/product-lookup";
 import { ScanCodeBox } from "@/components/scan-code-box";
 import type { FoodProduct } from "@/db/schema";
-
-function norm(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
 
 export function DietLogForm({
   products,
@@ -68,9 +60,8 @@ export function DietLogForm({
     [products, favoriteIds],
   );
   const matches = useMemo(() => {
-    const q = norm(query);
-    if (q.length < 2) return [];
-    return products.filter((p) => norm(p.name).includes(q)).slice(0, 8);
+    if (query.trim().length < 2) return [];
+    return products.filter((p) => matchesWords(p.name, query)).slice(0, 8);
   }, [query, products]);
 
   function fill(p: FoodProduct, gramsValue = "100") {

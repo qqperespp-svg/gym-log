@@ -4,11 +4,8 @@ import { useMemo, useState } from "react";
 import { Plus, Save, X } from "lucide-react";
 import { addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
 import { formatMacro } from "@/lib/diet";
+import { matchesWords } from "@/lib/search";
 import type { FoodProduct, Recipe } from "@/db/schema";
-
-function norm(s: string): string {
-  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
-}
 
 type Item = { productId: number; name: string; grams: string; protein: number; fat: number; carbs: number; kcal: number };
 
@@ -18,9 +15,8 @@ export function RecipeForm({ products }: { products: FoodProduct[] }) {
   const [items, setItems] = useState<Item[]>([]);
 
   const matches = useMemo(() => {
-    const q = norm(query);
-    if (q.length < 2) return [];
-    return products.filter((p) => norm(p.name).includes(q)).slice(0, 6);
+    if (query.trim().length < 2) return [];
+    return products.filter((p) => matchesWords(p.name, query)).slice(0, 6);
   }, [query, products]);
 
   const sums = useMemo(

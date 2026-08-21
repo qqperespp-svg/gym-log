@@ -5,6 +5,7 @@ import { useActionState, useMemo, useState } from "react";
 import { Check, Dumbbell, GripVertical, Plus, Save, Search, Trash2, X } from "lucide-react";
 import type { ProgramFormState } from "@/actions/programs";
 import { SubmitButton } from "@/components/submit-button";
+import { matchesWords } from "@/lib/search";
 
 type LibraryItem = { id: number; name: string; muscleGroup: string; equipment: string };
 type Row = {
@@ -29,15 +30,6 @@ const emptyRow = (): Row => ({
   targetWeight: 0,
   restSeconds: 90,
 });
-
-function norm(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
 
 export function ProgramForm({
   action,
@@ -164,7 +156,7 @@ export function ProgramForm({
                   {row.query.trim().length >= 2 && (
                     <div className="absolute z-20 mt-1 max-h-56 w-full space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-white/10 bg-[#11171f] p-2 shadow-2xl">
                       {library
-                        .filter((item) => norm(item.name).includes(norm(row.query)))
+                        .filter((item) => matchesWords(item.name, row.query))
                         .slice(0, 8)
                         .map((item) => (
                           <button
@@ -182,7 +174,7 @@ export function ProgramForm({
                             <span className="shrink-0 text-[10px] text-slate-500">{item.equipment}</span>
                           </button>
                         ))}
-                      {library.filter((item) => norm(item.name).includes(norm(row.query))).length === 0 && (
+                      {library.filter((item) => matchesWords(item.name, row.query)).length === 0 && (
                         <p className="px-3 py-2 text-sm text-slate-500">Brak ćwiczeń pasujących do zapytania.</p>
                       )}
                     </div>

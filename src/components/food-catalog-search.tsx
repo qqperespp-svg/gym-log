@@ -1,19 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Star } from "lucide-react";
+import { FilterX, Search, Star } from "lucide-react";
 import type { FoodProduct } from "@/db/schema";
 import { DeleteFoodProductButton } from "@/components/delete-food-product-button";
 import { toggleFavoriteProductAction } from "@/actions/diet";
-import { productLabels } from "@/lib/labels";
+import { DIET_LABELS, productLabels } from "@/lib/labels";
+import { matchesWords } from "@/lib/search";
 
-function norm(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+/** Pusta wartość = brak ograniczenia; zwraca liczbę lub null. */
+function rangeVal(v: string): number | null {
+  const t = v.trim().replace(",", ".");
+  if (t === "") return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 export function FoodCatalogSearch({
@@ -26,15 +26,65 @@ export function FoodCatalogSearch({
   favoriteIds: Set<number>;
 }) {
   const [query, setQuery] = useState("");
+  // Wybrane etykiety (produkt pasuje, gdy ma co najmniej jedną z nich).
+  const [labelKeys, setLabelKeys] = useState<string[]>([]);
+  // Zakresy makro (na 100 g) — min/max.
+  const [pMin, setPMin] = useState("");
+  const [pMax, setPMax] = useState("");
+  const [fMin, setFMin] = useState("");
+  const [fMax, setFMax] = useState("");
+  const [cMin, setCMin] = useState("");
+  const [cMax, setCMax] = useState("");
+
+  function toggleLabel(key: string) {
+    setLabelKeys((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]));
+  }
+
+  function clearFilters() {
+    setQuery("");
+    setLabelKeys([]);
+    setPMin("");
+    setPMax("");
+    setFMin("");
+    setFMax("");
+    setCMin("");
+    setCMax("");
+  }
+
+  const hasActiveFilters =
+    query.trim().length >= 2 ||
+    labelKeys.length > 0 ||
+    [pMin, pMax, fMin, fMax, cMin, cMax].some((v) => v.trim() !== "");
 
   const visible = useMemo(() => {
-    const q = norm(query);
-    const list = q.length >= 2 ? products.filter((p) => norm(p.name).includes(q)) : products;
+    let list = products;
+    // 1) nazwa (po słowach)
+    if (query.trim().length >= 2) list = list.filter((p) => matchesWords(p.name, query));
+    // 2) etykiety (OR)
+    if (labelKeys.length > 0) {
+      list = list.filter((p) => {
+        const keys = productLabels(p.protein, p.fat, p.carbs).map((l) => l.key);
+        return labelKeys.some((k) => keys.includes(k));
+      });
+    }
+    // 3) zakresy makro
+    const pm = rangeVal(pMin), pM = rangeVal(pMax);
+    const fm = rangeVal(fMin), fM = rangeVal(fMax);
+    const cm = rangeVal(cMin), cM = rangeVal(cMax);
+    list = list.filter(
+      (p) =>
+        (pm == null || p.protein >= pm) &&
+        (pM == null || p.protein <= pM) &&
+        (fm == null || p.fat >= fm) &&
+        (fM == null || p.fat <= fM) &&
+        (cm == null || p.carbs >= cm) &&
+        (cM == null || p.carbs <= cM),
+    );
     // ulubione najpierw
     return [...list.filter((p) => favoriteIds.has(p.id)), ...list.filter((p) => !favoriteIds.has(p.id))].slice(0, 80);
-  }, [query, products, favoriteIds]);
+  }, [query, products, favoriteIds, labelKeys, pMin, pMax, fMin, fMax, cMin, cMax]);
 
-  const count = products.length;
+  const total = products.length;
 
   return (
     <div className="space-y-3">
@@ -50,7 +100,93 @@ export function FoodCatalogSearch({
           />
         </div>
         <span className="text-xs text-slate-500">
-          <b className="text-white">{count.toLocaleString("pl-PL")}</b> produktów
+          <b className="text-white">{total.toLocaleString("pl-PL")}</b> produktów
+        </span>
+      </div>
+
+      {/* Filtry: etykiety */}
+      <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
+        <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+          Filtruj po etykiecie
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {DIET_LABELS.map((l) => {
+            const active = labelKeys.includes(l.key);
+            return (
+              <button
+                key={l.key}
+                type="button"
+                onClick={() => toggleLabel(l.key)}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
+                  active
+                    ? `${l.color} ring-1 ring-white/40`
+                    : "bg-white/[.04] text-slate-400 hover:bg-white/[.08] hover:text-white"
+                }`}
+              >
+                {l.pl}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Filtry: zakresy makro */}
+      <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            Zakresy makro (na 100 g)
+          </p>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-[10px] font-bold text-slate-300 transition hover:bg-white/[.1] hover:text-white"
+            >
+              <FilterX size={11} /> Wyczyść filtry
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {[
+            { label: "Białko (g)", color: "text-sky-300", min: pMin, setMin: setPMin, max: pMax, setMax: setPMax },
+            { label: "Tłuszcz (g)", color: "text-amber-300", min: fMin, setMin: setFMin, max: fMax, setMax: setFMax },
+            { label: "Węglowodany (g)", color: "text-rose-300", min: cMin, setMin: setCMin, max: cMax, setMax: setCMax },
+          ].map((r) => (
+            <label key={r.label} className="block text-[11px] font-bold text-slate-400">
+              <span className={r.color}>{r.label}</span>
+              <span className="mt-1 flex items-center gap-1.5">
+                <input
+                  className="input !min-h-9 !px-2 !py-1 text-center"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  placeholder="min"
+                  inputMode="decimal"
+                  value={r.min}
+                  onChange={(e) => r.setMin(e.target.value)}
+                />
+                <span className="text-slate-600">–</span>
+                <input
+                  className="input !min-h-9 !px-2 !py-1 text-center"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  placeholder="max"
+                  inputMode="decimal"
+                  value={r.max}
+                  onChange={(e) => r.setMax(e.target.value)}
+                />
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-slate-500">
+        <span>
+          Pokazano <b className="text-white">{visible.length.toLocaleString("pl-PL")}</b>{" "}
+          {visible.length === 1 ? "produkt" : "produktów"}
+          {hasActiveFilters && ` (z ${total.toLocaleString("pl-PL")})`}
         </span>
       </div>
 
@@ -108,7 +244,11 @@ export function FoodCatalogSearch({
           })
         ) : (
           <div className="rounded-xl border border-white/[.06] bg-black/15 p-5 text-center">
-            <p className="text-sm text-slate-500">{query ? "Brak produktów pasujących do zapytania." : "Katalog jest pusty."}</p>
+            <p className="text-sm text-slate-500">
+              {hasActiveFilters
+                ? "Brak produktów spełniających wybrane filtry."
+                : "Katalog jest pusty."}
+            </p>
           </div>
         )}
       </div>

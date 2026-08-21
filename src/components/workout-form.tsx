@@ -15,6 +15,7 @@ import {
 import type { WorkoutFormState } from "@/actions/workouts";
 import type { PreviousSet } from "@/lib/workout-data";
 import { SubmitButton } from "@/components/submit-button";
+import { matchesWords } from "@/lib/search";
 
 type LibraryItem = { id: number; name: string; muscleGroup: string; equipment: string };
 type SetRow = { key: string; reps: number; weight: number; rir: number | null; note: string; completed: boolean };
@@ -55,15 +56,6 @@ type Props = {
   initialProgramId?: number;
   mode: "create" | "edit";
 };
-
-function norm(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
 
 const makeSet = (data?: Partial<Omit<SetRow, "key">>): SetRow => ({
   key: crypto.randomUUID(),
@@ -345,7 +337,7 @@ export function WorkoutForm({
                 {row.query.trim().length >= 2 && (
                   <div className="absolute z-20 mt-1 max-h-56 w-full space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-white/10 bg-[#11171f] p-2 shadow-2xl">
                     {library
-                      .filter((item) => norm(item.name).includes(norm(row.query)))
+                      .filter((item) => matchesWords(item.name, row.query))
                       .slice(0, 8)
                       .map((item) => (
                         <button
@@ -363,7 +355,7 @@ export function WorkoutForm({
                           <span className="shrink-0 text-[10px] text-slate-500">{item.equipment}</span>
                         </button>
                       ))}
-                    {library.filter((item) => norm(item.name).includes(norm(row.query))).length === 0 && (
+                    {library.filter((item) => matchesWords(item.name, row.query)).length === 0 && (
                       <p className="px-3 py-2 text-sm text-slate-500">Brak ćwiczeń pasujących do zapytania.</p>
                     )}
                   </div>

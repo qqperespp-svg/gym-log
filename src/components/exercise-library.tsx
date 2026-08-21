@@ -5,6 +5,7 @@ import { useActionState, useMemo, useOptimistic, useState, useTransition } from 
 import { BicepsFlexed, Edit3, LibraryBig, Plus, Search, Trash2 } from "lucide-react";
 import { createExerciseAction, deleteExerciseAction } from "@/actions/exercises";
 import { SubmitButton } from "@/components/submit-button";
+import { matchesWords } from "@/lib/search";
 
 type Item = { id: number; name: string; muscleGroup: string; equipment: string; isCustom: number };
 const muscleGroups = [
@@ -53,9 +54,7 @@ export function ExerciseLibrary({ exercises }: { exercises: Item[] }) {
     [optimistic],
   );
   const visible = optimistic.filter(
-    (item) =>
-      (group === "Wszystkie" || item.muscleGroup === group) &&
-      item.name.toLocaleLowerCase("pl").includes(search.toLocaleLowerCase("pl")),
+    (item) => (group === "Wszystkie" || item.muscleGroup === group) && matchesWords(item.name, search),
   );
   function remove(id: number) {
     if (!window.confirm("Usunąć własne ćwiczenie? Zapisane treningi zachowają jego nazwę.")) return;

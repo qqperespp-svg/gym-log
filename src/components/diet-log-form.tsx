@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Beef, Croissant, Droplets, Plus, ScanLine, Search, Star, X } from "lucide-react";
-import { logDietEntryAction } from "@/actions/diet";
+import { logDietEntryAction, saveFoundProductAction } from "@/actions/diet";
 import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
 import { suggestMealByHour } from "@/lib/i18n";
 import { enqueue } from "@/lib/offline-queue";
@@ -39,6 +40,7 @@ export function DietLogForm({
   const [meal, setMeal] = useState(() => String(suggestMealByHour()));
   const [query, setQuery] = useState("");
   const [offlineNote, setOfflineNote] = useState<string | null>(null);
+  const router = useRouter();
   const [scanStatus, setScanStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -95,6 +97,14 @@ export function DietLogForm({
       setGrams("100");
       setNote(`${p.name} (kod ${code})`);
       setScanStatus(`Znaleziono: ${p.name} — uzupełnij gramaturę i dodaj do dziennika. ✅`);
+      // Zapis do katalogu (cicho), tylko gdy produktu jeszcze nie ma — inaczej
+      // duplikowalibyśmy pozycje we wspólnym katalogu.
+      const alreadyInCatalog = products.some((x) => x.barcode === code);
+      if (!alreadyInCatalog) {
+        void saveFoundProductAction({ code, name: p.name, protein: p.protein, fat: p.fat, carbs: p.carbs, kcal: p.kcal })
+          .then(() => router.refresh())
+          .catch(() => {});
+      }
     } catch {
       setScanStatus("Nie udało się pobrać produktu o tym kodzie.");
     }
@@ -186,6 +196,11 @@ export function DietLogForm({
                             {l.pl}
                           </span>
                         ))}
+                        {p.userId !== null && (
+                          <span className="rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-300">
+                            wpis gymrata
+                          </span>
+                        )}
                       </span>
                     </span>
                     <span className="shrink-0 text-[11px] font-bold text-slate-400">

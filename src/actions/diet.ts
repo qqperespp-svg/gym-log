@@ -170,6 +170,57 @@ export async function deleteFoodProductAction(id: number): Promise<void> {
   redirect("/micha?saved=1");
 }
 
+/**
+ * Zapisuje produkt znaleziony w Open Food Facts (przy skanowaniu) do lokalnego
+ * katalogu użytkownika — dzięki temu katalog „rośnie” z każdym użyciem i
+ * następnym razem produkt znajdzie się w wyszukiwarce od razu (bez czekania).
+ * Ciche: nie przerywa dodawania do dziennika, gdy coś się nie powiedzie.
+ */
+export async function saveFoundProductAction(input: {
+  code: string;
+  name: string;
+  protein: number;
+  fat: number;
+  carbs: number;
+  kcal: number;
+}): Promise<{ ok: boolean }> {
+  const user = await requireUser();
+  const code = String(input?.code ?? "").trim();
+  const name = String(input?.name ?? "").trim().slice(0, 255);
+  if (!code || name.length < 3) return { ok: false };
+  const protein = clamp1(Number(input.protein) || 0, 0, 999);
+  const fat = clamp1(Number(input.fat) || 0, 0, 999);
+  const carbs = clamp1(Number(input.carbs) || 0, 0, 999);
+  const kcal = Math.round(Number(input.kcal) || kcalFromMacros(protein, fat, carbs));
+  try {
+    // Nie twórz duplikatów we wspólnym katalogu: jeśli produkt o tym kodzie już
+    // istnieje (globalny lub innego użytkownika), pomiń zapis.
+    const existing = await db
+      .select({ id: foodProducts.id })
+      .from(foodProducts)
+      .where(eq(foodProducts.barcode, code))
+      .limit(1);
+    if (existing.length) return { ok: false };
+    await db
+      .insert(foodProducts)
+      .values({
+        userId: user.id,
+        name,
+        barcode: code,
+        protein,
+        fat,
+        carbs,
+        kcal,
+        isCustom: 1,
+      })
+      .onConflictDoNothing();
+    revalidatePath("/micha");
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
 
 // ---------- Przepisy / posiłki złożone ----------
 

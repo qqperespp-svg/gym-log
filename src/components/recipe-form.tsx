@@ -63,7 +63,14 @@ export function RecipeForm({ products }: { products: FoodProduct[] }) {
           <div className="absolute z-10 mt-1 w-full space-y-1 rounded-xl border border-white/10 bg-[#11171f] p-2 shadow-xl">
             {matches.map((p) => (
               <button key={p.id} type="button" onClick={() => addItem(p)} className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-white/5">
-                <span className="truncate font-bold text-white">{p.name}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate font-bold text-white">{p.name}</span>
+                  {p.userId !== null && (
+                    <span className="shrink-0 rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-violet-300">
+                      wpis gymrata
+                    </span>
+                  )}
+                </span>
                 <span className="shrink-0 text-[11px] text-slate-400">{p.kcal} kcal/100g</span>
               </button>
             ))}

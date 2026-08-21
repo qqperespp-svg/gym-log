@@ -91,15 +91,18 @@ export function FoodCatalogSearch({
                   <span className="text-slate-600">/ 100 g</span>
                   {p.barcode && <span className="text-slate-600">kod: {p.barcode}</span>}
                 </p>
-                {labels.length > 0 && (
-                  <p className="mt-1 flex flex-wrap gap-1">
-                    {labels.map((l) => (
-                      <span key={l.key} className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${l.color}`}>
-                        {l.pl}
-                      </span>
-                    ))}
-                  </p>
-                )}
+                <p className="mt-1 flex flex-wrap gap-1">
+                  {labels.map((l) => (
+                    <span key={l.key} className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${l.color}`}>
+                      {l.pl}
+                    </span>
+                  ))}
+                  {p.userId !== null && (
+                    <span className="rounded-full bg-violet-400/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-300">
+                      wpis gymrata
+                    </span>
+                  )}
+                </p>
               </div>
             );
           })

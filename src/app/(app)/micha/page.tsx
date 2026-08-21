@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc, desc, eq, isNull, or } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { ArrowLeft, CheckCircle2, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, foodProducts, recipes, userFavorites, type DietLog } from "@/db/schema";
@@ -36,7 +36,7 @@ export default async function MichaPage({
     db
       .select()
       .from(foodProducts)
-      .where(or(eq(foodProducts.userId, user.id), isNull(foodProducts.userId)))
+      // Wspólny katalog: wszystkie produkty (globalne + dodane przez użytkowników).
       .orderBy(asc(foodProducts.name)),
     db
       .select()
@@ -437,8 +437,12 @@ export default async function MichaPage({
             <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Katalog produktów</h2>
               <p className="mb-5 text-sm text-slate-500">
-                Baza zawiera prawie 1000 produktów z makroskładnikami (na 100 g) — w tym podstawowe
-                produkty: jajka, warzywa, owoce, mięsa. Wyszukaj po nazwie albo dodaj własny produkt.
+                Baza zawiera <b className="text-lime-300">{products.length.toLocaleString("pl-PL")}</b> produktów
+                z makroskładnikami (na 100 g) — polskie produkty z otwartej bazy Open Food Facts (mleko,
+                jogurty, pieczywo, mięsa, owoce, warzywa, przekąski i wiele innych) + produkty dodawane
+                przez użytkowników (<b>wspólny katalog</b>). Pozycje dodane ręcznie są oznaczone etykietą
+                <b className="text-violet-300"> „wpis gymrata"</b>. Wyszukaj po nazwie, zeskanuj kod albo
+                dodaj własny produkt.
               </p>
               <div className="grid gap-5 xl:grid-cols-2">
                 <div className="min-w-0">

@@ -10,10 +10,15 @@ export type ZXingReader = {
     callback: (result: { getText(): string } | null) => void,
   ): unknown;
   decodeFromImageUrl(url: string): Promise<{ getText(): string } | null>;
+  setHints?(hints: Map<string, string[]>): void;
   reset(): void;
 };
 
-export type ZXingGlobal = { BrowserMultiFormatReader: new () => ZXingReader };
+export type ZXingGlobal = {
+  BrowserMultiFormatReader: new () => ZXingReader;
+  DecodeHintType: { POSSIBLE_FORMATS: string };
+  BarcodeFormat: Record<string, string>;
+};
 
 /** Ładuje silnik ZXing z pliku wbudowanego w aplikację (public/vendor/zxing.min.js). */
 export function loadZxing(): Promise<ZXingGlobal> {

@@ -191,8 +191,15 @@ export default async function SettingsPage({
                 ? `Ostatnia synchronizacja: ${lastSteps.steps.toLocaleString("pl-PL")} kroków (${lastSteps.date.toLocaleDateString("pl-PL")})`
                 : googleFit
                   ? "Brak danych — kliknij „Zsynchronizuj”."
-                  : "Połącz, aby importować kroki i wagę z aplikacji Google Fit / Health Connect."}
+                  : "Połącz, aby importować kroki, wagę i sen z aplikacji Google Fit / Health Connect."}
             </p>
+            {googleFit && (
+              <p className="mt-2 text-xs leading-5 text-amber-300/90">
+                Aby włączyć <b>Sen</b> (wymaga nowego zakresu uprawnień fitness.sleep.read): kliknij
+                <b> Rozłącz</b>, a potem <b>Połącz Google Fit</b> ponownie — po autoryzacji
+                zsynchronizuj dane (⟳ na kafelku Sen lub tutaj).
+              </p>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               {googleFit ? (
                 <>

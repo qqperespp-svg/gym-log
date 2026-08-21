@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { bodyMeasurements, fitnessLogs, integrations } from "@/db/schema";
+import { bodyMeasurements, fitnessLogs, integrations, sleepLogs } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -25,6 +25,121 @@ async function refreshGoogleToken(refreshToken: string): Promise<string> {
   const data = (await res.json()) as { access_token?: string };
   if (!data.access_token) throw new Error("Brak access_token");
   return data.access_token;
+}
+
+/**
+ * Synchronizuje dane o śnie z Google Fit (com.google.sleep.segment).
+ * Wymaga zakresu fitness.sleep.read — jeśli go brak (403), zwraca null
+ * i nie blokuje reszty synchronizacji (kroki/waga).
+ * Fazy snu: 0 = czuwanie, 1 = sen ogólny, 2 = płytki, 3 = głęboki, 4 = REM, 5 = poza łóżkiem.
+ */
+async function syncSleepForUser(
+  userId: number,
+  access: string,
+  start: number,
+  end: number,
+): Promise<{ nights: number; error?: string } | null> {
+  const res = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      aggregateBy: [
+        {
+          dataTypeName: "com.google.sleep.segment",
+          dataSourceId: "derived:com.google.sleep.segment:com.google.android.gms:merge_sleep_segments",
+        },
+      ],
+      bucketByTime: { durationMillis: 86400000 },
+      startTimeMillis: start,
+      endTimeMillis: end,
+    }),
+  });
+  if (res.status === 403) return null; // brak uprawnień do snu — połącz Google Fit ponownie
+  if (!res.ok) return { nights: 0, error: "Google Fit odmówił dostępu do snu (" + res.status + ")." };
+
+  const data = (await res.json()) as {
+    bucket?: Array<{
+      startTimeMillis?: string;
+      dataset?: Array<{
+        point?: Array<{
+          startTimeNanos?: string;
+          endTimeNanos?: string;
+          value?: Array<{ intVal?: number; fpVal?: number }>;
+        }>;
+      }>;
+    }>;
+  };
+
+  const windowStart = start - 24 * 3600000;
+  const windowEnd = end + 24 * 3600000;
+  await db
+    .delete(sleepLogs)
+    .where(
+      and(
+        eq(sleepLogs.userId, userId),
+        gte(sleepLogs.date, new Date(windowStart)),
+        lte(sleepLogs.date, new Date(windowEnd)),
+      ),
+    );
+
+  let nights = 0;
+  for (const bucket of data.bucket ?? []) {
+    let deep = 0, light = 0, rem = 0, awake = 0, asleep = 0;
+    let minStart: number | null = null;
+    let maxEnd: number | null = null;
+    for (const ds of bucket.dataset ?? []) {
+      for (const pt of ds.point ?? []) {
+        const stage = Number(pt.value?.[0]?.intVal ?? 0);
+        const startMs = Number(pt.startTimeNanos ?? 0) / 1e6;
+        const endMs = Number(pt.endTimeNanos ?? 0) / 1e6;
+        const mins = Math.max(0, (endMs - startMs) / 60000);
+        if (stage === 0) awake += mins;
+        else if (stage === 1) asleep += mins;
+        else if (stage === 2) light += mins;
+        else if (stage === 3) deep += mins;
+        else if (stage === 4) rem += mins;
+        // stage 5 = poza łóżkiem — pomijamy
+        if (startMs > 0) minStart = minStart === null ? startMs : Math.min(minStart, startMs);
+        if (endMs > 0) maxEnd = maxEnd === null ? endMs : Math.max(maxEnd, endMs);
+      }
+    }
+    const total = deep + light + rem + asleep;
+    if (total <= 0) continue; // brak snu w tym dniu
+
+    // Data = lokalne południe (ta sama konwencja co kroki).
+    const date = new Date(Number(bucket.startTimeMillis) + 12 * 3600000);
+    await db
+      .insert(sleepLogs)
+      .values({
+        userId,
+        date,
+        totalMinutes: Math.round(total),
+        deepMinutes: Math.round(deep),
+        lightMinutes: Math.round(light),
+        remMinutes: Math.round(rem),
+        awakeMinutes: Math.round(awake),
+        asleepMinutes: Math.round(asleep),
+        startAt: minStart ? new Date(minStart) : null,
+        endAt: maxEnd ? new Date(maxEnd) : null,
+        source: "google_fit",
+      })
+      .onConflictDoUpdate({
+        target: [sleepLogs.userId, sleepLogs.date],
+        set: {
+          totalMinutes: Math.round(total),
+          deepMinutes: Math.round(deep),
+          lightMinutes: Math.round(light),
+          remMinutes: Math.round(rem),
+          awakeMinutes: Math.round(awake),
+          asleepMinutes: Math.round(asleep),
+          startAt: minStart ? new Date(minStart) : null,
+          endAt: maxEnd ? new Date(maxEnd) : null,
+          source: "google_fit",
+        },
+      });
+    nights++;
+  }
+  return { nights };
 }
 
 /** Wspólna logika synchronizacji Google Fit — zwraca wynik bez redirectu. */
@@ -147,6 +262,22 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
     const sourceLabel = "Google Fit (dokładna liczba z aplikacji)";
     const summarySteps = weekSteps > 0 ? weekSteps : totalSteps;
 
+    // ---------- Sen (wymaga zakresu fitness.sleep.read) ----------
+    let sleepNote = "";
+    try {
+      const sleepResult = await syncSleepForUser(userId, access, start, end);
+      if (sleepResult?.error) {
+        sleepNote = ` Sen: ${sleepResult.error}`;
+      } else if (sleepResult) {
+        sleepNote = ` Sen: ${sleepResult.nights} nocy.`;
+      } else {
+        sleepNote =
+          " Sen: brak uprawnień — rozłącz i połącz Google Fit ponownie (Ustawienia → Integracje).";
+      }
+    } catch {
+      sleepNote = " Sen: nie udało się pobrać (spróbuj ponownie).";
+    }
+
     let weightKg: number | null = null;
     try {
       const weightData = await aggregate(
@@ -181,7 +312,7 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
     revalidatePath("/settings");
     revalidatePath("/dashboard");
     return {
-      summary: `Zapisano: ${summarySteps.toLocaleString("pl-PL")} kroków (7 dni, źródło: ${sourceLabel}).${weightKg ? ` Waga: ${weightKg.toFixed(1)} kg.` : ""}`,
+      summary: `Zapisano: ${summarySteps.toLocaleString("pl-PL")} kroków (7 dni, źródło: ${sourceLabel}).${sleepNote}${weightKg ? ` Waga: ${weightKg.toFixed(1)} kg.` : ""}`,
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Błąd synchronizacji Google Fit." };

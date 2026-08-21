@@ -34,6 +34,7 @@ export function DietLogForm({
   const [offlineNote, setOfflineNote] = useState<string | null>(null);
   const router = useRouter();
   const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [manualCode, setManualCode] = useState("");
 
   useEffect(() => {
     const onSynced = () => setOfflineNote("Zsynchronizowano wpisy offline. ✅");
@@ -206,9 +207,33 @@ export function DietLogForm({
 
         <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
           <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
-            <ScanLine size={12} className="text-lime-400" /> Skanuj kod kreskowy / QR
+            <ScanLine size={12} className="text-lime-400" /> Skanuj kod lub wpisz ręcznie
           </p>
           <ScanCodeBox onCode={(code) => void handleScannedCode(code)} onError={() => {}} />
+
+          {/* Ręczne wpisanie kodu kreskowego */}
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              className="input min-w-0 flex-1 !py-2 text-sm"
+              type="text"
+              inputMode="numeric"
+              placeholder="albo wpisz kod kreskowy…"
+              value={manualCode}
+              onFocus={(event) => event.target.select()}
+              onChange={(event) => setManualCode(event.target.value)}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const c = manualCode.trim();
+                if (c) void handleScannedCode(c);
+              }}
+              className="button-secondary shrink-0 px-3 py-2 text-sm"
+            >
+              <Search size={14} /> Szukaj
+            </button>
+          </div>
+
           {scanStatus && (
             <p className="mt-2 rounded-lg border border-lime-400/15 bg-lime-400/[.06] px-3 py-2 text-xs text-lime-200">
               {scanStatus}

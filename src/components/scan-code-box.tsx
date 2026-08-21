@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus, LoaderCircle, ScanLine, X } from "lucide-react";
+import { Barcode, ImagePlus, LoaderCircle, QrCode, ScanLine, X } from "lucide-react";
 import { cameraHint, extractCodeFromQR, loadZxing, waitForVideoFrames, type ZXingReader } from "@/lib/zxing-client";
 
 /**
- * Przycisk skanowania kodu kreskowego / QR (kamera + zdjęcie) bez własnego
- * formularza — po rozpoznaniu kodu wywołuje `onCode(czystyKod)`. Używany
- * w Dzienniku spożycia obok wyszukiwarki, żeby wszystko było w jednym kafelku.
+ * Skaner kodów — OSOBNE przyciski dla kodu kreskowego i QR (nie można mieszać,
+ * bo ZXing przy wspólnym trybie potrafi „czytać bzdury" z kodu kreskowego).
+ * Tryby są rozdzielone przez `setHints` (ograniczenie listy formatów).
+ * Po rozpoznaniu wywołuje `onCode(czystyKod)`.
  */
 export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => void; onError?: (msg: string) => void }) {
+  const [mode, setMode] = useState<"barcode" | "qr">("barcode");
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -61,7 +63,9 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
     }
   }
 
-  async function startScan() {
+  async function startScan(nextMode: "barcode" | "qr") {
+    if (streamRef.current) await stopScan(); // przełączanie trybu w locie
+    setMode(nextMode);
     setErr(null);
     const video = videoRef.current;
     if (!video) {
@@ -98,8 +102,34 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
       }
       await waitForVideoFrames(video);
       if (video.videoWidth === 0) throw new DOMException("", "NotFoundError");
-      const { BrowserMultiFormatReader } = await loadZxing();
-      const reader = new BrowserMultiFormatReader();
+
+      const zxing = await loadZxing();
+      // Ograniczenie formatów — dzięki temu tryb kreskowy NIE czyta QR i odwrotnie.
+      const hints = new Map();
+      hints.set(
+        zxing.DecodeHintType.POSSIBLE_FORMATS,
+        nextMode === "qr"
+          ? [zxing.BarcodeFormat.QR_CODE]
+          : [
+              zxing.BarcodeFormat.EAN_13,
+              zxing.BarcodeFormat.EAN_8,
+              zxing.BarcodeFormat.UPC_A,
+              zxing.BarcodeFormat.UPC_E,
+              zxing.BarcodeFormat.CODE_128,
+              zxing.BarcodeFormat.CODE_39,
+              zxing.BarcodeFormat.CODE_93,
+              zxing.BarcodeFormat.CODABAR,
+              zxing.BarcodeFormat.ITF,
+            ],
+      );
+      const reader = new zxing.BrowserMultiFormatReader();
+      if (typeof reader.setHints === "function") {
+        try {
+          reader.setHints(hints);
+        } catch {
+          /* starszy build bez setHints — lecimy dalej */
+        }
+      }
       readerRef.current = reader;
       reader.decodeFromStream(stream, video, (result) => {
         if (result) handleDecoded(result.getText());
@@ -135,18 +165,35 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
     }
   }
 
+  const btn = (m: "barcode" | "qr") =>
+    `inline-flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-bold transition ${
+      scanning && mode === m
+        ? "button-secondary"
+        : "button-primary"
+    }`;
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => (scanning ? stopScan() : void startScan())}
+          onClick={() => (scanning && mode === "barcode" ? stopScan() : void startScan("barcode"))}
           disabled={busy}
-          className={`${scanning ? "button-secondary" : "button-primary"} px-3 py-2.5 text-sm`}
-          title={scanning ? "Zatrzymaj skanowanie" : "Zeskanuj kod kreskowy lub QR"}
+          className={btn("barcode")}
+          title={scanning && mode === "barcode" ? "Zatrzymaj skanowanie" : "Zeskanuj kod kreskowy"}
         >
-          {scanning ? <X size={15} /> : <ScanLine size={15} />}{" "}
-          {scanning ? "Zatrzymaj" : "Skanuj kod"}
+          {scanning && mode === "barcode" ? <X size={15} /> : <Barcode size={15} />}
+          {scanning && mode === "barcode" ? "Zatrzymaj" : "Skanuj kod kreskowy"}
+        </button>
+        <button
+          type="button"
+          onClick={() => (scanning && mode === "qr" ? stopScan() : void startScan("qr"))}
+          disabled={busy}
+          className={btn("qr")}
+          title={scanning && mode === "qr" ? "Zatrzymaj skanowanie" : "Zeskanuj kod QR"}
+        >
+          {scanning && mode === "qr" ? <X size={15} /> : <QrCode size={15} />}
+          {scanning && mode === "qr" ? "Zatrzymaj" : "Skanuj kod QR"}
         </button>
         <button
           type="button"
@@ -171,7 +218,7 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
       <div className={`relative overflow-hidden rounded-xl border border-lime-400/25 bg-black/40 ${scanning ? "block" : "hidden"}`}>
         <video ref={videoRef} playsInline muted autoPlay className="mx-auto aspect-video max-h-56 w-full object-contain" />
         <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-xs font-bold text-lime-300">
-          Skieruj aparat na kod kreskowy lub QR
+          {mode === "qr" ? "Skieruj aparat na kod QR" : "Skieruj aparat na kod kreskowy"}
         </p>
       </div>
 

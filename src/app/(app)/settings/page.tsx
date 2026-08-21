@@ -225,9 +225,9 @@ export default async function SettingsPage({
               tu przez integrację Google Fit obok.
             </p>
             <p className="mt-2 text-xs leading-5 text-lime-300/90">
-              Kroki: pokazywana jest <b>najświeższa dostępna wartość</b> (opaska Mi Fitness lub
-              estymata Google — <b>nigdy nie sumowane</b>). Aby opaska wysłała najnowsze kroki,
-              otwórz aplikację Mi Fitness — Gymrat zsynchronizuje się automatycznie po powrocie.
+              Kroki: pokazywana jest <b>dokładnie ta sama liczba, którą wyświetla Google Fit</b> —
+              bez estymacji i bez łączenia źródeł. Wystarczy otworzyć aplikację Mi Fitness, by jej
+              kroki trafiły do Google Fit, a Gymrat zsynchronizuje się automatycznie po powrocie.
             </p>
           </div>
         </div>

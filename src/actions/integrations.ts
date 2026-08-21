@@ -73,45 +73,14 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
   };
 
   try {
-    // ============ KROKI: priorytet Mi Fitness (opaska), fallback Google Fit ============
-    // Aplikacje Xiaomi (Mi Fitness / Mi Fit / Zepp) zapisują kroki do Google Fit
-    // pod własnymi źródłami RAW, np. `com.xiaomi.wearable:health_platform`.
-    // Wykrywamy je dynamicznie (lista źródeł), pytamy o nie OSOBNO od estymaty
-    // Google i dla każdego dnia wybieramy: Mi Fitness, a gdy opaska nie
-    // zsynchronizowała się danego dnia (wartość 0) → estymata Google Fit.
-    // NIGDY nie sumujemy obu źródeł tego samego dnia.
-    const XIAOMI_PACKAGES = [
-      "com.xiaomi.wearable", // Mi Fitness (nowa aplikacja)
-      "com.xiaomi.hm.health", // Mi Fit / Zepp Life (starsza)
-      "com.huami.watch.hmwatchmanager", // Amazfit / Zepp
-    ];
-    let xiaomiIds: string[] = [];
-    try {
-      const res = await fetch(
-        "https://www.googleapis.com/fitness/v1/users/me/dataSources?dataTypeName=com.google.step_count.delta",
-        { headers: { Authorization: `Bearer ${access}` } },
-      );
-      if (res.ok) {
-        const data = (await res.json()) as {
-          dataSource?: Array<{ type?: string; dataStreamId?: string; application?: { packageName?: string } }>;
-        };
-        const raw = data.dataSource ?? [];
-        xiaomiIds = XIAOMI_PACKAGES.flatMap((pkg) =>
-          raw.filter((s) => s.type === "raw" && s.application?.packageName === pkg)
-            .map((s) => s.dataStreamId ?? ""),
-        ).filter(Boolean);
-      }
-    } catch {
-      xiaomiIds = []; // wykrywanie opcjonalne — bez niego działa fallback do Google Fit
-    }
-
-    // Kolejność w aggregateBy odpowiada indeksom datasetów w odpowiedzi:
-    // [0] = estimated_steps (estymata Google), [1] = merge_step_deltas (zapas),
-    // [2..] = źródła Xiaomi.
+    // ============ KROKI: DOKŁADNIE to, co pokazuje Google Fit ============
+    // Bez estymacji i bez łączenia źródeł (opaska/telefon). Używamy tej samej
+    // liczby, którą wyświetla aplikacja Google Fit: `estimated_steps` (pojedyncza
+    // najlepsza estymata Google). Zapas: `merge_step_deltas` tylko gdy estymata
+    // to 0 (brak danych dla danego dnia).
     const stepIds = [
       "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps",
       "derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas",
-      ...xiaomiIds,
     ];
     const stepsRes = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
       method: "POST",
@@ -152,35 +121,21 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
     const buckets = stepsData.bucket ?? [];
     let totalSteps = 0;
     let weekSteps = 0;
-    let bandDays = 0; // dni, w których opaska miała dane w Google Fit
     let daysWithSteps = 0;
-    let todayBand = 0; // opaska, dzisiaj
-    let todayEst = 0; // estymata Google, dzisiaj
     for (let bi = 0; bi < buckets.length; bi++) {
       const bucket = buckets[bi];
       const dss = bucket.dataset ?? [];
-      const googleEst = dsAt(dss, 0); // estimated_steps
-      const googleMerge = dsAt(dss, 1); // merge_step_deltas (zapas)
-      // Mi Fitness: max po źródłach Xiaomi — NIE suma (kilka aplikacji Xiaomi = ta sama opaska).
-      const band = xiaomiIds.length ? Math.max(...stepIds.slice(2).map((_, i) => dsAt(dss, 2 + i))) : 0;
+      const googleEst = dsAt(dss, 0); // estimated_steps — dokładnie liczba z Google Fit
+      const googleMerge = dsAt(dss, 1); // merge_step_deltas (zapas, gdy estymata = 0)
 
-      // Wybór dnia: najświeższa dostępna wartość z dwóch NIEZALEŻNYCH liczników
-      // (opaska Mi Fitness i estymata Google). Opaska i telefon liczą te same
-      // fizyczne kroki, więc max NIGDY nie sumuje i zawsze pokazuje najbardziej
-      // aktualny zapis — gdy Mi Fitness jeszcze nie wysłał do Google Fit
-      // najnowszych kroków, widoczna jest aktualna estymata Google.
-      const steps = Math.max(band, googleEst) > 0 ? Math.max(band, googleEst) : googleMerge;
+      // Bezwarunkowo liczba z Google Fit: estymata, a gdy jej brak — merge.
+      // Żadnych symulacji, żadnego łączenia z opaską.
+      const steps = googleEst > 0 ? googleEst : googleMerge;
 
-      if (band > 0) bandDays++;
       if (steps > 0) daysWithSteps++;
       totalSteps += steps;
       const bStart = Number(bucket.startTimeMillis);
       if (bStart >= weekStart) weekSteps += steps;
-      // Ostatni bucket = dzisiejszy lokalny dzień (okno kończy się „teraz”).
-      if (bi === buckets.length - 1) {
-        todayBand = band;
-        todayEst = googleEst;
-      }
 
       // bucket.startTimeMillis = początek lokalnego dnia; data = lokalne południe (start + 12 h).
       const date = new Date(bStart + 12 * 3600000);
@@ -189,17 +144,7 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
         .values({ userId, date, steps: Math.round(steps) })
         .onConflictDoUpdate({ target: [fitnessLogs.userId, fitnessLogs.date], set: { steps: Math.round(steps) } });
     }
-    // Podpowiedź, gdy opaska nie przesyła na bieżąco: jej dane w Google Fit są
-    // starsze niż estymata (Mi Fitness synchronizuje się po otwarciu aplikacji).
-    let hint = "";
-    if (bandDays > 0 && todayBand > 0 && todayEst > todayBand) {
-      hint =
-        " Opaska nie wysłała jeszcze najnowszych kroków — otwórz aplikację Mi Fitness (zaktualizuje dane w Google Fit), potem kliknij ⟳ ponownie.";
-    } else if (bandDays > 0 && todayBand === 0 && todayEst > 0) {
-      hint =
-        " Opaska nie zsynchronizowała się dziś — otwórz aplikację Mi Fitness, aby doliczyć jej kroki, potem kliknij ⟳ ponownie.";
-    }
-    const sourceLabel = bandDays > 0 ? "Mi Fitness / Google Fit (maksimum, bez sumowania)" : "Google Fit (brak danych opaski)";
+    const sourceLabel = "Google Fit (dokładna liczba z aplikacji)";
     const summarySteps = weekSteps > 0 ? weekSteps : totalSteps;
 
     let weightKg: number | null = null;
@@ -236,7 +181,7 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
     revalidatePath("/settings");
     revalidatePath("/dashboard");
     return {
-      summary: `Zapisano: ${summarySteps.toLocaleString("pl-PL")} kroków (7 dni, źródło: ${sourceLabel}).${hint}${weightKg ? ` Waga: ${weightKg.toFixed(1)} kg.` : ""}`,
+      summary: `Zapisano: ${summarySteps.toLocaleString("pl-PL")} kroków (7 dni, źródło: ${sourceLabel}).${weightKg ? ` Waga: ${weightKg.toFixed(1)} kg.` : ""}`,
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Błąd synchronizacji Google Fit." };

@@ -222,8 +222,9 @@ export function StepsCard({ logs }: { logs: FitnessLog[] }) {
 
       {hasSyncHistory && (
         <p className="mt-4 border-t border-white/[.05] pt-3 text-[11px] leading-4 text-slate-500">
-          Opaska wysyła kroki do Google Fit po otwarciu aplikacji Mi Fitness — po powrocie Gymrat
-          zsynchronizuje się automatycznie. Źródła nigdy nie są sumowane.
+          Pokazujemy dokładnie tę liczbę, którą wyświetla Google Fit — bez estymacji i bez łączenia
+          źródeł. Po otwarciu aplikacji Mi Fitness kroki trafią do Google Fit, a Gymrat
+          zsynchronizuje się automatycznie.
         </p>
       )}
     </div>

@@ -39,36 +39,26 @@ async function syncSleepForUser(
   start: number,
   end: number,
 ): Promise<{ nights: number; error?: string } | null> {
-  const res = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      aggregateBy: [
-        {
-          dataTypeName: "com.google.sleep.segment",
-          dataSourceId: "derived:com.google.sleep.segment:com.google.android.gms:merge_sleep_segments",
-        },
-      ],
-      bucketByTime: { durationMillis: 86400000 },
-      startTimeMillis: start,
-      endTimeMillis: end,
-    }),
-  });
+  // UWAGA: dane snu (zwłaszcza z opasek Xiaomi) NIE są zwracane przez endpoint
+  // dataset:aggregate — trzeba czytać surowy dataset dataSourceId/datasets.
+  const dsId = "derived:com.google.sleep.segment:com.google.android.gms:merged";
+  const dsEnc = encodeURIComponent(dsId);
+  const startNs = (BigInt(Math.floor(start)) * BigInt(1000000)).toString();
+  const endNs = (BigInt(Math.floor(end)) * BigInt(1000000)).toString();
+  const url = `https://www.googleapis.com/fitness/v1/users/me/dataSources/${dsEnc}/datasets/${startNs}-${endNs}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${access}` } });
   if (res.status === 403) return null; // brak uprawnień do snu — połącz Google Fit ponownie
   if (!res.ok) return { nights: 0, error: "Google Fit odmówił dostępu do snu (" + res.status + ")." };
-
   const data = (await res.json()) as {
-    bucket?: Array<{
-      startTimeMillis?: string;
-      dataset?: Array<{
-        point?: Array<{
-          startTimeNanos?: string;
-          endTimeNanos?: string;
-          value?: Array<{ intVal?: number; fpVal?: number }>;
-        }>;
-      }>;
+    point?: Array<{
+      startTimeNanos?: string;
+      endTimeNanos?: string;
+      value?: Array<{ intVal?: number; fpVal?: number }>;
     }>;
   };
+  const points = (data.point ?? []).filter(
+    (p) => p.startTimeNanos && p.endTimeNanos,
+  );
 
   const windowStart = start - 24 * 3600000;
   const windowEnd = end + 24 * 3600000;
@@ -82,58 +72,83 @@ async function syncSleepForUser(
       ),
     );
 
-  let nights = 0;
-  for (const bucket of data.bucket ?? []) {
-    let deep = 0, light = 0, rem = 0, awake = 0, asleep = 0;
-    let minStart: number | null = null;
-    let maxEnd: number | null = null;
-    for (const ds of bucket.dataset ?? []) {
-      for (const pt of ds.point ?? []) {
-        const stage = Number(pt.value?.[0]?.intVal ?? 0);
-        const startMs = Number(pt.startTimeNanos ?? 0) / 1e6;
-        const endMs = Number(pt.endTimeNanos ?? 0) / 1e6;
-        const mins = Math.max(0, (endMs - startMs) / 60000);
-        if (stage === 0) awake += mins;
-        else if (stage === 1) asleep += mins;
-        else if (stage === 2) light += mins;
-        else if (stage === 3) deep += mins;
-        else if (stage === 4) rem += mins;
-        // stage 5 = poza łóżkiem — pomijamy
-        if (startMs > 0) minStart = minStart === null ? startMs : Math.min(minStart, startMs);
-        if (endMs > 0) maxEnd = maxEnd === null ? endMs : Math.max(maxEnd, endMs);
-      }
+  // Fazy Xiaomi (Mi Fitness / Zepp): 1=czuwanie, 4=REM, 5=płytki, 6=głęboki.
+  // Standard Google: 0=czuwanie, 1=sen ogólny, 2=płytki, 3=głęboki, 4=REM, 5=poza łóżkiem.
+  // Wykrywamy tryb Xiaomi (faza 6 występuje tylko tam) i mapujemy odpowiednio.
+  const stages = new Set(points.map((p) => Number(p.value?.[0]?.intVal ?? 0)));
+  const isXiaomi = stages.has(6);
+  const toStage = (s: number): "deep" | "light" | "rem" | "awake" | "asleep" | null => {
+    if (isXiaomi) {
+      if (s === 1) return "awake";
+      if (s === 4) return "rem";
+      if (s === 5) return "light";
+      if (s === 6) return "deep";
+      if (s === 0) return "awake";
+      return null;
     }
-    const total = deep + light + rem + asleep;
-    if (total <= 0) continue; // brak snu w tym dniu
+    if (s === 0) return "awake";
+    if (s === 1) return "asleep";
+    if (s === 2) return "light";
+    if (s === 3) return "deep";
+    if (s === 4) return "rem";
+    return null; // 5 = poza łóżkiem — pomijamy
+  };
 
-    // Data = lokalne południe (ta sama konwencja co kroki).
-    const date = new Date(Number(bucket.startTimeMillis) + 12 * 3600000);
+  // Grupuj punkty w „noce": nowa noc, gdy przerwa > 6 h lub przejście po 12:00.
+  const sorted = [...points].sort((a, b) => Number(a.startTimeNanos) - Number(b.startTimeNanos));
+  const nightsAgg: Array<{
+    start: number;
+    end: number;
+    deep: number; light: number; rem: number; awake: number; asleep: number;
+  }> = [];
+  for (const p of sorted) {
+    const startMs = Number(p.startTimeNanos) / 1e6;
+    const endMs = Number(p.endTimeNanos) / 1e6;
+    const mins = Math.max(0, (endMs - startMs) / 60000);
+    const kind = toStage(Number(p.value?.[0]?.intVal ?? 0));
+    const cur = nightsAgg[nightsAgg.length - 1];
+    if (!cur || startMs - cur.end > 6 * 3600000) {
+      nightsAgg.push({ start: startMs, end: endMs, deep: 0, light: 0, rem: 0, awake: 0, asleep: 0 });
+    }
+    const target = nightsAgg[nightsAgg.length - 1];
+    target.start = Math.min(target.start, startMs);
+    target.end = Math.max(target.end, endMs);
+    if (kind && target) target[kind] += mins;
+  }
+
+  let nights = 0;
+  for (const n of nightsAgg) {
+    const total = n.deep + n.light + n.rem + n.asleep;
+    if (total <= 0) continue;
+    // Data nocy = lokalne południe dnia, w którym sen się ZACZĄŁ (poprzedni wieczór).
+    const localStart = new Date(n.start);
+    const date = new Date(localStart.getFullYear(), localStart.getMonth(), localStart.getDate(), 12, 0, 0);
     await db
       .insert(sleepLogs)
       .values({
         userId,
         date,
         totalMinutes: Math.round(total),
-        deepMinutes: Math.round(deep),
-        lightMinutes: Math.round(light),
-        remMinutes: Math.round(rem),
-        awakeMinutes: Math.round(awake),
-        asleepMinutes: Math.round(asleep),
-        startAt: minStart ? new Date(minStart) : null,
-        endAt: maxEnd ? new Date(maxEnd) : null,
+        deepMinutes: Math.round(n.deep),
+        lightMinutes: Math.round(n.light),
+        remMinutes: Math.round(n.rem),
+        awakeMinutes: Math.round(n.awake),
+        asleepMinutes: Math.round(n.asleep),
+        startAt: new Date(n.start),
+        endAt: new Date(n.end),
         source: "google_fit",
       })
       .onConflictDoUpdate({
         target: [sleepLogs.userId, sleepLogs.date],
         set: {
           totalMinutes: Math.round(total),
-          deepMinutes: Math.round(deep),
-          lightMinutes: Math.round(light),
-          remMinutes: Math.round(rem),
-          awakeMinutes: Math.round(awake),
-          asleepMinutes: Math.round(asleep),
-          startAt: minStart ? new Date(minStart) : null,
-          endAt: maxEnd ? new Date(maxEnd) : null,
+          deepMinutes: Math.round(n.deep),
+          lightMinutes: Math.round(n.light),
+          remMinutes: Math.round(n.rem),
+          awakeMinutes: Math.round(n.awake),
+          asleepMinutes: Math.round(n.asleep),
+          startAt: new Date(n.start),
+          endAt: new Date(n.end),
           source: "google_fit",
         },
       });

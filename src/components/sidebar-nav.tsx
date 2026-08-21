@@ -70,6 +70,7 @@ export function SidebarNav({
     { href: "/workouts", label: t(lang, "nav.workouts"), icon: CalendarDays },
     { href: "/programs", label: t(lang, "nav.programs"), icon: Layers3 },
     { href: "/micha", label: t(lang, "nav.micha"), icon: UtensilsCrossed },
+    { href: "/sen", label: t(lang, "nav.sleep"), icon: Moon },
     { href: "/body", label: t(lang, "nav.body"), icon: Ruler },
     { href: "/nawodnienie", label: t(lang, "nav.hydration"), icon: Droplets },
     { href: "/history", label: t(lang, "nav.history"), icon: History },

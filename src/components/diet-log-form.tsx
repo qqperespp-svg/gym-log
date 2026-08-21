@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Beef, Croissant, Droplets, Plus, Search, Star, X } from "lucide-react";
+import { Beef, Croissant, Droplets, Plus, ScanLine, Search, Star, X } from "lucide-react";
 import { logDietEntryAction } from "@/actions/diet";
 import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
 import { suggestMealByHour } from "@/lib/i18n";
 import { enqueue } from "@/lib/offline-queue";
 import { productLabels } from "@/lib/labels";
+import { lookupProductByCode } from "@/lib/product-lookup";
+import { ScanCodeBox } from "@/components/scan-code-box";
 import type { FoodProduct } from "@/db/schema";
 
 function norm(s: string): string {
@@ -37,6 +39,7 @@ export function DietLogForm({
   const [meal, setMeal] = useState(() => String(suggestMealByHour()));
   const [query, setQuery] = useState("");
   const [offlineNote, setOfflineNote] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const onSynced = () => setOfflineNote("Zsynchronizowano wpisy offline. ✅");
@@ -75,6 +78,26 @@ export function DietLogForm({
     setGrams(gramsValue);
     setNote(p.barcode ? `${p.name} (${p.barcode})` : p.name);
     setQuery("");
+  }
+
+  /** Po zeskanowaniu kodu szuka produktu (lokalny katalog → Open Food Facts) i wypełnia formularz. */
+  async function handleScannedCode(code: string) {
+    setScanStatus("Szukam produktu…");
+    try {
+      const p = await lookupProductByCode(code, products);
+      if (!p) {
+        setScanStatus(`Nie znaleziono produktu o kodzie ${code} — wpisz makra ręcznie albo dodaj go do katalogu.`);
+        return;
+      }
+      setProteinPer100(String(p.protein));
+      setFatPer100(String(p.fat));
+      setCarbsPer100(String(p.carbs));
+      setGrams("100");
+      setNote(`${p.name} (kod ${code})`);
+      setScanStatus(`Znaleziono: ${p.name} — uzupełnij gramaturę i dodaj do dziennika. ✅`);
+    } catch {
+      setScanStatus("Nie udało się pobrać produktu o tym kodzie.");
+    }
   }
 
   async function submit(formData: FormData) {
@@ -120,58 +143,72 @@ export function DietLogForm({
         </div>
       )}
 
-      <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
-        <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
-          <Search size={12} className="text-lime-400" /> Znajdź produkt z katalogu (po nazwie)
-        </p>
-        <div className="relative">
-          <input
-            className="input"
-            type="text"
-            placeholder="np. sky, twaróg, kurczak, płatki owsiane…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-              aria-label="Wyczyść"
-            >
-              <X size={15} />
-            </button>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
+          <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+            <Search size={12} className="text-lime-400" /> Znajdź produkt po nazwie
+          </p>
+          <div className="relative">
+            <input
+              className="input"
+              type="text"
+              placeholder="np. sky, twaróg, kurczak, płatki owsiane…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                aria-label="Wyczyść"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+          {matches.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {matches.map((p) => {
+                const labels = productLabels(p.protein, p.fat, p.carbs);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => fill(p)}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg bg-white/[.03] px-3 py-2 text-left transition hover:bg-lime-400/10"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-bold text-white">{p.name}</span>
+                      <span className="flex flex-wrap gap-1">
+                        {labels.slice(0, 2).map((l) => (
+                          <span key={l.key} className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${l.color}`}>
+                            {l.pl}
+                          </span>
+                        ))}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[11px] font-bold text-slate-400">
+                      {p.kcal} kcal · B{p.protein} T{p.fat} W{p.carbs}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
-        {matches.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {matches.map((p) => {
-              const labels = productLabels(p.protein, p.fat, p.carbs);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => fill(p)}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg bg-white/[.03] px-3 py-2 text-left transition hover:bg-lime-400/10"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-bold text-white">{p.name}</span>
-                    <span className="flex flex-wrap gap-1">
-                      {labels.slice(0, 2).map((l) => (
-                        <span key={l.key} className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${l.color}`}>
-                          {l.pl}
-                        </span>
-                      ))}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[11px] font-bold text-slate-400">
-                    {p.kcal} kcal · B{p.protein} T{p.fat} W{p.carbs}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+
+        <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
+          <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+            <ScanLine size={12} className="text-lime-400" /> Skanuj kod kreskowy / QR
+          </p>
+          <ScanCodeBox onCode={(code) => void handleScannedCode(code)} onError={() => {}} />
+          {scanStatus && (
+            <p className="mt-2 rounded-lg border border-lime-400/15 bg-lime-400/[.06] px-3 py-2 text-xs text-lime-200">
+              {scanStatus}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

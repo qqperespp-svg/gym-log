@@ -10,7 +10,7 @@ import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
 import { MacroBar } from "@/components/macro-bar";
-import { BarcodeScanner } from "@/components/barcode-scanner";
+import { CodeScanInput } from "@/components/code-scan-input";
 import { FoodCatalogSearch } from "@/components/food-catalog-search";
 import { MichaTabs } from "@/components/micha-tabs";
 import { TdeeCalculator } from "@/components/tdee-calculator";
@@ -384,16 +384,6 @@ export default async function MichaPage({
         wprowadzanie={
           <>
             <section className="panel p-5 sm:p-7">
-              <h2 className="font-extrabold text-white mb-1">Kod kreskowy</h2>
-              <p className="mb-5 text-sm text-slate-500">
-                Jak w Fitatu — zeskanuj kod kreskowy lub kod QR produktu, a makro i kcal podstawią się
-                automatycznie (najpierw z lokalnego katalogu, potem z bazy Open Food Facts). Wpisz
-                gramaturę, wybierz numer posiłku i dodaj do dziennika.
-              </p>
-              <BarcodeScanner products={products} meals={todayMeals} mealNames={todayMealNames} />
-            </section>
-
-            <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Szacuj makro ze zdjęcia (AI)</h2>
               <p className="mb-5 text-sm text-slate-500">
                 Zrób zdjęcie talerza, a Google Gemini rozpozna składniki i oszacuje makro oraz kcal.
@@ -404,7 +394,8 @@ export default async function MichaPage({
             <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Dziennik spożycia</h2>
               <p className="mb-5 text-sm text-slate-500">
-                Dodaj posiłek — wyszukaj produkt po nazwie w katalogu albo podaj makro ręcznie
+                Dodaj posiłek — wyszukaj produkt po nazwie w katalogu, zeskanuj kod kreskowy / QR
+                (produkt wypełni się automatycznie z Open Food Facts) albo podaj makro ręcznie
                 (na 100 g), ustaw gramaturę i wybierz, do którego posiłku dnia go przypisać.
               </p>
               <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} favoriteIds={favoriteIds} />
@@ -485,15 +476,9 @@ export default async function MichaPage({
                         Węglowodany (g/100g)
                         <input className="input" name="carbs" type="number" min="0" step="0.1" required />
                       </label>
-                      <label className="field-label">
-                        Kod kreskowy (opcjonalnie)
-                        <input
-                          className="input"
-                          name="barcode"
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="np. 5902409703887"
-                        />
+                      <label className="field-label sm:col-span-2">
+                        Kod kreskowy / QR (opcjonalnie)
+                        <CodeScanInput name="barcode" placeholder="np. 5902409703887" label="Skanuj kod" />
                       </label>
                     </div>
                     <div className="mt-4">

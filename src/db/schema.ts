@@ -371,6 +371,31 @@ export const fitnessLogs = pgTable(
   ],
 );
 
+export const sleepLogs = pgTable(
+  "sleep_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    date: timestamp("date").notNull(), // lokalna północ nocy, do której przypisano sen
+    totalMinutes: integer("total_minutes").notNull().default(0),
+    deepMinutes: integer("deep_minutes").notNull().default(0),
+    lightMinutes: integer("light_minutes").notNull().default(0),
+    remMinutes: integer("rem_minutes").notNull().default(0),
+    awakeMinutes: integer("awake_minutes").notNull().default(0),
+    asleepMinutes: integer("asleep_minutes").notNull().default(0), // sen ogólny (bez podziału)
+    startAt: timestamp("start_at"), // początek snu (czas lokalny)
+    endAt: timestamp("end_at"), // koniec snu
+    source: varchar("source", { length: 32 }).notNull().default("google_fit"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("sleep_logs_user_idx").on(table.userId),
+    uniqueIndex("sleep_logs_user_date_idx").on(table.userId, table.date),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Workout = typeof workouts.$inferSelect;
 export type WorkoutExercise = typeof exercises.$inferSelect;
@@ -390,3 +415,4 @@ export type UserFavorite = typeof userFavorites.$inferSelect;
 export type MagicToken = typeof magicTokens.$inferSelect;
 export type Integration = typeof integrations.$inferSelect;
 export type FitnessLog = typeof fitnessLogs.$inferSelect;
+export type SleepLog = typeof sleepLogs.$inferSelect;

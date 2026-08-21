@@ -445,6 +445,34 @@ async function runSchemaSync(): Promise<void> {
           )
       `,
     ],
+    [
+      "sleep_logs",
+      sql`
+        CREATE TABLE IF NOT EXISTS sleep_logs (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          date timestamp NOT NULL,
+          total_minutes integer NOT NULL DEFAULT 0,
+          deep_minutes integer NOT NULL DEFAULT 0,
+          light_minutes integer NOT NULL DEFAULT 0,
+          rem_minutes integer NOT NULL DEFAULT 0,
+          awake_minutes integer NOT NULL DEFAULT 0,
+          asleep_minutes integer NOT NULL DEFAULT 0,
+          start_at timestamp,
+          end_at timestamp,
+          source varchar(32) NOT NULL DEFAULT 'google_fit',
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "sleep_logs.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS sleep_logs_user_idx ON sleep_logs (user_id)`,
+    ],
+    [
+      "sleep_logs.user_id+date unique",
+      sql`CREATE UNIQUE INDEX IF NOT EXISTS sleep_logs_user_date_idx ON sleep_logs (user_id, date)`,
+    ],
   ];
 
   for (const [label, statement] of steps) {

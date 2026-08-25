@@ -4,6 +4,7 @@ import { ArrowUpRight, BarChart3, CalendarDays, Dumbbell, Medal } from "lucide-r
 import { db } from "@/db";
 import { exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { startOfWeek } from "@/lib/diet";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,28 @@ export default async function HistoryPage() {
   const sessions = Array.from(grouped.values()).filter((item) => item.status === "completed");
   const chartData = sessions.slice(0, 8).reverse();
   const maxVolume = Math.max(...chartData.map((item) => item.volume), 1);
+  const weekStart = startOfWeek(new Date());
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+  const weeklySessions = sessions.filter((item) => item.date >= weekStart && item.date < weekEnd);
+  const weeklyVolume = weeklySessions.reduce((sum, item) => sum + item.volume, 0);
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
+    const next = new Date(date.getTime() + 86400000);
+    const volume = sessions
+      .filter((item) => item.date >= date && item.date < next)
+      .reduce((sum, item) => sum + item.volume, 0);
+    const today = new Date();
+    return {
+      date,
+      label: date.toLocaleDateString("pl-PL", { weekday: "short" }),
+      volume,
+      isToday:
+        date.getDate() === today.getDate() &&
+        date.getMonth() === today.getMonth() &&
+        date.getFullYear() === today.getFullYear(),
+    };
+  });
+  const maxDayVolume = Math.max(...weekDays.map((day) => day.volume), 1);
   const totalVolume = sessions.reduce((sum, item) => sum + item.volume, 0);
   const totalMinutes = sessions.reduce((sum, item) => sum + item.duration, 0);
   return (
@@ -89,6 +112,64 @@ export default async function HistoryPage() {
             </div>
           </article>
         ))}
+      </section>
+      <section className="panel p-5 sm:p-7">
+        <div className="mb-7 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold text-white">Objętość tygodniowa</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Wykonana objętość od poniedziałku do niedzieli · {weeklySessions.length} sesji
+            </p>
+          </div>
+          <span className="rounded-lg bg-lime-400/10 px-2.5 py-1 text-xs font-black text-lime-300">
+            {weeklyVolume.toLocaleString("pl-PL")} kg
+          </span>
+        </div>
+        <div className="flex h-52 items-end gap-2 sm:gap-3">
+          {weekDays.map((day) => {
+            const pct = day.volume > 0 ? Math.max(8, Math.round((day.volume / maxDayVolume) * 100)) : 4;
+            const empty = day.volume <= 0;
+            return (
+              <div
+                key={day.date.toISOString()}
+                className="group flex h-full min-w-0 flex-1 flex-col justify-end"
+                title={`${day.label}: ${day.volume.toLocaleString("pl-PL")} kg`}
+              >
+                <div
+                  className={`relative mx-auto w-full max-w-16 rounded-t-lg transition ${
+                    empty
+                      ? "min-h-2 border-b border-dashed border-white/15 bg-white/[.05]"
+                      : day.isToday
+                        ? "bg-gradient-to-t from-lime-500 to-lime-200 shadow-[0_0_18px_rgba(163,230,53,.35)]"
+                        : "bg-gradient-to-t from-lime-600 to-lime-300"
+                  }`}
+                  style={{ height: `${pct}%` }}
+                >
+                  {day.volume > 0 && (
+                    <span className="absolute -top-7 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-black/80 px-2 py-0.5 text-[10px] font-bold text-lime-300 group-hover:block">
+                      {day.volume.toLocaleString("pl-PL")} kg
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={`mt-2 truncate text-center text-[10px] font-bold ${
+                    day.isToday ? "text-lime-300" : "text-slate-500"
+                  }`}
+                >
+                  {day.label}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        {weeklyVolume === 0 && (
+          <p className="mt-3 rounded-lg bg-white/[.03] px-3 py-2 text-[11px] text-slate-500">
+            Brak wykonanych treningów w tym tygodniu — słupki wypełnią się po zakończeniu pierwszej sesji.
+          </p>
+        )}
+        <p className="mt-3 text-[11px] text-slate-600">
+          Suma: powtórzenia × ciężar w wykonanych seriach. Tydzień resetuje się w poniedziałek.
+        </p>
       </section>
       <section className="panel p-5 sm:p-7">
         <div className="mb-7">

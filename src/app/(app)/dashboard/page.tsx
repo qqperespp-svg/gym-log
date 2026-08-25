@@ -132,24 +132,6 @@ export default async function DashboardPage({
   const weeklyVolume = weekly.reduce((sum, item) => sum + item.volume, 0);
   const weeklyCount = weekly.length;
 
-  const weekDays = Array.from({ length: 7 }, (_, index) => {
-    const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
-    const next = new Date(day.getTime() + 86400000);
-    const volume = completedSessions
-      .filter((item) => item.date >= day && item.date < next)
-      .reduce((sum, item) => sum + item.volume, 0);
-    const today = new Date();
-    return {
-      label: day.toLocaleDateString("pl-PL", { weekday: "short" }),
-      volume,
-      isToday:
-        day.getDate() === today.getDate() &&
-        day.getMonth() === today.getMonth() &&
-        day.getFullYear() === today.getFullYear(),
-    };
-  });
-  const maxDayVolume = Math.max(...weekDays.map((d) => d.volume), 1);
-
   const active = sessions
     .filter((item) => item.status !== "completed")
     .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
@@ -352,70 +334,6 @@ export default async function DashboardPage({
 
       <DashboardTiles
         tiles={[
-          {
-            id: "volume",
-            label: "Objętość tygodniowa",
-            node: (
-              <div className="panel p-5 sm:p-6">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="font-extrabold text-white">Objętość tygodniowa</h2>
-                  <span className="rounded-lg bg-lime-400/10 px-2.5 py-1 text-xs font-black text-lime-300">
-                    {weeklyVolume.toLocaleString("pl-PL")} kg
-                  </span>
-                </div>
-                <div className="flex h-48 items-end gap-2 sm:gap-3">
-                  {weekDays.map((day, index) => {
-                    // Skala jak w Historii: najwyższa objętość = 100% słupka.
-                    const pct =
-                      day.volume > 0
-                        ? Math.max(8, Math.round((day.volume / maxDayVolume) * 100))
-                        : 4;
-                    const empty = day.volume <= 0;
-                    return (
-                      <div
-                        key={index}
-                        className="group flex h-full min-w-0 flex-1 flex-col justify-end"
-                        title={`${day.label}: ${day.volume.toLocaleString("pl-PL")} kg`}
-                      >
-                        <div
-                          className={`relative mx-auto w-full max-w-16 rounded-t-lg transition ${
-                            empty
-                              ? "min-h-2 border-b border-dashed border-white/15 bg-white/[.05]"
-                              : day.isToday
-                                ? "bg-gradient-to-t from-lime-500 to-lime-200 shadow-[0_0_18px_rgba(163,230,53,.35)]"
-                                : "bg-gradient-to-t from-lime-600 to-lime-300"
-                          }`}
-                          style={{ height: `${pct}%` }}
-                        >
-                          {day.volume > 0 && (
-                            <span className="absolute -top-7 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-black/80 px-2 py-0.5 text-[10px] font-bold text-lime-300 group-hover:block">
-                              {day.volume.toLocaleString("pl-PL")} kg
-                            </span>
-                          )}
-                        </div>
-                        <p
-                          className={`mt-2 truncate text-center text-[10px] font-bold ${
-                            day.isToday ? "text-lime-300" : "text-slate-500"
-                          }`}
-                        >
-                          {day.label}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-                {weeklyVolume === 0 && (
-                  <p className="mt-3 rounded-lg bg-white/[.03] px-3 py-2 text-[11px] text-slate-500">
-                    Brak wykonanych treningów w tym tygodniu — słupki wypełnią się po zakończeniu
-                    pierwszej sesji (pon. – niedz.).
-                  </p>
-                )}
-                <p className="mt-3 text-[11px] text-slate-600">
-                  Tydzień liczony od poniedziałku do niedzieli — licznik resetuje się w poniedziałek.
-                </p>
-              </div>
-            ),
-          },
           {
             id: "body",
             label: "Wymiary ciała",

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, desc, eq } from "drizzle-orm";
-import { Plus } from "lucide-react";
+import { BarChart3, Plus } from "lucide-react";
 import { WorkoutList } from "@/components/workout-list";
 import { db } from "@/db";
 import { exercises, exerciseSets, workouts } from "@/db/schema";
@@ -73,9 +73,14 @@ export default async function WorkoutsPage() {
             Otwieraj sesje, zapisuj serie i śledź wykonanie.
           </p>
         </div>
-        <Link href="/workouts/new" className="button-primary self-start sm:self-auto">
-          <Plus size={18} /> Nowy trening
-        </Link>
+        <div className="flex flex-wrap gap-3 self-start sm:self-auto">
+          <Link href="/history" className="button-secondary">
+            <BarChart3 size={18} /> Historia i wykresy
+          </Link>
+          <Link href="/workouts/new" className="button-primary">
+            <Plus size={18} /> Nowy trening
+          </Link>
+        </div>
       </header>
       <WorkoutList workouts={items} />
     </div>

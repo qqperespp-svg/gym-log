@@ -15,6 +15,7 @@ import { FoodCatalogSearch } from "@/components/food-catalog-search";
 import { MichaTabs } from "@/components/micha-tabs";
 import { TdeeCalculator } from "@/components/tdee-calculator";
 import { MealEstimate } from "@/components/meal-estimate";
+import { SuggestMealTile } from "@/components/suggest-meal-tile";
 import { RecipeForm, RecipeItem } from "@/components/recipe-form";
 
 
@@ -230,6 +231,22 @@ export default async function MichaPage({
                   />
                 </div>
               </div>
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">AI: Zaproponuj posiłki</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Na podstawie pozostałych makro do końca dnia AI zaproponuje składniki i gramaturę, aby wypełnić zapotrzebowanie.
+              </p>
+              <SuggestMealTile
+                remaining={{
+                  protein: Math.max(0, (todayGoal?.protein ?? 0) - todaySum.protein),
+                  fat: Math.max(0, (todayGoal?.fat ?? 0) - todaySum.fat),
+                  carbs: Math.max(0, (todayGoal?.carbs ?? 0) - todaySum.carbs),
+                  kcal: Math.max(0, (todayGoal?.kcalGoal ?? 0) - todaySum.kcal),
+                }}
+                products={products}
+              />
             </section>
 
             <section className="panel p-5 sm:p-7">

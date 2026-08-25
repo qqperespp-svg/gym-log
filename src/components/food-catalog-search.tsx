@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { FilterX, Search, Star } from "lucide-react";
 import type { FoodProduct } from "@/db/schema";
 import { DeleteFoodProductButton } from "@/components/delete-food-product-button";
+import { EditFoodProductButton } from "@/components/edit-food-product-button";
 import { toggleFavoriteProductAction } from "@/actions/diet";
 import { DIET_LABELS, productLabels } from "@/lib/labels";
 import { matchesWords } from "@/lib/search";
@@ -213,6 +214,7 @@ export function FoodCatalogSearch({
                     )}
                   </p>
                   <div className="flex shrink-0 items-center gap-1">
+                    <EditFoodProductButton product={p} />
                     <button
                       type="button"
                       onClick={() => void toggleFavoriteProductAction(p.id)}

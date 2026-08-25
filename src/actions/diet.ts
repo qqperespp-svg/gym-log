@@ -161,6 +161,32 @@ export async function addFoodProductAction(formData: FormData): Promise<void> {
   redirect("/micha?saved=1");
 }
 
+/** Aktualizuje istniejący produkt spożywczy w katalogu użytkownika. */
+export async function updateFoodProductAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(formData.get("id")) || 0;
+  const name = String(formData.get("name") ?? "").trim();
+  if (name.length < 2) redirect("/micha?saved=1");
+  const protein = clamp1(Number(formData.get("protein")) || 0, 0, 999);
+  const fat = clamp1(Number(formData.get("fat")) || 0, 0, 999);
+  const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 999);
+  const kcal = kcalFromMacros(protein, fat, carbs);
+  const barcode = String(formData.get("barcode") ?? "").trim() || null;
+  await db
+    .update(foodProducts)
+    .set({
+      name: name.slice(0, 255),
+      barcode,
+      protein,
+      fat,
+      carbs,
+      kcal,
+    })
+    .where(and(eq(foodProducts.id, id), eq(foodProducts.userId, user.id)));
+  revalidatePath("/micha");
+  redirect("/micha?saved=1");
+}
+
 export async function deleteFoodProductAction(id: number): Promise<void> {
   const user = await requireUser();
   await db

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Barcode, ImagePlus, LoaderCircle, QrCode, ScanLine, X } from "lucide-react";
 import { cameraHint, extractCodeFromQR, loadZxing, waitForVideoFrames, type ZXingReader } from "@/lib/zxing-client";
 
@@ -20,13 +20,6 @@ export function ScanCodeBox({ onCode, onError, autoScan }: { onCode: (code: stri
   const readerRef = useRef<ZXingReader | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (autoScan && !scanning) {
-      void startScan("barcode");
-    }
-  }, [autoScan]);
-
   useEffect(() => {
     return () => {
       try {
@@ -38,7 +31,7 @@ export function ScanCodeBox({ onCode, onError, autoScan }: { onCode: (code: stri
     };
   }, []);
 
-  function stopScan() {
+  const stopScan = useCallback(function stopScan() {
     setScanning(false);
     try {
       readerRef.current?.reset();
@@ -55,9 +48,9 @@ export function ScanCodeBox({ onCode, onError, autoScan }: { onCode: (code: stri
       video.srcObject = null;
       video.removeAttribute("src");
     }
-  }
+  }, []);
 
-  function handleDecoded(raw: string) {
+  const handleDecoded = useCallback(function handleDecoded(raw: string) {
     const text = raw.trim();
     const code = /^\d{8,14}$/.test(text) ? text : extractCodeFromQR(text);
     if (code) {
@@ -68,9 +61,9 @@ export function ScanCodeBox({ onCode, onError, autoScan }: { onCode: (code: stri
       setErr("Nie znaleziono kodu produktu w zeskanowanej treści.");
       onError?.("Nie znaleziono kodu produktu w zeskanowanej treści.");
     }
-  }
+  }, [onCode, onError, setErr, stopScan]);
 
-  async function startScan(nextMode: "barcode" | "qr") {
+  const startScan = useCallback(async (nextMode: "barcode" | "qr") => {
     if (streamRef.current) await stopScan(); // przełączanie trybu w locie
     setMode(nextMode);
     setErr(null);
@@ -147,7 +140,14 @@ export function ScanCodeBox({ onCode, onError, autoScan }: { onCode: (code: stri
       setErr(msg);
       onError?.(msg);
     }
-  }
+  }, [handleDecoded, stopScan, onError]);
+
+  useLayoutEffect(() => {
+    if (autoScan && !scanning) {
+      const timer = setTimeout(() => { void startScan("barcode"); }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [autoScan, scanning, startScan]);
 
   async function onFile(file: File | null) {
     if (!file) return;

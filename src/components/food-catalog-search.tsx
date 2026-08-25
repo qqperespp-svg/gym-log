@@ -88,7 +88,7 @@ export function FoodCatalogSearch({
       return bExact - aExact;
     });
     // ulubione najpierw (po sortowaniu dokładnym)
-    return [...list.filter((p) => favoriteIds.has(p.id)), ...list.filter((p) => !favoriteIds.has(p.id))].slice(0, 80);
+    return [...list.filter((p) => favoriteIds.has(p.id)), ...list.filter((p) => !favoriteIds.has(p.id))];
   }, [query, products, favoriteIds, labelKeys, pMin, pMax, fMin, fMax, cMin, cMax]);
 
   const total = products.length;

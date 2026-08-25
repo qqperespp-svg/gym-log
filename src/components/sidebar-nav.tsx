@@ -44,10 +44,13 @@ export function SidebarNav({
   const [curTheme, setCurTheme] = useState<Theme>(theme);
   const [curAccent, setCurAccent] = useState<Accent>(accent);
   useEffect(() => {
-    const t = document.documentElement.getAttribute("data-theme") as Theme | null;
-    const a = document.documentElement.getAttribute("data-accent") as Accent | null;
-    if (t) setCurTheme(t);
-    if (a) setCurAccent(a);
+    const timer = setTimeout(() => {
+      const t = document.documentElement.getAttribute("data-theme") as Theme | null;
+      const a = document.documentElement.getAttribute("data-accent") as Accent | null;
+      if (t) setCurTheme(t);
+      if (a) setCurAccent(a);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
   function changeTheme() {
     const next: Theme = curTheme === "dark" ? "light" : "dark";

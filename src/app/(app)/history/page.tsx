@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { asc, desc, eq } from "drizzle-orm";
 import { ArrowUpRight, BarChart3, CalendarDays, Dumbbell, Medal } from "lucide-react";
+import { ExerciseProgressChart, type ExerciseHistoryItem } from "@/components/exercise-progress-chart";
 import { db } from "@/db";
 import { exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -18,6 +19,10 @@ export default async function HistoryPage() {
       duration: workouts.durationMinutes,
       status: workouts.status,
       exerciseId: exercises.id,
+      exerciseName: exercises.name,
+      exerciseSetCount: exercises.sets,
+      exerciseReps: exercises.reps,
+      exerciseWeight: exercises.weight,
       setId: exerciseSets.id,
       reps: exerciseSets.reps,
       weight: exerciseSets.weight,
@@ -42,6 +47,27 @@ export default async function HistoryPage() {
       best: number;
     }
   >();
+  const exerciseHistoryByName = new Map<
+    string,
+    {
+      key: string;
+      name: string;
+      sessions: Map<
+        number,
+        {
+          workoutId: number;
+          title: string;
+          date: Date;
+          volume: number;
+          maxWeight: number;
+          sets: number;
+          fallbackVolume: number;
+          fallbackMaxWeight: number;
+          fallbackSets: number;
+        }
+      >;
+    }
+  >();
   for (const row of rows) {
     const item = grouped.get(row.id) ?? {
       id: row.id,
@@ -61,7 +87,64 @@ export default async function HistoryPage() {
       item.best = Math.max(item.best, row.weight ?? 0);
     }
     grouped.set(row.id, item);
+
+    // Historia ćwiczenia obejmuje ćwiczenia z ukończonych treningów. Jeśli
+    // starszy zapis nie ma flagi `completed`, ale ma wpisane wartości, także
+    // go zachowujemy. Gdy cały trening został zakończony bez zaznaczania serii,
+    // używamy liczby zapisanych w nim serii jako bezpiecznego fallbacku — nigdy
+    // nie pokazujemy wtedy wykonanego ćwiczenia jako „0 serii”.
+    const exerciseName = row.exerciseName?.trim();
+    if (row.status !== "completed" || !exerciseName) continue;
+    const exerciseKey = exerciseName.toLocaleLowerCase("pl-PL");
+    const historyItem = exerciseHistoryByName.get(exerciseKey) ?? {
+      key: exerciseKey,
+      name: exerciseName,
+      sessions: new Map(),
+    };
+    const session = historyItem.sessions.get(row.id) ?? {
+      workoutId: row.id,
+      title: row.title,
+      date: row.date,
+      volume: 0,
+      maxWeight: 0,
+      sets: 0,
+      fallbackVolume: 0,
+      fallbackMaxWeight: 0,
+      fallbackSets: 0,
+    };
+    const setCount = row.setId ? 1 : Math.max(row.exerciseSetCount ?? 0, 1);
+    const reps = row.setId ? row.reps ?? 0 : row.exerciseReps ?? 0;
+    const weight = row.setId ? row.weight ?? 0 : row.exerciseWeight ?? 0;
+    const setVolume = reps * weight;
+    const hasRecordedSet =
+      !row.setId || row.completed === 1 || (row.reps ?? 0) > 0 || (row.weight ?? 0) > 0;
+    session.fallbackSets += setCount;
+    session.fallbackVolume += setCount * setVolume;
+    session.fallbackMaxWeight = Math.max(session.fallbackMaxWeight, weight);
+    if (hasRecordedSet) {
+      session.sets += setCount;
+      session.volume += setCount * setVolume;
+      session.maxWeight = Math.max(session.maxWeight, weight);
+    }
+    historyItem.sessions.set(row.id, session);
+    exerciseHistoryByName.set(exerciseKey, historyItem);
   }
+  const exerciseHistory: ExerciseHistoryItem[] = Array.from(exerciseHistoryByName.values())
+    .map((item) => ({
+      key: item.key,
+      name: item.name,
+      sessions: Array.from(item.sessions.values())
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+        .map((session) => ({
+          workoutId: session.workoutId,
+          title: session.title,
+          date: session.date.toISOString(),
+          volume: session.sets > 0 ? session.volume : session.fallbackVolume,
+          maxWeight: session.sets > 0 ? session.maxWeight : session.fallbackMaxWeight,
+          sets: session.sets > 0 ? session.sets : session.fallbackSets,
+        })),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pl-PL"));
   const sessions = Array.from(grouped.values()).filter((item) => item.status === "completed");
   const chartData = sessions.slice(0, 8).reverse();
   const maxVolume = Math.max(...chartData.map((item) => item.volume), 1);
@@ -202,6 +285,15 @@ export default async function HistoryPage() {
             <p>Ukończ pierwszy trening.</p>
           </div>
         )}
+      </section>
+      <section className="panel p-5 sm:p-7">
+        <div className="mb-6">
+          <h2 className="font-extrabold text-white">Progres ćwiczeń</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Wybierz ćwiczenie z zapisanych treningów, aby porównać objętość jednostka po jednostce.
+          </p>
+        </div>
+        <ExerciseProgressChart exercises={exerciseHistory} />
       </section>
       <section className="panel overflow-hidden">
         <div className="border-b border-white/[.06] p-5 sm:px-6">

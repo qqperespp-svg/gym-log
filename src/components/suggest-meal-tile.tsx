@@ -91,7 +91,7 @@ export function SuggestMealTile({
           <div className="space-y-2">
             {items.map((it, idx) => (
               <div key={idx} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[.06] bg-black/15 px-3 py-2">
-                <span className="min-w-0 flex-1 truncate text-sm font-bold text-white">{it.name}</span>
+                <span className="min-w-0 flex-1 break-words whitespace-normal text-sm font-bold text-white">{it.name}</span>
                 <input
                   type="number"
                   min="0"

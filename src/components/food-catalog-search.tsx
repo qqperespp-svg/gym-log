@@ -205,7 +205,7 @@ export function FoodCatalogSearch({
             return (
               <div key={p.id} className={`rounded-xl border border-white/[.06] px-3 py-2.5 ${p.userId === userId ? "bg-lime-400/[.04]" : "bg-black/15"}`}>
                 <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-bold text-white">
+                  <p className="min-w-0 flex-1 break-words whitespace-normal text-sm font-bold text-white">
                     {p.name}
                     {p.userId === userId && (
                       <span className="ml-2 rounded-full bg-lime-400/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-lime-300">

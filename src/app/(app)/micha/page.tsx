@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, desc, eq } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronRight, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, foodProducts, recipes, userFavorites, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -18,6 +18,24 @@ import { MealEstimate } from "@/components/meal-estimate";
 import { RecipeForm, RecipeItem } from "@/components/recipe-form";
 
 export const dynamic = "force-dynamic";
+
+function isoWeekOf(date: Date) {
+  const value = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = value.getUTCDay() || 7;
+  value.setUTCDate(value.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(value.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((value.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return { year: value.getUTCFullYear(), week };
+}
+
+function formatDayMonth(date: Date) {
+  return date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" });
+}
+
+function formatMonthYear(date: Date) {
+  const label = date.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
 
 export default async function MichaPage({
   searchParams,
@@ -62,6 +80,109 @@ export default async function MichaPage({
   };
   const weekStart = startOfWeek(new Date());
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+
+  type HistoryEntry = {
+    id: number;
+    date: Date;
+    mealName: string;
+    protein: number;
+    fat: number;
+    carbs: number;
+    kcal: number;
+    goalKcal: number | null;
+    note: string | null;
+  };
+  type DayGroup = {
+    key: string;
+    date: Date;
+    entries: HistoryEntry[];
+    totalKcal: number;
+  };
+  type WeekGroup = {
+    key: string;
+    start: Date;
+    end: Date;
+    label: string;
+    days: Map<string, DayGroup>;
+    totalLogs: number;
+    totalKcal: number;
+  };
+  type MonthGroup = {
+    key: string;
+    date: Date;
+    weeks: Map<string, WeekGroup>;
+    totalLogs: number;
+    totalKcal: number;
+  };
+
+  const monthGroups = new Map<string, MonthGroup>();
+  for (const log of logs) {
+    const weekStartDate = startOfWeek(log.date);
+    const weekEndDate = new Date(
+      weekStartDate.getFullYear(),
+      weekStartDate.getMonth(),
+      weekStartDate.getDate() + 6,
+    );
+    const isoWeek = isoWeekOf(log.date);
+    const weekKey = `${isoWeek.year}-W${String(isoWeek.week).padStart(2, "0")}`;
+    // Tydzień ma jedno miejsce w historii — przypisujemy go do miesiąca,
+    // w którym się zaczyna, dzięki czemu dni nie dublują się na granicy miesięcy.
+    const monthKey = `${weekStartDate.getFullYear()}-${String(weekStartDate.getMonth() + 1).padStart(2, "0")}`;
+    const month = monthGroups.get(monthKey) ?? {
+      key: monthKey,
+      date: new Date(weekStartDate.getFullYear(), weekStartDate.getMonth(), 1),
+      weeks: new Map(),
+      totalLogs: 0,
+      totalKcal: 0,
+    };
+    const week = month.weeks.get(weekKey) ?? {
+      key: weekKey,
+      start: weekStartDate,
+      end: weekEndDate,
+      label: `CW${String(isoWeek.week).padStart(2, "0")} ${formatDayMonth(weekStartDate)}-${formatDayMonth(weekEndDate)}`,
+      days: new Map(),
+      totalLogs: 0,
+      totalKcal: 0,
+    };
+    const dayKey = `${log.date.getFullYear()}-${String(log.date.getMonth() + 1).padStart(2, "0")}-${String(log.date.getDate()).padStart(2, "0")}`;
+    const day = week.days.get(dayKey) ?? {
+      key: dayKey,
+      date: new Date(log.date.getFullYear(), log.date.getMonth(), log.date.getDate()),
+      entries: [],
+      totalKcal: 0,
+    };
+    const entry: HistoryEntry = {
+      id: log.id,
+      date: log.date,
+      mealName: mealNameFor(log.date, log.mealNumber) ?? "Posiłek",
+      protein: log.protein,
+      fat: log.fat,
+      carbs: log.carbs,
+      kcal: log.kcal,
+      goalKcal: goalByWeekday.get(weekdayOf(log.date))?.kcalGoal ?? null,
+      note: log.note,
+    };
+    day.entries.push(entry);
+    day.totalKcal += entry.kcal;
+    week.totalLogs += 1;
+    week.totalKcal += entry.kcal;
+    month.totalLogs += 1;
+    month.totalKcal += entry.kcal;
+    week.days.set(dayKey, day);
+    month.weeks.set(weekKey, week);
+    monthGroups.set(monthKey, month);
+  }
+  const mealHistory = Array.from(monthGroups.values())
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+    .map((month) => ({
+      ...month,
+      weeks: Array.from(month.weeks.values())
+        .sort((a, b) => b.start.getTime() - a.start.getTime())
+        .map((week) => ({
+          ...week,
+          days: Array.from(week.days.values()).sort((a, b) => b.date.getTime() - a.date.getTime()),
+        })),
+    }));
 
   // ----- Sumy makro -----
   const today = new Date();
@@ -240,56 +361,93 @@ export default async function MichaPage({
                 Historia wpisów spożycia — z podziałem na posiłki.
               </p>
               {logs.length ? (
-                <div className="overflow-x-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Data</th>
-                        <th>Posiłek</th>
-                        <th>Białko</th>
-                        <th>Tłuszcze</th>
-                        <th>Węgl.</th>
-                        <th>kcal</th>
-                        <th className="hidden md:table-cell">Cel dnia</th>
-                        <th>Notatka</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {logs.slice(0, 40).map((log) => {
-                        const goal = goalByWeekday.get(weekdayOf(log.date));
-                        return (
-                          <tr key={log.id}>
-                            <td className="font-bold text-white">
-                              {log.date.toLocaleDateString("pl-PL")}
-                            </td>
-                            <td>
-                              {log.mealNumber ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
-                                  <UtensilsCrossed size={11} /> {mealNameFor(log.date, log.mealNumber)}
-                                </span>
-                              ) : (
-                                <span className="text-slate-600">—</span>
-                              )}
-                            </td>
-                            <td>{formatMacro(log.protein)} g</td>
-                            <td>{formatMacro(log.fat)} g</td>
-                            <td>{formatMacro(log.carbs)} g</td>
-                            <td className="font-bold text-lime-300">
-                              {log.kcal.toLocaleString("pl-PL")}
-                            </td>
-                            <td className="hidden text-slate-400 md:table-cell">
-                              {goal ? `${goal.kcalGoal.toLocaleString("pl-PL")} kcal` : "—"}
-                            </td>
-                            <td className="text-slate-400">{log.note ?? "—"}</td>
-                            <td className="flex gap-1">
-                              <DeleteDietLogButton id={log.id} />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="space-y-3">
+                  {mealHistory.map((month) => (
+                    <details key={month.key} className="meal-history-details overflow-hidden rounded-2xl border border-white/[.07] bg-black/10">
+                      <summary className="flex cursor-pointer list-none items-center gap-3 p-4 hover:bg-white/[.025]">
+                        <span className="meal-history-chevron shrink-0 text-lime-400">
+                          <ChevronRight size={19} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-extrabold text-white">{formatMonthYear(month.date)}</h3>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {month.totalLogs} wpisów · {month.weeks.length} {month.weeks.length === 1 ? "tydzień" : "tygodnie"} · {month.totalKcal.toLocaleString("pl-PL")} kcal
+                          </p>
+                        </div>
+                        <span className="hidden rounded-full bg-white/[.04] px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500 sm:inline-flex">
+                          Miesiąc
+                        </span>
+                      </summary>
+                      <div className="space-y-2 border-t border-white/[.06] p-3 sm:p-4">
+                        {month.weeks.map((week) => (
+                          <details key={week.key} className="meal-history-details overflow-hidden rounded-xl border border-white/[.07] bg-black/10">
+                            <summary className="flex cursor-pointer list-none items-center gap-3 p-3 hover:bg-white/[.025] sm:p-4">
+                              <span className="meal-history-chevron shrink-0 text-lime-400">
+                                <ChevronRight size={17} />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <h4 className="font-extrabold text-white">{week.label}</h4>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {week.days.length} {week.days.length === 1 ? "dzień" : "dni"} · {week.totalLogs} wpisów · {week.totalKcal.toLocaleString("pl-PL")} kcal
+                                </p>
+                              </div>
+                              <span className="hidden text-[10px] font-black uppercase tracking-wider text-slate-600 sm:inline">
+                                Tydzień
+                              </span>
+                            </summary>
+                            <div className="space-y-2 border-t border-white/[.06] p-3">
+                              {week.days.map((day) => (
+                                <details key={day.key} className="meal-history-details overflow-hidden rounded-xl border border-white/[.07] bg-black/10">
+                                  <summary className="flex cursor-pointer list-none items-center gap-3 p-3 hover:bg-white/[.025]">
+                                    <span className="meal-history-chevron shrink-0 text-lime-400">
+                                      <ChevronRight size={16} />
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <h5 className="font-bold capitalize text-white">
+                                        {day.date.toLocaleDateString("pl-PL", {
+                                          weekday: "long",
+                                          day: "2-digit",
+                                          month: "2-digit",
+                                          year: "numeric",
+                                        })}
+                                      </h5>
+                                      <p className="mt-1 text-xs text-slate-500">
+                                        {day.entries.length} wpisów · {day.totalKcal.toLocaleString("pl-PL")} kcal
+                                      </p>
+                                    </div>
+                                  </summary>
+                                  <div className="divide-y divide-white/[.05] border-t border-white/[.06]">
+                                    {day.entries.map((entry) => (
+                                      <div key={entry.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-4">
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
+                                              <UtensilsCrossed size={11} /> {entry.mealName}
+                                            </span>
+                                            {entry.note && <span className="truncate text-xs text-slate-500">{entry.note}</span>}
+                                          </div>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                                          <span>B: {formatMacro(entry.protein)} g</span>
+                                          <span>T: {formatMacro(entry.fat)} g</span>
+                                          <span>W: {formatMacro(entry.carbs)} g</span>
+                                          <b className="text-lime-300">{entry.kcal.toLocaleString("pl-PL")} kcal</b>
+                                          {entry.goalKcal != null && (
+                                            <span className="text-slate-600">cel {entry.goalKcal.toLocaleString("pl-PL")} kcal</span>
+                                          )}
+                                        </div>
+                                        <DeleteDietLogButton id={entry.id} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              ))}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    </details>
+                  ))}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-white/[.07] bg-black/15 p-6 text-center">

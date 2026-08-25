@@ -70,6 +70,11 @@ textarea.input { line-height: 1.6; }
 .data-table tbody tr { @apply transition hover:bg-white/[.02]; }
 .data-table tbody tr:last-child td { border-bottom: 0; }
 
+.meal-history-details > summary::-webkit-details-marker { display: none; }
+.meal-history-details > summary::marker { content: ""; }
+.meal-history-chevron { transition: transform 180ms ease; }
+.meal-history-details[open] > summary .meal-history-chevron { transform: rotate(90deg); }
+
 .status-progress { @apply bg-amber-400/10 text-amber-300; }
 .set-table { @apply w-full min-w-[820px] text-left; }
 .set-table th { @apply border-b border-white/[.06] bg-black/10 px-4 py-3 text-center text-[9px] font-black uppercase tracking-[.13em] text-slate-600 first:text-left sm:px-6; }

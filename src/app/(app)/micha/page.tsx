@@ -9,6 +9,7 @@ import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAct
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
+import { EditDietLogButton } from "@/components/edit-diet-log-button";
 import { MacroBar } from "@/components/macro-bar";
 import { CodeScanInput } from "@/components/code-scan-input";
 import { FoodCatalogSearch } from "@/components/food-catalog-search";
@@ -85,6 +86,8 @@ export default async function MichaPage({
     id: number;
     date: Date;
     mealName: string;
+    mealNumber: number | null;
+    mealOptions: Array<{ value: number; label: string }>;
     protein: number;
     fat: number;
     carbs: number;
@@ -151,15 +154,23 @@ export default async function MichaPage({
       entries: [],
       totalKcal: 0,
     };
+    const dateGoal = goalByWeekday.get(weekdayOf(log.date));
+    const mealCount = Math.max(1, Math.min(dateGoal?.meals ?? 3, 10));
+    const dateMealNames = mealNamesByWeekday.get(weekdayOf(log.date)) ?? [];
     const entry: HistoryEntry = {
       id: log.id,
       date: log.date,
       mealName: mealNameFor(log.date, log.mealNumber) ?? "Posiłek",
+      mealNumber: log.mealNumber,
+      mealOptions: Array.from({ length: mealCount }, (_, index) => ({
+        value: index + 1,
+        label: dateMealNames[index] || `Posiłek ${index + 1}`,
+      })),
       protein: log.protein,
       fat: log.fat,
       carbs: log.carbs,
       kcal: log.kcal,
-      goalKcal: goalByWeekday.get(weekdayOf(log.date))?.kcalGoal ?? null,
+      goalKcal: dateGoal?.kcalGoal ?? null,
       note: log.note,
     };
     day.entries.push(entry);
@@ -436,7 +447,21 @@ export default async function MichaPage({
                                             <span className="text-slate-600">cel {entry.goalKcal.toLocaleString("pl-PL")} kcal</span>
                                           )}
                                         </div>
-                                        <DeleteDietLogButton id={entry.id} />
+                                        <div className="flex shrink-0 gap-1">
+                                          <EditDietLogButton
+                                            id={entry.id}
+                                            initial={{
+                                              date: entry.date.toISOString().slice(0, 10),
+                                              protein: entry.protein,
+                                              fat: entry.fat,
+                                              carbs: entry.carbs,
+                                              mealNumber: entry.mealNumber,
+                                              note: entry.note,
+                                              mealOptions: entry.mealOptions,
+                                            }}
+                                          />
+                                          <DeleteDietLogButton id={entry.id} />
+                                        </div>
                                       </div>
                                     ))}
                                   </div>

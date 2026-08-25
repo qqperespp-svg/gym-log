@@ -102,6 +102,33 @@ export async function logDietEntryAction(formData: FormData): Promise<void> {
   redirect("/micha?saved=1");
 }
 
+export async function updateDietLogAction(id: number, formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const dateStr = String(formData.get("date") ?? "").trim();
+  if (!dateStr) return;
+  const date = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return;
+  const protein = clamp1(Number(formData.get("protein")) || 0, 0, 9999);
+  const fat = clamp1(Number(formData.get("fat")) || 0, 0, 9999);
+  const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 9999);
+  const kcal = kcalFromMacros(protein, fat, carbs);
+  const note = String(formData.get("note") ?? "").trim() || null;
+  await db
+    .update(dietLogs)
+    .set({
+      date,
+      protein,
+      fat,
+      carbs,
+      kcal,
+      mealNumber: readMealNumber(formData),
+      note,
+    })
+    .where(and(eq(dietLogs.id, id), eq(dietLogs.userId, user.id)));
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+}
+
 export async function deleteDietLogAction(id: number): Promise<void> {
   const user = await requireUser();
   await db.delete(dietLogs).where(and(eq(dietLogs.id, id), eq(dietLogs.userId, user.id)));

@@ -7,6 +7,7 @@ import { updateDietLogAction } from "@/actions/diet";
 
 export type DietLogEditData = {
   date: string;
+  grams: number | null;
   protein: number;
   fat: number;
   carbs: number;
@@ -90,6 +91,19 @@ export function EditDietLogButton({ id, initial }: { id: number; initial: DietLo
                     ))}
                   </select>
                 </span>
+              </label>
+              <label className="field-label">
+                Gramatura (g)
+                <input
+                  className="input"
+                  name="grams"
+                  type="number"
+                  min="0"
+                  max="100000"
+                  step="0.1"
+                  defaultValue={initial.grams ?? ""}
+                  placeholder="np. 150"
+                />
               </label>
               <label className="field-label">
                 Białko (g)

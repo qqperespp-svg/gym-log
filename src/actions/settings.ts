@@ -174,6 +174,7 @@ export async function importDataAction(formData: FormData): Promise<void> {
       await db.insert(dietLogs).values({
         userId: user.id,
         date: l.date ? new Date(l.date) : new Date(),
+        grams: l.grams ?? null,
         protein: l.protein ?? 0,
         fat: l.fat ?? 0,
         carbs: l.carbs ?? 0,

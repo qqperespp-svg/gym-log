@@ -215,6 +215,7 @@ export const dietLogs = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     date: timestamp("date").notNull(),
+    grams: doublePrecision("grams"),
     protein: doublePrecision("protein").notNull().default(0),
     fat: doublePrecision("fat").notNull().default(0),
     carbs: doublePrecision("carbs").notNull().default(0),

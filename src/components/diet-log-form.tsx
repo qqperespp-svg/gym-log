@@ -107,6 +107,7 @@ export function DietLogForm({
       await enqueue({
         kind: "diet",
         date: String(formData.get("date") ?? new Date().toISOString().slice(0, 10)),
+        grams: g,
         protein: computed.protein,
         fat: computed.fat,
         carbs: computed.carbs,
@@ -264,11 +265,13 @@ export function DietLogForm({
           <span className="input-shell !min-h-12">
             <ScaleIcon />
             <input
+              name="grams"
               type="number"
               min="0"
               step="1"
               placeholder="np. 150"
               value={grams}
+              required
               onFocus={(event) => event.target.select()}
               onChange={(event) => setGrams(event.target.value)}
             />

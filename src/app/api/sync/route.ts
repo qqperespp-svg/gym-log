@@ -19,6 +19,7 @@ export async function POST(request: Request) {
     await db.insert(dietLogs).values({
       userId: user.id,
       date: e.date ? new Date(e.date) : new Date(),
+      grams: Number.isFinite(Number(e.grams)) && Number(e.grams) >= 0 ? Number(e.grams) : null,
       protein: Number(e.protein) || 0,
       fat: Number(e.fat) || 0,
       carbs: Number(e.carbs) || 0,

@@ -93,6 +93,7 @@ export default async function PrintMichaPage() {
               <tr className="border-b border-white/[.06] text-[10px] uppercase tracking-wider text-slate-500">
                 <th className="py-2">Data</th>
                 <th className="py-2">Posiłek</th>
+                <th className="py-2">Gramatura</th>
                 <th className="py-2">kcal</th>
                 <th className="py-2">B / T / W</th>
                 <th className="py-2">Notatka</th>
@@ -106,6 +107,7 @@ export default async function PrintMichaPage() {
                   <tr key={l.id} className="border-b border-white/[.03]">
                     <td className="py-2">{l.date.toLocaleDateString("pl-PL")}</td>
                     <td className="py-2">{meal}</td>
+                    <td className="py-2">{l.grams != null ? `${formatMacro(l.grams)} g` : "—"}</td>
                     <td className="py-2">{l.kcal.toLocaleString("pl-PL")}</td>
                     <td className="py-2">{formatMacro(l.protein)} / {formatMacro(l.fat)} / {formatMacro(l.carbs)}</td>
                     <td className="py-2 text-slate-500">{l.note ?? "—"}</td>

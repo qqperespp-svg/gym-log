@@ -4,7 +4,7 @@
 // wysyłane do /api/sync po powrocie połączenia (lub przy starcie).
 
 type QueueItem =
-  | { kind: "diet"; date: string; protein: number; fat: number; carbs: number; kcal: number; mealNumber: number | null; note: string | null }
+  | { kind: "diet"; date: string; grams: number | null; protein: number; fat: number; carbs: number; kcal: number; mealNumber: number | null; note: string | null }
   | { kind: "water"; date: string; liters: number };
 
 const DB = "gymrat-offline";

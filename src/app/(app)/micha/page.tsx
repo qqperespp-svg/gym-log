@@ -88,6 +88,7 @@ export default async function MichaPage({
     mealName: string;
     mealNumber: number | null;
     mealOptions: Array<{ value: number; label: string }>;
+    grams: number | null;
     protein: number;
     fat: number;
     carbs: number;
@@ -166,6 +167,7 @@ export default async function MichaPage({
         value: index + 1,
         label: dateMealNames[index] || `Posiłek ${index + 1}`,
       })),
+      grams: log.grams,
       protein: log.protein,
       fat: log.fat,
       carbs: log.carbs,
@@ -439,6 +441,9 @@ export default async function MichaPage({
                                           </div>
                                         </div>
                                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                                          <span className="font-semibold text-slate-300">
+                                            Gramatura: {entry.grams != null ? `${formatMacro(entry.grams)} g` : "brak danych"}
+                                          </span>
                                           <span>B: {formatMacro(entry.protein)} g</span>
                                           <span>T: {formatMacro(entry.fat)} g</span>
                                           <span>W: {formatMacro(entry.carbs)} g</span>
@@ -452,6 +457,7 @@ export default async function MichaPage({
                                             id={entry.id}
                                             initial={{
                                               date: entry.date.toISOString().slice(0, 10),
+                                              grams: entry.grams,
                                               protein: entry.protein,
                                               fat: entry.fat,
                                               carbs: entry.carbs,
@@ -587,7 +593,7 @@ export default async function MichaPage({
             <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Posiłki złożone (przepisy)</h2>
               <p className="mb-5 text-sm text-slate-500">
-                Zbuduj posiłek z produktów katalogu (np. „Obiad = kurczak 150 g + ryż 80 g"), a makro
+                Zbuduj posiłek z produktów katalogu (np. „Obiad = kurczak 150 g + ryż 80 g&quot;), a makro
                 zsumuje się automatycznie. Dodajesz go do dziennika jednym kliknięciem.
               </p>
               <div className="grid gap-5 xl:grid-cols-2">
@@ -624,7 +630,7 @@ export default async function MichaPage({
                 z makroskładnikami (na 100 g) — polskie produkty z otwartej bazy Open Food Facts (mleko,
                 jogurty, pieczywo, mięsa, owoce, warzywa, przekąski i wiele innych) + produkty dodawane
                 przez użytkowników (<b>wspólny katalog</b>). Pozycje dodane ręcznie są oznaczone etykietą
-                <b className="text-violet-300"> „wpis gymrata"</b>. Wyszukaj po nazwie, zeskanuj kod albo
+                <b className="text-violet-300"> „wpis gymrata&quot;</b>. Wyszukaj po nazwie, zeskanuj kod albo
                 dodaj własny produkt.
               </p>
               <div className="grid gap-5 xl:grid-cols-2">
@@ -684,7 +690,7 @@ export default async function MichaPage({
             <h2 className="font-extrabold text-white mb-1">Planowanie kalorii (TDEE)</h2>
             <p className="mb-5 text-sm text-slate-500">
               Oblicz zapotrzebowanie, ustaw proporcje białko / węglowodany / tłuszcze i dodatek na
-              dzień treningowy. Po zapisie każdy dzień oznaczony jako „treningowy" dostanie
+              dzień treningowy. Po zapisie każdy dzień oznaczony jako „treningowy&quot; dostanie
               podwyższoną kalorykę, pozostałe — bazową (z proporcjami przeliczonymi na gramy).
             </p>
             <TdeeCalculator />

@@ -153,6 +153,7 @@ async function runSchemaSync(): Promise<void> {
           id serial PRIMARY KEY,
           user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           date timestamp NOT NULL,
+          grams double precision,
           protein integer NOT NULL DEFAULT 0,
           fat integer NOT NULL DEFAULT 0,
           carbs integer NOT NULL DEFAULT 0,
@@ -198,6 +199,11 @@ async function runSchemaSync(): Promise<void> {
     [
       "diet_logs.meal_number",
       sql`ALTER TABLE diet_logs ADD COLUMN IF NOT EXISTS meal_number integer`,
+    ],
+    // Gramatura wpisu — przechowywana osobno, aby można było ją edytować i pokazywać w historii.
+    [
+      "diet_logs.grams",
+      sql`ALTER TABLE diet_logs ADD COLUMN IF NOT EXISTS grams double precision`,
     ],
     // Katalog produktów spożywczych (globalny + własne użytkownika).
     [

@@ -25,6 +25,15 @@ function readMealNumber(formData: FormData): number | null {
   return Math.round(raw);
 }
 
+/** Odczytuje opcjonalną gramaturę wpisu, zachowując brak danych jako null. */
+function readGrams(formData: FormData): number | null {
+  const rawValue = String(formData.get("grams") ?? "").trim().replace(",", ".");
+  if (!rawValue) return null;
+  const raw = Number(rawValue);
+  if (!Number.isFinite(raw) || raw < 0) return null;
+  return clamp1(raw, 0, 100000);
+}
+
 /** Zapisuje dzienne cele makro (i liczone z nich kcal) oraz liczbę posiłków dla każdego dnia tygodnia. */
 export async function saveDietGoalsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
@@ -81,6 +90,7 @@ export async function saveDietGoalsAction(formData: FormData): Promise<void> {
 export async function logDietEntryAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const dateStr = String(formData.get("date") ?? "").trim();
+  const grams = readGrams(formData);
   const protein = clamp1(Number(formData.get("protein")) || 0, 0, 9999);
   const fat = clamp1(Number(formData.get("fat")) || 0, 0, 9999);
   const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 9999);
@@ -90,6 +100,7 @@ export async function logDietEntryAction(formData: FormData): Promise<void> {
   await db.insert(dietLogs).values({
     userId: user.id,
     date: new Date(`${dateStr}T12:00:00`),
+    grams,
     protein,
     fat,
     carbs,
@@ -108,6 +119,7 @@ export async function updateDietLogAction(id: number, formData: FormData): Promi
   if (!dateStr) return;
   const date = new Date(`${dateStr}T12:00:00`);
   if (Number.isNaN(date.getTime())) return;
+  const grams = readGrams(formData);
   const protein = clamp1(Number(formData.get("protein")) || 0, 0, 9999);
   const fat = clamp1(Number(formData.get("fat")) || 0, 0, 9999);
   const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 9999);
@@ -117,6 +129,7 @@ export async function updateDietLogAction(id: number, formData: FormData): Promi
     .update(dietLogs)
     .set({
       date,
+      grams,
       protein,
       fat,
       carbs,
@@ -141,6 +154,7 @@ export async function deleteDietLogAction(id: number): Promise<void> {
 export async function logScannedEntryAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const dateStr = String(formData.get("date") ?? "").trim();
+  const grams = readGrams(formData);
   const protein = clamp1(Number(formData.get("protein")) || 0, 0, 9999);
   const fat = clamp1(Number(formData.get("fat")) || 0, 0, 9999);
   const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 9999);
@@ -150,6 +164,7 @@ export async function logScannedEntryAction(formData: FormData): Promise<void> {
   await db.insert(dietLogs).values({
     userId: user.id,
     date: new Date(`${dateStr}T12:00:00`),
+    grams,
     protein,
     fat,
     carbs,
@@ -337,9 +352,20 @@ export async function logRecipeAction(formData: FormData): Promise<void> {
   const mealNumber = readMealNumber(formData);
   const [recipe] = await db.select().from(recipes).where(and(eq(recipes.id, id), eq(recipes.userId, user.id))).limit(1);
   if (!recipe) redirect("/micha?saved=1");
+  let grams: number | null = null;
+  try {
+    const recipeItems: Array<{ grams?: unknown }> = JSON.parse(recipe.items || "[]");
+    if (recipeItems.length) {
+      const totalGrams = recipeItems.reduce((sum, item) => sum + Math.max(0, Number(item.grams) || 0), 0);
+      grams = clamp1(totalGrams, 0, 100000);
+    }
+  } catch {
+    // Starsze lub uszkodzone dane przepisu nie powinny blokować zapisania wpisu.
+  }
   await db.insert(dietLogs).values({
     userId: user.id,
     date: new Date(`${dateStr || new Date().toISOString().slice(0, 10)}T12:00:00`),
+    grams,
     protein: recipe.protein,
     fat: recipe.fat,
     carbs: recipe.carbs,
@@ -366,13 +392,15 @@ export async function logMealEstimateAction(formData: FormData): Promise<void> {
   }
   if (!dateStr || !items.length) redirect("/micha?saved=1");
   for (const it of items) {
-    const g = Math.max(0, Number(it.grams) || 0) / 100;
+    const grams = clamp1(Math.max(0, Number(it.grams) || 0), 0, 100000);
+    const g = grams / 100;
     const protein = Math.round((Number(it.protein) || 0) * g * 10) / 10;
     const fat = Math.round((Number(it.fat) || 0) * g * 10) / 10;
     const carbs = Math.round((Number(it.carbs) || 0) * g * 10) / 10;
     await db.insert(dietLogs).values({
       userId: user.id,
       date: new Date(`${dateStr}T12:00:00`),
+      grams,
       protein,
       fat,
       carbs,

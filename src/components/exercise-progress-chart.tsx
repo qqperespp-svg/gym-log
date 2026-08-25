@@ -19,7 +19,7 @@ export type ExerciseHistoryItem = {
 };
 
 const CHART_WIDTH = 760;
-const CHART_HEIGHT = 300;
+const CHART_HEIGHT = 320;
 const PLOT_LEFT = 52;
 const PLOT_RIGHT = 708;
 const PLOT_TOP = 28;
@@ -139,7 +139,7 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
             <div>
               <h3 className="font-extrabold text-white">Progres: {selected.name}</h3>
               <p className="mt-1 text-xs text-slate-500">
-                Słupki pokazują objętość, a linia — maksymalny ciężar z każdej jednostki treningowej.
+                Słupki pokazują objętość, a wartość pod każdym słupkiem to jej suma. Linia oznacza maksymalny ciężar z każdej jednostki treningowej.
               </p>
             </div>
             <div className="flex flex-wrap gap-4 text-[11px] text-slate-400">
@@ -203,10 +203,20 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
                       rx="4"
                       fill="url(#exercise-volume-gradient)"
                     />
+                    <text
+                      x={x}
+                      y={PLOT_BOTTOM + 14}
+                      fill="#bef264"
+                      fontSize="9"
+                      fontWeight="700"
+                      textAnchor="middle"
+                    >
+                      {formatNumber(session.volume)} kg
+                    </text>
                     {showLabel && (
                       <text
                         x={x}
-                        y={PLOT_BOTTOM + 24}
+                        y={PLOT_BOTTOM + 30}
                         fill="#64748b"
                         fontSize="9"
                         textAnchor="middle"

@@ -129,16 +129,19 @@ textarea.input { line-height: 1.6; }
 :root[data-theme="light"] .set-table input { background-color: #ffffff; color: #0f172a; }
 :root[data-theme="light"] .nav-link { color: #475569; }
 :root[data-theme="light"] .nav-link:hover { color: #0f172a; background-color: rgba(15,23,42,.04); }
-:root[data-theme="light"] .nav-link-active { background-color: rgba(163,230,53,.15); color: #0f172a; }
+:root[data-theme="light"] .nav-link-active {
+  background-color: color-mix(in srgb, var(--accent, #a3e635) 18%, transparent);
+  color: var(--accent-dark, #3f6212);
+}
 
 /* ============ KOLORY MOTYWU (data-accent) ============ */
 
-:root { --accent: #a3e635; --accent-300: #bef264; }
-:root[data-accent="sky"] { --accent: #38bdf8; --accent-300: #7dd3fc; }
-:root[data-accent="violet"] { --accent: #a78bfa; --accent-300: #c4b5fd; }
-:root[data-accent="rose"] { --accent: #fb7185; --accent-300: #fda4af; }
-:root[data-accent="amber"] { --accent: #fbbf24; --accent-300: #fcd34d; }
-:root[data-accent="emerald"] { --accent: #34d399; --accent-300: #6ee7b7; }
+:root { --accent: #a3e635; --accent-300: #bef264; --accent-dark: #3f6212; }
+:root[data-accent="sky"] { --accent: #38bdf8; --accent-300: #7dd3fc; --accent-dark: #0369a1; }
+:root[data-accent="violet"] { --accent: #a78bfa; --accent-300: #c4b5fd; --accent-dark: #6d28d9; }
+:root[data-accent="rose"] { --accent: #fb7185; --accent-300: #fda4af; --accent-dark: #be123c; }
+:root[data-accent="amber"] { --accent: #fbbf24; --accent-300: #fcd34d; --accent-dark: #a16207; }
+:root[data-accent="emerald"] { --accent: #34d399; --accent-300: #6ee7b7; --accent-dark: #047857; }
 
 
 :root[data-accent="lime"] .text-lime-400 { color: #a3e635; }
@@ -435,14 +438,15 @@ textarea.input { line-height: 1.6; }
 :root[data-theme="light"] .icon-button { color: #64748b; }
 :root[data-theme="light"] .icon-button:hover { background-color: rgba(15,23,42,.06); color: #0f172a; }
 
-/* ============ NAWIGACJA: aktywny link wg akcentu (z !important — klasa ma !text-lime-300) ============ */
-:root[data-accent="lime"] .nav-link-active { background-color: #a3e63514 !important; color: #bef264 !important; }
-:root[data-accent="sky"] .nav-link-active { background-color: #38bdf814 !important; color: #7dd3fc !important; }
-:root[data-accent="violet"] .nav-link-active { background-color: #a78bfa14 !important; color: #c4b5fd !important; }
-:root[data-accent="rose"] .nav-link-active { background-color: #fb718514 !important; color: #fda4af !important; }
-:root[data-accent="amber"] .nav-link-active { background-color: #fbbf2414 !important; color: #fcd34d !important; }
-:root[data-accent="emerald"] .nav-link-active { background-color: #34d39914 !important; color: #6ee7b7 !important; }
-:root[data-theme="light"] .nav-link-active { background-color: rgba(163,230,53,.15) !important; color: #0f172a !important; }
+/* ============ NAWIGACJA: aktywny link zawsze korzysta z wybranego akcentu ============ */
+:root .nav-link-active {
+  background-color: color-mix(in srgb, var(--accent, #a3e635) 10%, transparent) !important;
+  color: var(--accent-300, #bef264) !important;
+}
+:root[data-theme="light"] .nav-link-active {
+  background-color: color-mix(in srgb, var(--accent, #a3e635) 18%, transparent) !important;
+  color: var(--accent-dark, #3f6212) !important;
+}
 
 /* ============ DRUK / PDF ============ */
 @media print {

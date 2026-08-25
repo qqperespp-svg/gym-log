@@ -120,7 +120,7 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
             </div>
             <div className="rounded-2xl border border-white/[.07] bg-black/15 p-4">
               <p className="text-xs font-semibold text-slate-500">Największy ciężar</p>
-              <p className="mt-2 text-xl font-black text-amber-300">
+              <p className="mt-2 text-xl font-black text-lime-300">
                 {formatNumber(highestWeight.maxWeight)} kg
               </p>
             </div>
@@ -144,10 +144,10 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
             </div>
             <div className="flex flex-wrap gap-4 text-[11px] text-slate-400">
               <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-lime-400" /> Objętość (kg)
+                <span className="size-2 rounded-full" style={{ backgroundColor: "var(--accent)" }} /> Objętość (kg)
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-amber-400" /> Max ciężar (kg)
+                <span className="size-2 rounded-full" style={{ backgroundColor: "var(--accent-300)" }} /> Max ciężar (kg)
               </span>
             </div>
           </div>
@@ -175,7 +175,7 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
               <text x="28" y={PLOT_BOTTOM + 4} fill="#64748b" fontSize="10">
                 0
               </text>
-              <text x={PLOT_RIGHT + 7} y={PLOT_TOP + 4} fill="#fbbf24" fontSize="10">
+              <text x={PLOT_RIGHT + 7} y={PLOT_TOP + 4} fill="var(--accent-300)" fontSize="10">
                 {formatNumber(maxWeight)} kg
               </text>
               <text x={PLOT_RIGHT + 20} y={PLOT_BOTTOM + 4} fill="#64748b" fontSize="10">
@@ -206,7 +206,7 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
                     <text
                       x={x}
                       y={PLOT_BOTTOM + 14}
-                      fill="#bef264"
+                      fill="var(--accent-300)"
                       fontSize="9"
                       fontWeight="700"
                       textAnchor="middle"
@@ -229,14 +229,14 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
               })}
               <defs>
                 <linearGradient id="exercise-volume-gradient" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#bef264" />
-                  <stop offset="100%" stopColor="#65a30d" />
+                  <stop offset="0%" stopColor="var(--accent-300)" />
+                  <stop offset="100%" stopColor="var(--accent)" />
                 </linearGradient>
               </defs>
               <polyline
                 points={weightPoints}
                 fill="none"
-                stroke="#fbbf24"
+                stroke="var(--accent-300)"
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -247,7 +247,7 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
                 const showWeightLabel = sessions.length <= 10;
                 return (
                   <g key={session.workoutId}>
-                    <circle cx={x} cy={y} r="4" fill="#fbbf24" stroke="#11171f" strokeWidth="2">
+                    <circle cx={x} cy={y} r="4" fill="var(--accent-300)" stroke="var(--accent)" strokeWidth="2">
                       <title>
                         Maksymalny ciężar: {formatNumber(session.maxWeight)} kg · {formatDate(session.date, { day: "2-digit", month: "2-digit", year: "numeric" })}
                       </title>
@@ -256,7 +256,7 @@ export function ExerciseProgressChart({ exercises }: { exercises: ExerciseHistor
                       <text
                         x={x}
                         y={Math.max(PLOT_TOP + 12, y - 9)}
-                        fill="#fbbf24"
+                        fill="var(--accent-300)"
                         fontSize="9"
                         fontWeight="700"
                         textAnchor="middle"

@@ -109,6 +109,13 @@ export function SidebarNav({
         >
           <Plus size={17} /> {t(lang, "nav.newWorkout")}
         </Link>
+        <Link
+          href="/micha?scan=1"
+          onClick={() => setOpen(false)}
+          className="button-secondary w-full justify-center py-2.5 text-sm"
+        >
+          <UtensilsCrossed size={17} /> Dodaj posiłek
+        </Link>
       </div>
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-5 py-7">
         <p className="mb-3 px-3 text-[10px] font-extrabold uppercase tracking-[.2em] text-slate-600">

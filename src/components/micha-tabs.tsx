@@ -9,12 +9,14 @@ export function MichaTabs({
   makro,
   wprowadzanie,
   planowanie,
+  defaultTab,
 }: {
   makro: React.ReactNode;
   wprowadzanie: React.ReactNode;
   planowanie: React.ReactNode;
+  defaultTab?: Section;
 }) {
-  const [active, setActive] = useState<Section>("makro");
+  const [active, setActive] = useState<Section>(defaultTab ?? "makro");
 
   const tile = (section: Section) =>
     `rounded-2xl border p-4 text-left transition ${

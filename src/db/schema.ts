@@ -156,6 +156,8 @@ export const exerciseSets = pgTable(
     rir: integer("rir"),
     note: text("note"),
     completed: integer("completed").notNull().default(0),
+    // 1 = seria dodana ad-hoc w trakcie treningu (poza planem)
+    isExtra: integer("is_extra").notNull().default(0),
   },
   (table) => [
     index("exercise_sets_exercise_idx").on(table.exerciseId),

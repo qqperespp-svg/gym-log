@@ -10,7 +10,7 @@ import { cameraHint, extractCodeFromQR, loadZxing, waitForVideoFrames, type ZXin
  * Tryby są rozdzielone przez `setHints` (ograniczenie listy formatów).
  * Po rozpoznaniu wywołuje `onCode(czystyKod)`.
  */
-export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => void; onError?: (msg: string) => void }) {
+export function ScanCodeBox({ onCode, onError, autoScan }: { onCode: (code: string) => void; onError?: (msg: string) => void; autoScan?: boolean }) {
   const [mode, setMode] = useState<"barcode" | "qr">("barcode");
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -19,6 +19,13 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
   const streamRef = useRef<MediaStream | null>(null);
   const readerRef = useRef<ZXingReader | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (autoScan && !scanning) {
+      void startScan("barcode");
+    }
+  }, [autoScan]);
 
   useEffect(() => {
     return () => {

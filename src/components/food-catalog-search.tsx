@@ -80,7 +80,13 @@ export function FoodCatalogSearch({
         (cm == null || p.carbs >= cm) &&
         (cM == null || p.carbs <= cM),
     );
-    // ulubione najpierw
+    // Priorytet: dokładne dopasowanie (includes) wyżej niż pochodne (matchesWords)
+    list.sort((a, b) => {
+      const aExact = query.trim().length >= 2 && a.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
+      const bExact = query.trim().length >= 2 && b.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
+      return bExact - aExact;
+    });
+    // ulubione najpierw (po sortowaniu dokładnym)
     return [...list.filter((p) => favoriteIds.has(p.id)), ...list.filter((p) => !favoriteIds.has(p.id))].slice(0, 80);
   }, [query, products, favoriteIds, labelKeys, pMin, pMax, fMin, fMax, cMin, cMax]);
 

@@ -17,12 +17,13 @@ import { TdeeCalculator } from "@/components/tdee-calculator";
 import { MealEstimate } from "@/components/meal-estimate";
 import { RecipeForm, RecipeItem } from "@/components/recipe-form";
 
+
 export const dynamic = "force-dynamic";
 
 export default async function MichaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; scan?: string }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
@@ -32,7 +33,8 @@ export default async function MichaPage({
       .select()
       .from(dietLogs)
       .where(eq(dietLogs.userId, user.id))
-      .orderBy(desc(dietLogs.date), desc(dietLogs.id)),
+      .orderBy(desc(dietLogs.date), desc(dietLogs.id))
+      .limit(200),
     db
       .select()
       .from(foodProducts)
@@ -43,8 +45,8 @@ export default async function MichaPage({
       .from(bodyMeasurements)
       .where(eq(bodyMeasurements.userId, user.id))
       .orderBy(asc(bodyMeasurements.date)),
-    db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)),
-    db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)),
+    db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)).limit(50),
+    db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)).limit(50),
   ]);
   const favoriteIds = new Set(favRows.map((f) => f.productId));
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
@@ -128,6 +130,7 @@ export default async function MichaPage({
       )}
 
       <MichaTabs
+        defaultTab={params.scan === "1" ? "wprowadzanie" : "makro"}
         makro={
           <>
             <section className="grid gap-5 xl:grid-cols-2">
@@ -398,7 +401,7 @@ export default async function MichaPage({
                 (produkt wypełni się automatycznie z Open Food Facts) albo podaj makro ręcznie
                 (na 100 g), ustaw gramaturę i wybierz, do którego posiłku dnia go przypisać.
               </p>
-              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} favoriteIds={favoriteIds} />
+              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} favoriteIds={favoriteIds} autoScan={params.scan === "1"} />
             </section>
 
             <section className="panel p-5 sm:p-7">

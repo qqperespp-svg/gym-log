@@ -37,6 +37,13 @@ function quality(eff: number): { label: string; color: string } {
   return { label: "Do poprawy", color: "text-amber-300" };
 }
 
+/** Ocena jakości snu na podstawie długości snu (minuty). */
+function durationQuality(min: number): { label: string; color: string } {
+  if (min < 360) return { label: "Niska (poniżej 6h)", color: "text-rose-300" };
+  if (min < 420) return { label: "Średnia (6–7h)", color: "text-amber-300" };
+  return { label: "Wysoka (powyżej 7h)", color: "text-emerald-300" };
+}
+
 const STAGES = [
   { key: "deep", label: "Głęboki", color: "bg-indigo-400", text: "text-indigo-300" },
   { key: "rem", label: "REM", color: "bg-violet-400", text: "text-violet-300" },
@@ -186,6 +193,9 @@ export function SleepCard({ logs }: { logs: SleepLog[] }) {
               <p className="mt-1 text-3xl font-black tracking-tight text-white">
                 {fmtDur(total)}
                 <span className="ml-2 text-sm font-black text-violet-300">{q.label}</span>
+                <span className={`ml-2 text-sm font-black ${durationQuality(total).color}`}>
+                  · {durationQuality(total).label}
+                </span>
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
                 {fmtHM(log.startAt)} – {fmtHM(log.endAt)} · efektywność{" "}

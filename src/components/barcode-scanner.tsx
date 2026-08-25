@@ -101,10 +101,12 @@ export function BarcodeScanner({
   products,
   meals,
   mealNames,
+  autoScan,
 }: {
   products: FoodProduct[];
   meals: number;
   mealNames: string[];
+  autoScan?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -121,6 +123,13 @@ export function BarcodeScanner({
   const [grams, setGrams] = useState("100");
   const [meal, setMeal] = useState("1");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (autoScan && !scanning) {
+      void startCamera("barcode");
+    }
+  }, [autoScan]);
 
   useEffect(() => {
     return () => {
@@ -349,7 +358,7 @@ export function BarcodeScanner({
               ? void stopCamera()
               : void startCamera("barcode")
           }
-          disabled={loading}
+          disabled={loading || scanning}
           className={`${scanning && scanMode === "barcode" ? "button-secondary" : "button-primary"} px-4 py-2.5 text-sm`}
         >
           {scanning && scanMode === "barcode" ? (
@@ -365,7 +374,7 @@ export function BarcodeScanner({
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          disabled={loading}
+          disabled={loading || scanning}
           className="button-secondary px-4 py-2.5 text-sm"
         >
           <ImagePlus size={16} /> Wgraj zdjęcie kodu
@@ -392,7 +401,7 @@ export function BarcodeScanner({
         <button
           type="button"
           onClick={() => lookup(manualCode)}
-          disabled={loading}
+          disabled={loading || scanning}
           className="button-secondary px-4 py-2.5 text-sm"
         >
           <Search size={16} /> Szukaj
@@ -408,7 +417,7 @@ export function BarcodeScanner({
               ? void stopCamera()
               : void startCamera("qr")
           }
-          disabled={loading}
+          disabled={loading || scanning}
           className={`${scanning && scanMode === "qr" ? "button-secondary" : "button-primary"} px-4 py-2.5 text-sm`}
         >
           {scanning && scanMode === "qr" ? (
@@ -428,21 +437,29 @@ export function BarcodeScanner({
 
       {/* Wideo zawsze w DOM — ref musi istnieć, zanim getUserMedia zwróci strumień. */}
       <div
-        className={`relative overflow-hidden rounded-2xl border border-lime-400/25 bg-black/40 ${
-          scanning ? "block" : "hidden"
+        className={`${
+          scanning
+            ? "fixed inset-0 z-[60] flex items-center justify-center bg-black/95"
+            : "hidden"
         }`}
       >
+        <div
+          className={`${
+            scanning ? "relative overflow-hidden rounded-2xl border border-lime-400/25 bg-black/60" : ""
+          }`}
+        >
         <video
           ref={videoRef}
           playsInline
           muted
           autoPlay
-          className="mx-auto aspect-video max-h-72 w-full object-contain"
+          className={`mx-auto aspect-video w-auto max-h-[85vh] max-w-[95vw] object-contain ${scanning ? "" : ""}`}
         />
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-16 -translate-y-1/2 border-y-2 border-lime-400/80" />
-        <p className="absolute inset-x-0 bottom-2 text-center text-xs font-bold text-lime-300">
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-20 -translate-y-1/2 border-y-2 border-lime-400/80" />
+        <p className="absolute inset-x-0 bottom-4 text-center text-sm font-extrabold text-lime-300 drop-shadow-lg">
           {scanMode === "qr" ? "Skieruj aparat na kod QR" : "Skieruj aparat na kod kreskowy"}
         </p>
+        </div>
       </div>
 
       {cameraError && (

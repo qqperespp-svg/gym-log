@@ -16,7 +16,7 @@ function fmtDur(min: number): string {
 
 function fmtHM(d: Date | null): string {
   if (!d) return "—";
-  return d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Warsaw" });
 }
 
 function quality(eff: number): { label: string; color: string } {

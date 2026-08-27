@@ -108,7 +108,7 @@ export default async function WorkoutSessionPage({
           „{workout.notes}”
         </p>
       )}
-      <WorkoutSession action={saveWorkoutSessionAction.bind(null, id)} initial={items} />
+      <WorkoutSession action={saveWorkoutSessionAction.bind(null, id)} initial={items} workoutId={id} />
     </div>
   );
 }

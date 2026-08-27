@@ -12,6 +12,8 @@ export type SessionFormState = { error?: string; success?: string } | undefined;
 
 type SerializedSet = {
   id?: number;
+  exerciseId?: number;
+  setNumber?: number;
   reps: number;
   weight: number;
   rir: number | null;
@@ -184,27 +186,62 @@ export async function saveWorkoutSessionAction(
   const workout = await ownedWorkout(workoutId, user.id);
   if (!workout) redirect("/workouts");
 
-  let allSets: Array<SerializedSet & { id: number }>;
+  let allSets: SerializedSet[];
   try {
-    allSets = JSON.parse(String(formData.get("sessionData") ?? "[]"));
+    const parsed = JSON.parse(String(formData.get("sessionData") ?? "[]"));
+    if (!Array.isArray(parsed)) return { error: "Nie udało się zapisać postępu." };
+    allSets = parsed as SerializedSet[];
   } catch {
     return { error: "Nie udało się zapisać postępu." };
   }
 
   const intent = String(formData.get("intent") ?? "save");
   const completed = allSets.filter((set) => set.completed).length;
+  const workoutExerciseRows = await db
+    .select({ id: exercises.id })
+    .from(exercises)
+    .where(eq(exercises.workoutId, workoutId));
+  const workoutExerciseIds = new Set(workoutExerciseRows.map((row) => row.id));
+  const existingSetRows = await db
+    .select({ id: exerciseSets.id, exerciseId: exerciseSets.exerciseId })
+    .from(exerciseSets)
+    .innerJoin(exercises, eq(exercises.id, exerciseSets.exerciseId))
+    .where(eq(exercises.workoutId, workoutId));
+  const existingSetExercise = new Map(existingSetRows.map((row) => [row.id, row.exerciseId]));
 
   for (const set of allSets) {
-    await db
-      .update(exerciseSets)
-      .set({
-        reps: clamp(set.reps, 0, 100),
-        weight: clamp(set.weight, 0, 999, 1),
-        rir: set.rir != null ? clamp(set.rir, 0, 10) : null,
-        note: set.note?.trim() || null,
-        completed: set.completed ? 1 : 0,
-      })
-      .where(eq(exerciseSets.id, set.id));
+    const setId = Number(set.id);
+    const existingExerciseId = Number.isInteger(setId) ? existingSetExercise.get(setId) : undefined;
+    const requestedExerciseId = Number(set.exerciseId);
+    const exerciseId = workoutExerciseIds.has(requestedExerciseId) ? requestedExerciseId : existingExerciseId;
+    const setNumber = clamp(Number(set.setNumber) || 1, 1, 20);
+    const values = {
+      reps: clamp(set.reps, 0, 100),
+      weight: clamp(set.weight, 0, 999, 1),
+      rir: set.rir != null ? clamp(set.rir, 0, 10) : null,
+      note: set.note?.trim() || null,
+      completed: set.completed ? 1 : 0,
+    };
+
+    if (setId > 0) {
+      // Istniejące serie można aktualizować wyłącznie w ramach tego treningu.
+      if (!existingExerciseId) continue;
+      await db
+        .update(exerciseSets)
+        .set(values)
+        .where(and(eq(exerciseSets.id, setId), eq(exerciseSets.exerciseId, existingExerciseId)));
+    } else {
+      // Ujemne (albo brakujące) id oznacza serię dodaną tylko w bieżącej sesji.
+      // Upsert po exerciseId + setNumber zapobiega duplikatom przy kolejnych autosave.
+      if (!exerciseId) continue;
+      await db
+        .insert(exerciseSets)
+        .values({ exerciseId, setNumber, ...values })
+        .onConflictDoUpdate({
+          target: [exerciseSets.exerciseId, exerciseSets.setNumber],
+          set: values,
+        });
+    }
   }
 
   if (intent === "finish") {

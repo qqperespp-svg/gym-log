@@ -337,6 +337,7 @@ export default async function MichaPage({
                     target={weekGoal.kcal}
                     unit="kcal"
                     barClass="bg-lime-400"
+                    showDayMarkers
                   />
                   <MacroBar
                     label="Białko"
@@ -344,6 +345,7 @@ export default async function MichaPage({
                     target={weekGoal.protein}
                     unit="g"
                     barClass="bg-sky-400"
+                    showDayMarkers
                   />
                   <MacroBar
                     label="Tłuszcze"
@@ -351,6 +353,7 @@ export default async function MichaPage({
                     target={weekGoal.fat}
                     unit="g"
                     barClass="bg-amber-400"
+                    showDayMarkers
                   />
                   <MacroBar
                     label="Węglowodany"
@@ -358,6 +361,7 @@ export default async function MichaPage({
                     target={weekGoal.carbs}
                     unit="g"
                     barClass="bg-rose-400"
+                    showDayMarkers
                   />
                 </div>
               </div>

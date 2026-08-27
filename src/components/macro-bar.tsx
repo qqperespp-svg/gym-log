@@ -4,12 +4,14 @@ export function MacroBar({
   target,
   unit,
   barClass,
+  showDayMarkers = false,
 }: {
   label: string;
   consumed: number;
   target: number;
   unit: string;
   barClass: string;
+  showDayMarkers?: boolean;
 }) {
   const pct = target > 0 ? Math.min(100, Math.round((consumed / target) * 100)) : 0;
   const remaining = Math.max(0, target - consumed);
@@ -26,8 +28,19 @@ export function MacroBar({
           </span>
         </span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.05]">
-        <div className={`h-full rounded-full ${barClass}`} style={{ width: `${pct}%` }} />
+      <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-white/[.05]">
+        <div className={`absolute inset-y-0 left-0 rounded-full ${barClass}`} style={{ width: `${pct}%` }} />
+        {showDayMarkers && (
+          <div className="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
+            {Array.from({ length: 6 }, (_, index) => (
+              <span
+                key={index}
+                className="macro-bar-marker absolute inset-y-0 w-px -translate-x-1/2"
+                style={{ left: `${((index + 1) / 7) * 100}%` }}
+              />
+            ))}
+          </div>
+        )}
       </div>
       <p className={`mt-1.5 text-[10px] font-bold ${remaining > 0 ? "text-slate-400" : "text-lime-300"}`}>
         {target > 0

@@ -75,6 +75,8 @@ textarea.input { line-height: 1.6; }
 .meal-history-chevron { transition: transform 180ms ease; }
 .meal-history-details[open] > summary .meal-history-chevron { transform: rotate(90deg); }
 
+.macro-bar-marker { background-color: rgba(255, 255, 255, .7); }
+
 .status-progress { @apply bg-amber-400/10 text-amber-300; }
 .set-table { @apply w-full min-w-[820px] text-left; }
 .set-table th { @apply border-b border-white/[.06] bg-black/10 px-4 py-3 text-center text-[9px] font-black uppercase tracking-[.13em] text-slate-600 first:text-left sm:px-6; }
@@ -97,6 +99,7 @@ textarea.input { line-height: 1.6; }
 :root[data-theme="light"] [class~="bg-[#11171f]"] { background-color: #ffffff; }
 :root[data-theme="light"] .panel,
 :root[data-theme="light"] .stat-card { background-color: #ffffff; border-color: rgba(15,23,42,.08); box-shadow: 0 12px 40px rgba(15,23,42,.06); }
+:root[data-theme="light"] .macro-bar-marker { background-color: rgba(15, 23, 42, .35); }
 :root[data-theme="light"] .bg-slate-900 { background-color: #ffffff; }
 :root[data-theme="light"] [class~="border-white/[.06]"] { border-color: rgba(15,23,42,.08); }
 :root[data-theme="light"] [class~="border-white/[.07]"] { border-color: rgba(15,23,42,.09); }

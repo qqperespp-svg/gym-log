@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { asc, desc, eq } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileDown, Plus, Scale, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, foodProducts, recipes, userFavorites, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, formatMacro, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
 import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
+import { TrainingDayToggle } from "@/components/training-day-toggle";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DietLogGroups, type DietLogRow } from "@/components/diet-log-groups";
 import { MacroBar } from "@/components/macro-bar";
@@ -166,16 +167,7 @@ export default async function MichaPage({
                     </h2>
                     <p className="mt-0.5 text-xs text-slate-500">Spożycie vs cel dzienny</p>
                   </div>
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                      isTrainingDay
-                        ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                        : "bg-white/[.04] text-slate-400 ring-white/10"
-                    }`}
-                  >
-                    {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-                    {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-                  </span>
+                  <TrainingDayToggle trainingDay={isTrainingDay} weekday={todayWeekday} />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <MacroBar

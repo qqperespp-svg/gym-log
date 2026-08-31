@@ -7,7 +7,6 @@ import {
   Flame,
   Play,
   Plus,
-  Sofa,
   Target,
   TrendingDown,
   TrendingUp,
@@ -24,6 +23,7 @@ import { DashboardTiles } from "@/components/dashboard-tiles";
 import { MacroBar } from "@/components/macro-bar";
 import { StepsCard } from "@/components/steps-card";
 import { SleepCard } from "@/components/sleep-card";
+import { TrainingDayToggle } from "@/components/training-day-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -472,16 +472,7 @@ export default async function DashboardPage({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                        isTrainingDay
-                          ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                          : "bg-white/[.04] text-slate-400 ring-white/10"
-                      }`}
-                    >
-                      {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-                      {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-                    </span>
+                    <TrainingDayToggle trainingDay={isTrainingDay} weekday={todayWeekday} />
                     <Link href="/micha" className="text-link">
                       Otwórz Michę <ArrowUpRight size={15} />
                     </Link>

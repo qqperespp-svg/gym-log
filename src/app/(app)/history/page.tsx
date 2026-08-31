@@ -4,6 +4,7 @@ import { ArrowUpRight, BarChart3, CalendarDays, Dumbbell, Medal } from "lucide-r
 import { db } from "@/db";
 import { exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { ExerciseProgressTile } from "@/components/exercise-progress-tile";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function HistoryPage() {
       duration: workouts.durationMinutes,
       status: workouts.status,
       exerciseId: exercises.id,
+      exerciseName: exercises.name,
       setId: exerciseSets.id,
       reps: exerciseSets.reps,
       weight: exerciseSets.weight,
@@ -66,6 +68,45 @@ export default async function HistoryPage() {
   const maxVolume = Math.max(...chartData.map((item) => item.volume), 1);
   const totalVolume = sessions.reduce((sum, item) => sum + item.volume, 0);
   const totalMinutes = sessions.reduce((sum, item) => sum + item.duration, 0);
+  // Progres per-ćwiczenie: liczba serii + objętość/maksymalny ciężar w każdym treningu.
+  const totalSetsMap = new Map<number, number>();
+  const exerciseNames = new Map<number, string>();
+  for (const row of rows) {
+    if (row.exerciseId) {
+      exerciseNames.set(row.exerciseId, row.exerciseName ?? "Brak nazwy");
+      totalSetsMap.set(row.exerciseId, (totalSetsMap.get(row.exerciseId) ?? 0) + (row.setId ? 1 : 0));
+    }
+  }
+  const exercisesData = Array.from(totalSetsMap.entries()).map(([id, totalSets]) => ({
+    id,
+    name: exerciseNames.get(id) ?? "Brak nazwy",
+    totalSets,
+  }));
+  const workoutsData = new Map<number, Map<number, { volume: number; maxWeight: number }>>();
+  for (const row of rows) {
+    if (!row.exerciseId || !row.setId) continue;
+    const wMap = workoutsData.get(row.id) ?? new Map<number, { volume: number; maxWeight: number }>();
+    const eData = wMap.get(row.exerciseId) ?? { volume: 0, maxWeight: 0 };
+    if (row.completed === 1) {
+      eData.volume += (row.reps ?? 0) * (row.weight ?? 0);
+      eData.maxWeight = Math.max(eData.maxWeight, row.weight ?? 0);
+    }
+    wMap.set(row.exerciseId, eData);
+    workoutsData.set(row.id, wMap);
+  }
+  const workoutsProgress = Array.from(workoutsData.entries()).map(([workoutId, eMap]) => {
+    const session = grouped.get(workoutId);
+    return {
+      id: workoutId,
+      date: session ? session.date : new Date(),
+      exerciseIds: Array.from(eMap.keys()),
+      exercises: Array.from(eMap.entries()).map(([exerciseId, data]) => ({
+        exerciseId,
+        volume: data.volume,
+        maxWeight: data.maxWeight,
+      })),
+    };
+  });
   return (
     <div className="space-y-7">
       <header>
@@ -122,6 +163,25 @@ export default async function HistoryPage() {
           </div>
         )}
       </section>
+      {exercisesData.length > 0 && (
+        <section className="panel p-5 sm:p-7">
+          <h2 className="mb-3 font-extrabold text-white">Historia ćwiczeń — progres</h2>
+          <ExerciseProgressTile
+            exercises={exercisesData}
+            workouts={workoutsProgress.map((w) => {
+              const session = grouped.get(w.id);
+              return {
+                id: w.id,
+                date: new Date(w.date),
+                volume: session?.volume ?? 0,
+                maxWeight: session?.best ?? 0,
+                exerciseIds: w.exerciseIds,
+                exercises: w.exercises,
+              };
+            })}
+          />
+        </section>
+      )}
       <section className="panel overflow-hidden">
         <div className="border-b border-white/[.06] p-5 sm:px-6">
           <h2 className="font-extrabold text-white">Dziennik sesji</h2>

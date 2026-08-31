@@ -22,7 +22,15 @@ export function ExerciseProgressTile({ exercises, workouts }: ExerciseProgressPr
   // że `workouts` to dane dla wybranego ćwiczenia (przekazane z `workouts/page.tsx`).
   const selectedWorkoutIds = selected !== null ? workouts.filter((w) => w.exerciseIds.includes(selected) || w.id === selected).map((w) => w.id) : workouts.slice(-10).map((w) => w.id);
   const selectedWorkoutsData = workouts.filter((w) => selectedWorkoutIds.includes(w.id));
-  const points = selectedWorkoutsData.length ? selectedWorkoutsData : workouts.slice(-10);
+  const basePoints = selectedWorkoutsData.length ? selectedWorkoutsData : workouts.slice(-10);
+  // Dla wybranego ćwiczenia liczymy jego wartości z danego treningu, nie sumę całej sesji.
+  const points =
+    selected !== null
+      ? basePoints.map((w) => {
+          const e = w.exercises.find((x) => x.exerciseId === selected);
+          return e ? { ...w, volume: e.volume, maxWeight: e.maxWeight } : w;
+        })
+      : basePoints;
   const maxVolume = Math.max(...points.map((p) => p.volume), 1);
   const maxWeight = Math.max(...points.map((p) => p.maxWeight), 0);
 

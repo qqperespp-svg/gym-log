@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Fragment } from "react";
 import { asc, desc, eq } from "drizzle-orm";
 import { ArrowLeft, CheckCircle2, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
@@ -9,8 +8,7 @@ import { WEEKDAYS, formatMacro, parseMealNames, startOfWeek, weekdayOf } from "@
 import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
-import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
-import { EditDietLogButton } from "@/components/edit-diet-log-button";
+import { DietLogGroups, type DietLogRow } from "@/components/diet-log-groups";
 import { MacroBar } from "@/components/macro-bar";
 import { CodeScanInput } from "@/components/code-scan-input";
 import { FoodCatalogSearch } from "@/components/food-catalog-search";
@@ -65,6 +63,25 @@ export default async function MichaPage({
     const names = mealNamesByWeekday.get(weekdayOf(date));
     return names?.[mealNumber - 1] || `Posiłek ${mealNumber}`;
   };
+  // Wiersze do zwiijanej historii (miesiąc > tydzień > dzień) — serializowalne dla komponentu klienta.
+  const diaryRows: DietLogRow[] = logs.map((log) => {
+    const goal = goalByWeekday.get(weekdayOf(log.date));
+    return {
+      id: log.id,
+      date: log.date.toISOString(),
+      dateLabel: log.date.toLocaleDateString("pl-PL"),
+      weekdayShort: log.date.toLocaleDateString("pl-PL", { weekday: "short" }),
+      mealNumber: log.mealNumber,
+      mealLabel: mealNameFor(log.date, log.mealNumber),
+      protein: log.protein,
+      fat: log.fat,
+      carbs: log.carbs,
+      kcal: log.kcal,
+      grams: log.grams ?? 100,
+      dayGoalKcal: goal?.kcalGoal ?? null,
+      note: log.note,
+    };
+  });
   // Selektor tygodnia (◀ / ▶): ?week=YYYY-MM-DD przesuwa analizę na inny tydzień.
   const weekParam = params.week ? new Date(`${params.week}T00:00:00`) : null;
   const weekStart =
@@ -264,101 +281,7 @@ export default async function MichaPage({
               <p className="mb-5 text-sm text-slate-500">
                 Historia wpisów spożycia — z podziałem na posiłki.
               </p>
-              {logs.length ? (
-                <div className="overflow-x-auto">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Data</th>
-                        <th>Posiłek</th>
-                        <th>Białko</th>
-                        <th>Tłuszcze</th>
-                        <th>Węgl.</th>
-                        <th>kcal</th>
-                        <th className="hidden md:table-cell">Cel dnia</th>
-                        <th>Notatka</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        // Grupowanie wpisów po dacie — wspólny nagłówek dnia dla wszystkich posiłków.
-                        // `logs` jest już posortowane malejąco po dacie, więc kolejność Map jest chronologicznie wstecz.
-                        const grouped = new Map<number, DietLog[]>();
-                        for (const log of logs.slice(0, 40)) {
-                          const day = new Date(log.date);
-                          day.setHours(0, 0, 0, 0);
-                          const list = grouped.get(day.getTime()) ?? [];
-                          list.push(log);
-                          grouped.set(day.getTime(), list);
-                        }
-                        return Array.from(grouped.values()).map((groupLogs) => {
-                          const dateLabel = groupLogs[0].date.toLocaleDateString("pl-PL");
-                          return (
-                            <Fragment key={dateLabel}>
-                              <tr className="bg-white/[.02]">
-                                <td
-                                  colSpan={9}
-                                  className="px-3 py-2 text-xs font-black uppercase tracking-wider text-lime-400"
-                                >
-                                  {dateLabel}
-                                </td>
-                              </tr>
-                              {groupLogs.map((log) => {
-                                const goal = goalByWeekday.get(weekdayOf(log.date));
-                                return (
-                                  <tr key={log.id}>
-                                    <td className="text-slate-400">
-                                      {log.date.toLocaleDateString("pl-PL", { weekday: "short" })}
-                                    </td>
-                                    <td>
-                                      {log.mealNumber ? (
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
-                                          <UtensilsCrossed size={11} /> {mealNameFor(log.date, log.mealNumber)}
-                                        </span>
-                                      ) : (
-                                        <span className="text-slate-600">—</span>
-                                      )}
-                                    </td>
-                                    <td>{formatMacro(log.protein)} g</td>
-                                    <td>{formatMacro(log.fat)} g</td>
-                                    <td>{formatMacro(log.carbs)} g</td>
-                                    <td className="font-bold text-lime-300">
-                                      {log.kcal.toLocaleString("pl-PL")}
-                                    </td>
-                                    <td className="hidden text-slate-400 md:table-cell">
-                                      {goal ? `${goal.kcalGoal.toLocaleString("pl-PL")} kcal` : "—"}
-                                    </td>
-                                    <td className="text-slate-400">{log.note ?? "—"}</td>
-                                    <td className="flex gap-1">
-                                      <EditDietLogButton
-                                        log={{
-                                          id: log.id,
-                                          protein: log.protein,
-                                          fat: log.fat,
-                                          carbs: log.carbs,
-                                          kcal: log.kcal,
-                                          mealNumber: log.mealNumber,
-                                          note: log.note,
-                                        }}
-                                      />
-                                      <DeleteDietLogButton id={log.id} />
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </Fragment>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-white/[.07] bg-black/15 p-6 text-center">
-                  <p className="text-sm text-slate-500">Brak wpisów. Dodaj pierwszy posiłek!</p>
-                </div>
-              )}
+              <DietLogGroups rows={diaryRows} />
             </section>
 
             {/* Analiza tygodnia */}

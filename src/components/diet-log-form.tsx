@@ -121,6 +121,7 @@ export function DietLogForm({
         fat: computed.fat,
         carbs: computed.carbs,
         kcal,
+        grams: Math.max(1, Math.round(g)) || 100,
         mealNumber: Number(formData.get("meal")) || null,
         note: String(formData.get("note") ?? "") || null,
       });
@@ -274,6 +275,7 @@ export function DietLogForm({
           <span className="input-shell !min-h-12">
             <ScaleIcon />
             <input
+              name="grams"
               type="number"
               min="0"
               step="1"

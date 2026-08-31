@@ -204,6 +204,12 @@ async function runSchemaSync(): Promise<void> {
       "diet_logs.meal_number",
       sql`ALTER TABLE diet_logs ADD COLUMN IF NOT EXISTS meal_number integer`,
     ],
+    // Gramatura porcji wpisu spożycia — dodawana przy nowych wpisach; starsze
+    // wiersze dostają bezpieczne domyślne 100 g (makro traktowane wtedy jak na 100 g).
+    [
+      "diet_logs.grams",
+      sql`ALTER TABLE diet_logs ADD COLUMN IF NOT EXISTS grams double precision NOT NULL DEFAULT 100`,
+    ],
     // Katalog produktów spożywczych (globalny + własne użytkownika).
     [
       "food_products",

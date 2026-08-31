@@ -221,6 +221,9 @@ export const dietLogs = pgTable(
     fat: doublePrecision("fat").notNull().default(0),
     carbs: doublePrecision("carbs").notNull().default(0),
     kcal: doublePrecision("kcal").notNull().default(0),
+    // Gramatura spożytej porcji — zapisywana przy dodaniu wpisu; dzięki niej
+    // edycja startuje od realnej wielkości porcji i skaluje makro proporcjonalnie.
+    grams: doublePrecision("grams").notNull().default(100),
     mealNumber: integer("meal_number"), // 1..N — do którego posiłku dnia przypisany wpis
     note: text("note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

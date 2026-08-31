@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       fat: Number(e.fat) || 0,
       carbs: Number(e.carbs) || 0,
       kcal: Number(e.kcal) || 0,
+      grams: Number(e.grams) || 100,
       mealNumber: e.mealNumber ? Number(e.mealNumber) : null,
       note: e.note ? String(e.note) : null,
     });

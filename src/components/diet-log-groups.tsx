@@ -109,14 +109,26 @@ function buildTree(rows: DietLogRow[]): MonthGroup[] {
   }));
 }
 
+/** Klucze miesiąca / tygodnia / dnia, które powinny być otwarte na starcie (dziś). */
+function todayOpenKeys(): Record<string, boolean> {
+  const now = toStartOfDay(new Date());
+  const ws = startOfWeek(now);
+  return {
+    ["m:" + monthKey(ws)]: true,
+    ["w:" + dayKey(ws)]: true,
+    ["d:" + dayKey(now)]: true,
+  };
+}
+
 /**
  * Historia wpisów spożycia w układzie zwiijanym „miesiąc > tydzień > dzień”.
- * Każdy poziom jest osobno zwijany/rozwijany; dni pokazują poszczególne wpisy
- * wraz z edycją (od realnej gramatury) i usuwaniem.
+ * Domyślnie wszystko zwinięte — otwarty jest tylko dzień dzisiejszy
+ * (oraz jego tydzień i miesiąc, żeby było widać ten dzień).
  */
 export function DietLogGroups({ rows }: { rows: DietLogRow[] }) {
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggle = (key: string) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+  const [open, setOpen] = useState<Record<string, boolean>>(todayOpenKeys);
+  const toggle = (key: string) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  const todayKey = useMemo(() => dayKey(toStartOfDay(new Date())), []);
 
   const tree = useMemo(() => buildTree(rows), [rows]);
 
@@ -132,13 +144,14 @@ export function DietLogGroups({ rows }: { rows: DietLogRow[] }) {
     <div className="space-y-4">
       {tree.map((month) => {
         const mKey = "m:" + month.key;
-        const mOpen = !collapsed[mKey];
+        const mOpen = !!open[mKey];
         return (
           <div key={month.key} className="rounded-xl border border-white/[.07] bg-black/15">
             <button
               type="button"
               onClick={() => toggle(mKey)}
               className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-white/[.02]"
+              aria-expanded={mOpen}
             >
               {mOpen ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-500" />}
               <span className="font-extrabold capitalize text-white">{month.label}</span>
@@ -149,13 +162,14 @@ export function DietLogGroups({ rows }: { rows: DietLogRow[] }) {
               <div className="space-y-3 px-3 pb-3">
                 {month.weeks.map((week) => {
                   const wKey = "w:" + week.key;
-                  const wOpen = !collapsed[wKey];
+                  const wOpen = !!open[wKey];
                   return (
                     <div key={week.key} className="rounded-lg border border-white/[.06] bg-white/[.02]">
                       <button
                         type="button"
                         onClick={() => toggle(wKey)}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-white/[.02]"
+                        aria-expanded={wOpen}
                       >
                         {wOpen ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
                         <span className="text-xs font-bold uppercase tracking-wider text-slate-300">{week.label}</span>
@@ -166,19 +180,26 @@ export function DietLogGroups({ rows }: { rows: DietLogRow[] }) {
                         <div className="space-y-3 p-3 pt-1">
                           {week.days.map((day) => {
                             const dKey = "d:" + day.key;
-                            const dOpen = !collapsed[dKey];
+                            const dOpen = !!open[dKey];
+                            const isToday = day.key === todayKey;
                             return (
                               <div key={day.key} className="rounded-lg border border-white/[.06] bg-black/15">
                                 <button
                                   type="button"
                                   onClick={() => toggle(dKey)}
                                   className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-white/[.02]"
+                                  aria-expanded={dOpen}
                                 >
                                   {dOpen ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
                                   <span className="text-xs font-bold text-white">
                                     {day.date.toLocaleDateString("pl-PL", { day: "2-digit", month: "long" })}{" "}
                                     <span className="font-normal text-slate-500">· {day.date.toLocaleDateString("pl-PL", { weekday: "long" })}</span>
                                   </span>
+                                  {isToday && (
+                                    <span className="rounded-full bg-lime-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-lime-300">
+                                      dziś
+                                    </span>
+                                  )}
                                   <span className="ml-auto text-[11px] font-bold text-slate-500">{day.kcal.toLocaleString("pl-PL")} kcal</span>
                                 </button>
 

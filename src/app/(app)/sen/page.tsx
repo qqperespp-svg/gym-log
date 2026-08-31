@@ -31,6 +31,78 @@ function durationQuality(min: number): { label: string; color: string } {
   return { label: "Wysoka (powyżej 7h)", color: "text-emerald-300" };
 }
 
+const CHART_H = 160;
+
+type SleepBarNight = {
+  id: number;
+  date: Date;
+  totalMinutes: number;
+  deepMinutes: number;
+  remMinutes: number;
+  lightMinutes: number;
+  asleepMinutes: number;
+  awakeMinutes: number;
+};
+
+/** Słupki 30 nocy — wysokości w px (procenty CSS bez rodzica o znanej wysokości dawały 0). */
+function SleepBars({ nights, maxMinutes }: { nights: SleepBarNight[]; maxMinutes: number }) {
+  const max = Math.max(maxMinutes, 1);
+  const first = nights[0];
+  const last = nights[nights.length - 1];
+  return (
+    <div>
+      <div className="flex items-end gap-px sm:gap-1" style={{ height: CHART_H }}>
+        {nights.map((l) => {
+          const px = Math.max(4, Math.round((l.totalMinutes / max) * CHART_H));
+          const segs = [
+            { min: l.deepMinutes, color: "#818cf8" },
+            { min: l.remMinutes, color: "#a78bfa" },
+            { min: l.lightMinutes, color: "#38bdf8" },
+            { min: l.asleepMinutes, color: "#c4b5fd" },
+            { min: l.awakeMinutes, color: "#64748b" },
+          ];
+          const staged = segs.reduce((s, x) => s + x.min, 0);
+          const bars =
+            staged > 0
+              ? segs.filter((s) => s.min > 0)
+              : l.totalMinutes > 0
+                ? [{ min: l.totalMinutes, color: "#a78bfa" }]
+                : [];
+          const denom = Math.max(staged, l.totalMinutes, 1);
+          return (
+            <div
+              key={l.id}
+              className="flex min-w-0 flex-1 flex-col justify-end"
+              title={`${l.date.toLocaleDateString("pl-PL")}: ${fmtDur(l.totalMinutes)}`}
+            >
+              <div
+                className="flex w-full flex-col-reverse overflow-hidden rounded-t-sm"
+                style={{ height: px }}
+              >
+                {bars.map((s, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      height: Math.max(1, Math.round((s.min / denom) * px)),
+                      backgroundColor: s.color,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {first && last && (
+        <div className="mt-1.5 flex justify-between text-[10px] font-bold text-slate-600">
+          <span>{first.date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" })}</span>
+          <span>{last.date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" })}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function SleepPage() {
   const user = await requireUser();
   const logs = await db
@@ -184,33 +256,12 @@ export default async function SleepPage() {
             <h2 className="font-extrabold text-white">30 ostatnich nocy</h2>
             <span className="text-xs text-slate-500">wysokość słupka = czas snu</span>
           </div>
-          <div className="flex h-40 items-end gap-1">
-            {last30.map((l) => {
-              const h = Math.max(3, (l.totalMinutes / maxMinutes) * 100);
-              const day = l.date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" });
-              return (
-                <div
-                  key={l.id}
-                  className="group relative flex h-full flex-1 flex-col justify-end"
-                  title={`${l.date.toLocaleDateString("pl-PL")}: ${fmtDur(l.totalMinutes)}`}
-                >
-                  <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-md">
-                    <div className="w-full bg-indigo-400/80" style={{ height: `${(l.deepMinutes / maxMinutes) * 100}%` }} />
-                    <div className="w-full bg-violet-400/80" style={{ height: `${(l.remMinutes / maxMinutes) * 100}%` }} />
-                    <div className="w-full bg-sky-400/80" style={{ height: `${(l.lightMinutes / maxMinutes) * 100}%` }} />
-                    <div className="w-full bg-slate-500/70" style={{ height: `${(l.awakeMinutes / maxMinutes) * 100}%` }} />
-                  </div>
-                  <span className="mt-1 hidden text-[9px] font-bold text-slate-600 group-hover:block">
-                    {day}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <SleepBars nights={last30} maxMinutes={maxMinutes} />
           <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-400">
             <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-indigo-400" /> Głęboki</span>
             <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-400" /> REM</span>
             <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-sky-400" /> Płytki</span>
+            <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-300" /> Sen (bez faz)</span>
             <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-slate-500" /> Czuwanie</span>
           </div>
         </section>

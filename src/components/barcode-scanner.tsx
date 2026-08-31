@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Barcode, Camera, ImagePlus, LoaderCircle, QrCode, ScanLine, Search, X } from "lucide-react";
+import {
+  Barcode,
+  Camera,
+  Flashlight,
+  FlashlightOff,
+  ImagePlus,
+  LoaderCircle,
+  QrCode,
+  ScanLine,
+  Search,
+  X,
+} from "lucide-react";
 import { logScannedEntryAction } from "@/actions/diet";
 import { formatMacro, round1 } from "@/lib/diet";
 import type { FoodProduct } from "@/db/schema";
@@ -115,6 +126,8 @@ export function BarcodeScanner({
 
   const [scanning, setScanning] = useState(false);
   const [scanMode, setScanMode] = useState<"barcode" | "qr">("barcode");
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +159,8 @@ export function BarcodeScanner({
 
   async function stopCamera() {
     setScanning(false);
+    setTorchOn(false);
+    setTorchSupported(false);
     setCameraError(null);
     if (readerRef.current) {
       try {
@@ -262,6 +277,12 @@ export function BarcodeScanner({
       if (!stream.getVideoTracks().length) {
         throw new DOMException("", "NotFoundError");
       }
+      const videoTrack = stream.getVideoTracks()[0];
+      const capabilities = videoTrack.getCapabilities?.() as
+        | (Partial<MediaTrackCapabilities> & { torch?: boolean })
+        | undefined;
+      setTorchSupported(Boolean(capabilities?.torch));
+      setTorchOn(false);
       // Atrybuty + właściwości, żeby WebView nie blokował odtwarzania.
       video.muted = true;
       video.autoplay = true;
@@ -299,6 +320,21 @@ export function BarcodeScanner({
     } catch (e) {
       await stopCamera();
       setCameraError(cameraHint(e));
+    }
+  }
+
+  /** Włącza/wyłącza latarkę aparatu, jeśli urządzenie ją obsługuje. */
+  async function toggleTorch() {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track || !torchSupported) return;
+    const next = !torchOn;
+    try {
+      await track.applyConstraints({
+        advanced: [{ torch: next }],
+      } as unknown as MediaTrackConstraints);
+      setTorchOn(next);
+    } catch {
+      if (next) setTorchOn(false);
     }
   }
 
@@ -448,17 +484,31 @@ export function BarcodeScanner({
             scanning ? "relative overflow-hidden rounded-2xl border border-lime-400/25 bg-black/60" : ""
           }`}
         >
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          autoPlay
-          className={`mx-auto aspect-video w-auto max-h-[85vh] max-w-[95vw] object-contain ${scanning ? "" : ""}`}
-        />
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-20 -translate-y-1/2 border-y-2 border-lime-400/80" />
-        <p className="absolute inset-x-0 bottom-4 text-center text-sm font-extrabold text-lime-300 drop-shadow-lg">
-          {scanMode === "qr" ? "Skieruj aparat na kod QR" : "Skieruj aparat na kod kreskowy"}
-        </p>
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            autoPlay
+            className={`mx-auto aspect-video w-auto max-h-[85vh] max-w-[95vw] object-contain ${scanning ? "" : ""}`}
+          />
+          {scanning && (
+            <button
+              type="button"
+              onClick={() => void toggleTorch()}
+              disabled={!torchSupported}
+              aria-pressed={torchOn}
+              aria-label={torchOn ? "Wyłącz latarkę" : "Włącz latarkę"}
+              title={torchSupported ? (torchOn ? "Wyłącz latarkę" : "Włącz latarkę") : "Latarka niedostępna"}
+              className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-xl bg-black/60 px-3 py-2 text-xs font-bold text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-black/80 disabled:opacity-40"
+            >
+              {torchOn ? <FlashlightOff size={16} /> : <Flashlight size={16} />}
+              {torchOn ? "Wyłącz latarkę" : "Latarka"}
+            </button>
+          )}
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 h-20 -translate-y-1/2 border-y-2 border-lime-400/80" />
+          <p className="absolute inset-x-0 bottom-4 text-center text-sm font-extrabold text-lime-300 drop-shadow-lg">
+            {scanMode === "qr" ? "Skieruj aparat na kod QR" : "Skieruj aparat na kod kreskowy"}
+          </p>
         </div>
       </div>
 

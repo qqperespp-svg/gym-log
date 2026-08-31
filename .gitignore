@@ -6,3 +6,4 @@ build/
 .env
 .env.*
 package-lock.json
+next-env.d.ts

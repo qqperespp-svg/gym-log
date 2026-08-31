@@ -74,6 +74,34 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
     carbs: Math.round((kcal * (carbsPct / total)) / 4),
   });
 
+  // Szablony makro dla obu typów dnia — używane przy przełączaniu
+  // dzień treningowy ⇄ dzień wolny (wtedy kaloryka zmienia się automatycznie).
+  const trainingMacros = macros(trainingKcal);
+  const restMacros = macros(restKcal);
+  await db
+    .insert(userSettings)
+    .values({
+      userId: user.id,
+      trainingProtein: trainingMacros.protein,
+      trainingFat: trainingMacros.fat,
+      trainingCarbs: trainingMacros.carbs,
+      restProtein: restMacros.protein,
+      restFat: restMacros.fat,
+      restCarbs: restMacros.carbs,
+    })
+    .onConflictDoUpdate({
+      target: userSettings.userId,
+      set: {
+        trainingProtein: trainingMacros.protein,
+        trainingFat: trainingMacros.fat,
+        trainingCarbs: trainingMacros.carbs,
+        restProtein: restMacros.protein,
+        restFat: restMacros.fat,
+        restCarbs: restMacros.carbs,
+        updatedAt: new Date(),
+      },
+    });
+
   // Istniejące flagi treningowy/wolny per dzień tygodnia.
   const existing = await db.select().from(dietGoals).where(eq(dietGoals.userId, user.id));
   const trainingByDay = new Map(existing.map((g) => [g.weekday, g.trainingDay === 1]));
@@ -81,7 +109,7 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
   for (const { n } of WEEKDAYS) {
     const isTraining = trainingByDay.get(n) ?? false;
     const kcal = isTraining ? trainingKcal : restKcal;
-    const m = macros(kcal);
+    const m = isTraining ? trainingMacros : restMacros;
     await db
       .insert(dietGoals)
       .values({

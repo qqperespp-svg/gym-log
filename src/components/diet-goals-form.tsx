@@ -5,6 +5,8 @@ import { Beef, Croissant, Droplets, Dumbbell, Save, Sofa, UtensilsCrossed } from
 import { saveDietGoalsAction } from "@/actions/diet";
 import type { DietGoal } from "@/db/schema";
 import { WEEKDAYS, defaultMealName, kcalFromMacros, parseMealNames } from "@/lib/diet";
+import type { DayTypeMacros, MacroSet } from "@/lib/day-type-macros";
+import { hasMacros } from "@/lib/day-type-macros";
 import { SubmitButton } from "@/components/submit-button";
 
 type GoalValues = Record<
@@ -16,7 +18,22 @@ function formatKcal(n: number): string {
   return n.toLocaleString("pl-PL");
 }
 
-export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
+/** Formatuje makro jako „B 180 · T 60 · W 250 g" — do podpowiedzi o szablonie dnia. */
+function formatMacroSet(macro: MacroSet): string {
+  const g = (n: number) => n.toLocaleString("pl-PL", { maximumFractionDigits: 1 });
+  return `B ${g(macro.protein)} · T ${g(macro.fat)} · W ${g(macro.carbs)} g · ${formatKcal(
+    kcalFromMacros(macro.protein, macro.fat, macro.carbs),
+  )} kcal`;
+}
+
+export function DietGoalsForm({
+  goals,
+  dayTypeMacros,
+}: {
+  goals: DietGoal[];
+  /** Makro przypisane do dnia treningowego / wolnego — podstawiane przy przełączaniu typu dnia. */
+  dayTypeMacros: DayTypeMacros;
+}) {
   const goalByWeekday = useMemo(
     () => new Map(goals.map((goal) => [goal.weekday, goal])),
     [goals],
@@ -40,6 +57,9 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
       }),
     ),
   );
+  // Makro „na dzień treningowy" i „na dzień wolny" — podstawiane przy przełączaniu
+  // typu dnia. Startuje z wartości wyliczonych na serwerze i uczy się w trakcie edycji.
+  const [macroMemory, setMacroMemory] = useState<DayTypeMacros>(dayTypeMacros);
 
   const totalKcal = useMemo(() => {
     let sum = 0;
@@ -64,6 +84,43 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
     }));
   }
 
+  /**
+   * Przełącza dzień treningowy ⇄ wolny i **podmienia makro** na przypisane do
+   * nowego typu dnia — kaloryka (liczona z makro) zmienia się od razu.
+   * Makro dotychczasowego typu zapamiętujemy, żeby powrót nic nie gubił.
+   */
+  function toggleTraining(n: number) {
+    const prev = values[n];
+    if (!prev) return;
+    const nextTraining = !prev.training;
+    const previousMacro: MacroSet = {
+      protein: Number(prev.protein) || 0,
+      fat: Number(prev.fat) || 0,
+      carbs: Number(prev.carbs) || 0,
+    };
+    const memory: DayTypeMacros = hasMacros(previousMacro)
+      ? { ...macroMemory, [prev.training ? "training" : "rest"]: previousMacro }
+      : macroMemory;
+    if (memory !== macroMemory) setMacroMemory(memory);
+
+    const target = nextTraining ? memory.training : memory.rest;
+    setValues((current) => ({
+      ...current,
+      [n]: {
+        ...current[n],
+        training: nextTraining,
+        // Brak makro dla docelowego typu dnia — zmieniamy samą etykietę.
+        ...(hasMacros(target)
+          ? {
+              protein: String(target.protein),
+              fat: String(target.fat),
+              carbs: String(target.carbs),
+            }
+          : {}),
+      },
+    }));
+  }
+
   function setMeals(n: number, raw: string) {
     const count = Math.max(1, Math.min(Math.round(Number(raw) || 1), 10));
     setValues((current) => {
@@ -83,6 +140,31 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
 
   return (
     <form action={saveDietGoalsAction} className="space-y-6">
+      {/* Makro przypisane do typu dnia — to je podstawia przełącznik przy każdym dniu. */}
+      <div className="grid gap-2 rounded-2xl border border-white/[.07] bg-black/15 p-4 sm:grid-cols-2">
+        <p className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <span className="inline-flex items-center gap-1.5 font-bold text-lime-300">
+            <Dumbbell size={13} /> Dzień treningowy
+          </span>
+          <span className="text-slate-500">
+            {hasMacros(macroMemory.training) ? formatMacroSet(macroMemory.training) : "brak — uzupełnij makro"}
+          </span>
+        </p>
+        <p className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <span className="inline-flex items-center gap-1.5 font-bold text-slate-300">
+            <Sofa size={13} /> Dzień wolny
+          </span>
+          <span className="text-slate-500">
+            {hasMacros(macroMemory.rest) ? formatMacroSet(macroMemory.rest) : "brak — uzupełnij makro"}
+          </span>
+        </p>
+        <p className="text-[11px] text-slate-600 sm:col-span-2">
+          Przełącznik przy dniu podmienia makro (i kcal) na wartości przypisane do wybranego typu
+          dnia. Zmieniasz makro ręcznie? Nowe wartości stają się szablonem tego typu dnia po
+          zapisaniu celów.
+        </p>
+      </div>
+
       <div className="space-y-3">
         {WEEKDAYS.map(({ n, label }) => {
           const kcal = kcalFromMacros(
@@ -116,14 +198,14 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                   <input type="hidden" name={`training-${n}`} value={training ? "1" : "0"} />
                   <button
                     type="button"
-                    onClick={() => setField(n, "training", !training)}
+                    onClick={() => toggleTraining(n)}
                     className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold transition ${
                       training
                         ? "bg-lime-400/15 text-lime-300 ring-1 ring-lime-400/40"
                         : "bg-white/[.04] text-slate-500 ring-1 ring-white/10 hover:text-slate-300"
                     }`}
                     aria-pressed={training}
-                    title="Przełącz: dzień treningowy / dzień wolny"
+                    title="Przełącz: dzień treningowy / dzień wolny — makro i kcal zmienią się na przypisane do wybranego typu dnia"
                   >
                     {training ? <Dumbbell size={13} /> : <Sofa size={13} />}
                     {training ? "Dzień treningowy" : "Dzień wolny"}

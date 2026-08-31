@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowUpRight, Award, BedDouble, Clock, Moon, TrendingUp } fr
 import { db } from "@/db";
 import { sleepLogs } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { SleepNightRow } from "@/components/sleep-night-row";
 
 export const dynamic = "force-dynamic";
 
@@ -15,13 +16,19 @@ function fmtDur(min: number): string {
 
 function fmtHM(d: Date | null): string {
   if (!d) return "—";
-  return d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Warsaw" });
 }
 
 function quality(eff: number): { label: string; color: string } {
   if (eff >= 0.85) return { label: "Wysoka", color: "text-emerald-300" };
   if (eff >= 0.75) return { label: "Dobra", color: "text-lime-300" };
   return { label: "Do poprawy", color: "text-amber-300" };
+}
+
+function durationQuality(min: number): { label: string; color: string } {
+  if (min < 360) return { label: "Niska (poniżej 6h)", color: "text-rose-300" };
+  if (min < 420) return { label: "Średnia (6–7h)", color: "text-amber-300" };
+  return { label: "Wysoka (powyżej 7h)", color: "text-emerald-300" };
 }
 
 export default async function SleepPage() {
@@ -100,6 +107,12 @@ export default async function SleepPage() {
               <div className="rounded-2xl border border-white/[.07] bg-black/15 px-4 py-3 text-center">
                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Efektywność</p>
                 <p className="mt-1 text-sm font-extrabold text-white">{Math.round(eff(today) * 100)}%</p>
+              </div>
+              <div className="rounded-2xl border border-white/[.07] bg-black/15 px-4 py-3 text-center">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Jakość długości</p>
+                <p className={`mt-1 text-sm font-extrabold ${durationQuality(today.totalMinutes).color}`}>
+                  {durationQuality(today.totalMinutes).label}
+                </p>
               </div>
               <div className="rounded-2xl border border-white/[.07] bg-black/15 px-4 py-3 text-center">
                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Czuwanie</p>
@@ -207,36 +220,15 @@ export default async function SleepPage() {
       {nights.length > 0 && (
         <section className="panel p-5 sm:p-7">
           <h2 className="font-extrabold text-white">Historia nocy</h2>
-          <div className="mt-4 divide-y divide-white/[.05]">
+          <p className="mt-1 text-[11px] text-slate-500">Kliknij noc, aby rozwinąć wszystkie parametry.</p>
+          <div className="mt-4">
             {nights
               .slice()
               .reverse()
               .slice(0, 30)
-              .map((l) => {
-                const e = eff(l);
-                return (
-                  <div key={l.id} className="flex items-center gap-4 py-3">
-                    <div className="w-28 shrink-0">
-                      <p className="text-sm font-bold text-white">
-                        {l.date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" })}
-                      </p>
-                      <p className="text-[10px] uppercase tracking-wider text-slate-600">
-                        {l.date.toLocaleDateString("pl-PL", { weekday: "short" })}
-                      </p>
-                    </div>
-                    <div className="flex h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[.05]">
-                      <div className="bg-indigo-400" style={{ width: `${(l.deepMinutes / Math.max(l.totalMinutes, 1)) * 100}%` }} />
-                      <div className="bg-violet-400" style={{ width: `${(l.remMinutes / Math.max(l.totalMinutes, 1)) * 100}%` }} />
-                      <div className="bg-sky-400" style={{ width: `${(l.lightMinutes / Math.max(l.totalMinutes, 1)) * 100}%` }} />
-                      <div className="bg-slate-500" style={{ width: `${(l.awakeMinutes / Math.max(l.totalMinutes, 1)) * 100}%` }} />
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-sm font-extrabold text-white">{fmtDur(l.totalMinutes)}</p>
-                      <p className={`text-[10px] font-bold ${quality(e).color}`}>{quality(e).label}</p>
-                    </div>
-                  </div>
-                );
-              })}
+              .map((l) => (
+                <SleepNightRow key={l.id} log={l} />
+              ))}
           </div>
           <p className="mt-3 text-right text-[11px] text-slate-600">
             <ArrowUpRight size={12} className="inline" /> Najlepsza noc:{" "}

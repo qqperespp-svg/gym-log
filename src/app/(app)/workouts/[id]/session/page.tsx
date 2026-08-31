@@ -2,7 +2,12 @@ import Link from "next/link";
 import { and, asc, eq } from "drizzle-orm";
 import { ArrowLeft, CalendarDays, Edit3 } from "lucide-react";
 import { notFound } from "next/navigation";
-import { saveWorkoutSessionAction } from "@/actions/workouts";
+import {
+  addSessionSetAction,
+  removeSessionSetAction,
+  autosaveSessionAction,
+  saveWorkoutSessionAction,
+} from "@/actions/workouts";
 import { WorkoutSession } from "@/components/workout-session";
 import { db } from "@/db";
 import { exercises, exerciseSets, workouts } from "@/db/schema";
@@ -38,6 +43,7 @@ export default async function WorkoutSessionPage({
       rir: exerciseSets.rir,
       note: exerciseSets.note,
       completed: exerciseSets.completed,
+      isExtra: exerciseSets.isExtra,
     })
     .from(exercises)
     .innerJoin(exerciseSets, eq(exerciseSets.exerciseId, exercises.id))
@@ -60,6 +66,7 @@ export default async function WorkoutSessionPage({
             rir: number | null;
             note: string | null;
             completed: boolean;
+            isExtra: boolean;
           }>,
         };
         current.sets.push({
@@ -70,10 +77,11 @@ export default async function WorkoutSessionPage({
           rir: row.rir,
           note: row.note,
           completed: row.completed === 1,
+          isExtra: row.isExtra === 1,
         });
         map.set(row.exerciseId, current);
         return map;
-      }, new Map<number, { id: number; name: string; restSeconds: number; grp: string | null; position: number; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: number | null; note: string | null; completed: boolean }> }>())
+      }, new Map<number, { id: number; name: string; restSeconds: number; grp: string | null; position: number; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: number | null; note: string | null; completed: boolean; isExtra: boolean }> }>())
       .values(),
   ).sort((a, b) => a.position - b.position);
   return (
@@ -108,7 +116,13 @@ export default async function WorkoutSessionPage({
           „{workout.notes}”
         </p>
       )}
-      <WorkoutSession action={saveWorkoutSessionAction.bind(null, id)} initial={items} />
+      <WorkoutSession
+        action={saveWorkoutSessionAction.bind(null, id)}
+        autosave={autosaveSessionAction.bind(null, id)}
+        addSet={addSessionSetAction.bind(null, id)}
+        removeSet={removeSessionSetAction.bind(null, id)}
+        initial={items}
+      />
     </div>
   );
 }

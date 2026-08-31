@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { FilterX, Search, Star } from "lucide-react";
 import type { FoodProduct } from "@/db/schema";
 import { DeleteFoodProductButton } from "@/components/delete-food-product-button";
+import { EditFoodProductButton } from "@/components/edit-food-product-button";
 import { toggleFavoriteProductAction } from "@/actions/diet";
 import { DIET_LABELS, productLabels } from "@/lib/labels";
 import { matchesWords } from "@/lib/search";
@@ -80,8 +81,14 @@ export function FoodCatalogSearch({
         (cm == null || p.carbs >= cm) &&
         (cM == null || p.carbs <= cM),
     );
-    // ulubione najpierw
-    return [...list.filter((p) => favoriteIds.has(p.id)), ...list.filter((p) => !favoriteIds.has(p.id))].slice(0, 80);
+    // Priorytet: dokładne dopasowanie (includes) wyżej niż pochodne (matchesWords)
+    list.sort((a, b) => {
+      const aExact = query.trim().length >= 2 && a.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
+      const bExact = query.trim().length >= 2 && b.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
+      return bExact - aExact;
+    });
+    // ulubione najpierw (po sortowaniu dokładnym)
+    return [...list.filter((p) => favoriteIds.has(p.id)), ...list.filter((p) => !favoriteIds.has(p.id))];
   }, [query, products, favoriteIds, labelKeys, pMin, pMax, fMin, fMax, cMin, cMax]);
 
   const total = products.length;
@@ -198,7 +205,7 @@ export function FoodCatalogSearch({
             return (
               <div key={p.id} className={`rounded-xl border border-white/[.06] px-3 py-2.5 ${p.userId === userId ? "bg-lime-400/[.04]" : "bg-black/15"}`}>
                 <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-bold text-white">
+                  <p className="min-w-0 flex-1 break-words whitespace-normal text-sm font-bold text-white">
                     {p.name}
                     {p.userId === userId && (
                       <span className="ml-2 rounded-full bg-lime-400/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-lime-300">
@@ -207,6 +214,7 @@ export function FoodCatalogSearch({
                     )}
                   </p>
                   <div className="flex shrink-0 items-center gap-1">
+                    <EditFoodProductButton product={p} />
                     <button
                       type="button"
                       onClick={() => void toggleFavoriteProductAction(p.id)}

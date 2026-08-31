@@ -15,14 +15,16 @@ import { FoodCatalogSearch } from "@/components/food-catalog-search";
 import { MichaTabs } from "@/components/micha-tabs";
 import { TdeeCalculator } from "@/components/tdee-calculator";
 import { MealEstimate } from "@/components/meal-estimate";
+import { SuggestMealTile } from "@/components/suggest-meal-tile";
 import { RecipeForm, RecipeItem } from "@/components/recipe-form";
+
 
 export const dynamic = "force-dynamic";
 
 export default async function MichaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; scan?: string }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
@@ -32,7 +34,8 @@ export default async function MichaPage({
       .select()
       .from(dietLogs)
       .where(eq(dietLogs.userId, user.id))
-      .orderBy(desc(dietLogs.date), desc(dietLogs.id)),
+      .orderBy(desc(dietLogs.date), desc(dietLogs.id))
+      .limit(200),
     db
       .select()
       .from(foodProducts)
@@ -43,8 +46,8 @@ export default async function MichaPage({
       .from(bodyMeasurements)
       .where(eq(bodyMeasurements.userId, user.id))
       .orderBy(asc(bodyMeasurements.date)),
-    db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)),
-    db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)),
+    db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)).limit(50),
+    db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)).limit(50),
   ]);
   const favoriteIds = new Set(favRows.map((f) => f.productId));
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
@@ -128,6 +131,7 @@ export default async function MichaPage({
       )}
 
       <MichaTabs
+        defaultTab={params.scan === "1" ? "wprowadzanie" : "makro"}
         makro={
           <>
             <section className="grid gap-5 xl:grid-cols-2">
@@ -227,6 +231,22 @@ export default async function MichaPage({
                   />
                 </div>
               </div>
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="font-extrabold text-white mb-1">AI: Zaproponuj posiłki</h2>
+              <p className="mb-5 text-sm text-slate-500">
+                Na podstawie pozostałych makro do końca dnia AI zaproponuje składniki i gramaturę, aby wypełnić zapotrzebowanie.
+              </p>
+              <SuggestMealTile
+                remaining={{
+                  protein: Math.max(0, (todayGoal?.protein ?? 0) - todaySum.protein),
+                  fat: Math.max(0, (todayGoal?.fat ?? 0) - todaySum.fat),
+                  carbs: Math.max(0, (todayGoal?.carbs ?? 0) - todaySum.carbs),
+                  kcal: Math.max(0, (todayGoal?.kcalGoal ?? 0) - todaySum.kcal),
+                }}
+                products={products}
+              />
             </section>
 
             <section className="panel p-5 sm:p-7">
@@ -398,13 +418,13 @@ export default async function MichaPage({
                 (produkt wypełni się automatycznie z Open Food Facts) albo podaj makro ręcznie
                 (na 100 g), ustaw gramaturę i wybierz, do którego posiłku dnia go przypisać.
               </p>
-              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} favoriteIds={favoriteIds} />
+              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} favoriteIds={favoriteIds} autoScan={params.scan === "1"} />
             </section>
 
             <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Posiłki złożone (przepisy)</h2>
               <p className="mb-5 text-sm text-slate-500">
-                Zbuduj posiłek z produktów katalogu (np. „Obiad = kurczak 150 g + ryż 80 g"), a makro
+                Zbuduj posiłek z produktów katalogu (np. „Obiad = kurczak 150 g + ryż 80 g”), a makro
                 zsumuje się automatycznie. Dodajesz go do dziennika jednym kliknięciem.
               </p>
               <div className="grid gap-5 xl:grid-cols-2">
@@ -441,7 +461,7 @@ export default async function MichaPage({
                 z makroskładnikami (na 100 g) — polskie produkty z otwartej bazy Open Food Facts (mleko,
                 jogurty, pieczywo, mięsa, owoce, warzywa, przekąski i wiele innych) + produkty dodawane
                 przez użytkowników (<b>wspólny katalog</b>). Pozycje dodane ręcznie są oznaczone etykietą
-                <b className="text-violet-300"> „wpis gymrata"</b>. Wyszukaj po nazwie, zeskanuj kod albo
+                <b className="text-violet-300"> „wpis gymrata”</b>. Wyszukaj po nazwie, zeskanuj kod albo
                 dodaj własny produkt.
               </p>
               <div className="grid gap-5 xl:grid-cols-2">
@@ -501,7 +521,7 @@ export default async function MichaPage({
             <h2 className="font-extrabold text-white mb-1">Planowanie kalorii (TDEE)</h2>
             <p className="mb-5 text-sm text-slate-500">
               Oblicz zapotrzebowanie, ustaw proporcje białko / węglowodany / tłuszcze i dodatek na
-              dzień treningowy. Po zapisie każdy dzień oznaczony jako „treningowy" dostanie
+              dzień treningowy. Po zapisie każdy dzień oznaczony jako „treningowy” dostanie
               podwyższoną kalorykę, pozostałe — bazową (z proporcjami przeliczonymi na gramy).
             </p>
             <TdeeCalculator />

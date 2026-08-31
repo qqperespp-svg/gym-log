@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Beef, Croissant, Droplets, Plus, ScanLine, Search, Star, X } from "lucide-react";
+import { Beef, Croissant, Droplets, LoaderCircle, Plus, ScanLine, Search, Star, X } from "lucide-react";
 import { logDietEntryAction, saveFoundProductAction } from "@/actions/diet";
 import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
 import { suggestMealByHour } from "@/lib/i18n";
@@ -18,11 +19,13 @@ export function DietLogForm({
   meals,
   mealNames,
   favoriteIds,
+  autoScan,
 }: {
   products: FoodProduct[];
   meals: number;
   mealNames: string[];
   favoriteIds?: Set<number>;
+  autoScan?: boolean;
 }) {
   const [proteinPer100, setProteinPer100] = useState("");
   const [fatPer100, setFatPer100] = useState("");
@@ -35,6 +38,7 @@ export function DietLogForm({
   const router = useRouter();
   const [scanStatus, setScanStatus] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
+
 
   useEffect(() => {
     const onSynced = () => setOfflineNote("Zsynchronizowano wpisy offline. ✅");
@@ -62,7 +66,13 @@ export function DietLogForm({
   );
   const matches = useMemo(() => {
     if (query.trim().length < 2) return [];
-    return products.filter((p) => matchesWords(p.name, query)).slice(0, 8);
+    const exactFirst = (list: FoodProduct[]) =>
+      [...list].sort((a, b) => {
+        const aExact = a.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
+        const bExact = b.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
+        return bExact - aExact;
+      });
+    return exactFirst(products.filter((p) => matchesWords(p.name, query)));
   }, [query, products]);
 
   function fill(p: FoodProduct, gramsValue = "100") {
@@ -170,7 +180,7 @@ export function DietLogForm({
             )}
           </div>
           {matches.length > 0 && (
-            <div className="mt-2 space-y-1">
+            <div className="mt-2 max-h-96 overflow-y-auto space-y-1 pr-1">
               {matches.map((p) => {
                 const labels = productLabels(p.protein, p.fat, p.carbs);
                 return (
@@ -209,7 +219,7 @@ export function DietLogForm({
           <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
             <ScanLine size={12} className="text-lime-400" /> Skanuj kod lub wpisz ręcznie
           </p>
-          <ScanCodeBox onCode={(code) => void handleScannedCode(code)} onError={() => {}} />
+          <ScanCodeBox onCode={(code) => void handleScannedCode(code)} onError={() => {}} autoScan={autoScan} />
 
           {/* Ręczne wpisanie kodu kreskowego */}
           <div className="mt-2 flex items-center gap-2">
@@ -352,15 +362,30 @@ export function DietLogForm({
           </p>
           {offlineNote && <p className="mt-1 text-xs text-sky-300">{offlineNote}</p>}
         </div>
-        <button type="submit" className="button-primary shrink-0">
-          <Plus size={17} /> Dodaj
-        </button>
+        <SubmitButton />
       </div>
 
       <input type="hidden" name="protein" value={computed.protein} />
       <input type="hidden" name="fat" value={computed.fat} />
       <input type="hidden" name="carbs" value={computed.carbs} />
     </form>
+  );
+}
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" className="button-primary shrink-0" disabled={pending} aria-disabled={pending}>
+      {pending ? (
+        <>
+          <LoaderCircle size={17} className="animate-spin" /> Zapisuję…
+        </>
+      ) : (
+        <>
+          <Plus size={17} /> Dodaj
+        </>
+      )}
+    </button>
   );
 }
 

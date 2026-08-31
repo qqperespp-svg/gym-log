@@ -122,6 +122,11 @@ async function runSchemaSync(): Promise<void> {
       "exercise_sets.note",
       sql`ALTER TABLE exercise_sets ADD COLUMN IF NOT EXISTS note text`,
     ],
+    // Seria dodana w trakcie treningu (poza planem) — oznaczana jako „dodatkowa”.
+    [
+      "exercise_sets.is_extra",
+      sql`ALTER TABLE exercise_sets ADD COLUMN IF NOT EXISTS is_extra integer NOT NULL DEFAULT 0`,
+    ],
     // Tabele zakładki „Micha” — dzienne cele kcal (z makro) i dziennik spożycia.
     [
       "diet_goals",

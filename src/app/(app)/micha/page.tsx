@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { asc, desc, eq } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileDown, Plus, Scale, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
-import { bodyMeasurements, dietGoals, dietLogs, foodProducts, recipes, userFavorites, type DietLog } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, foodProducts, recipes, userFavorites, userSettings, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, formatMacro, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
 import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
+import { resolveDayTypeMacros } from "@/lib/day-type-macros";
+import { DayTypeToggle } from "@/components/day-type-toggle";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DietLogGroups, type DietLogRow } from "@/components/diet-log-groups";
@@ -28,7 +30,7 @@ export default async function MichaPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [goals, logs, products, measurements, recipeRows, favRows] = await Promise.all([
+  const [goals, logs, products, measurements, recipeRows, favRows, settingsRows] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db
       .select()
@@ -48,6 +50,7 @@ export default async function MichaPage({
       .orderBy(asc(bodyMeasurements.date)),
     db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)).limit(50),
     db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)).limit(50),
+    db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1),
   ]);
   const favoriteIds = new Set(favRows.map((f) => f.productId));
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
@@ -126,6 +129,8 @@ export default async function MichaPage({
     { protein: 0, fat: 0, carbs: 0, kcal: 0 },
   );
   const isTrainingDay = todayGoal?.trainingDay === 1;
+  // Makro przypisane do dnia treningowego / wolnego — podstawiane przy przełączaniu typu dnia.
+  const dayTypeMacros = resolveDayTypeMacros(goals, settingsRows[0] ?? null);
 
   return (
     <div className="space-y-7">
@@ -166,16 +171,7 @@ export default async function MichaPage({
                     </h2>
                     <p className="mt-0.5 text-xs text-slate-500">Spożycie vs cel dzienny</p>
                   </div>
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                      isTrainingDay
-                        ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                        : "bg-white/[.04] text-slate-400 ring-white/10"
-                    }`}
-                  >
-                    {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-                    {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-                  </span>
+                  <DayTypeToggle weekday={todayWeekday} training={isTrainingDay} />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <MacroBar
@@ -436,7 +432,7 @@ export default async function MichaPage({
                 kcal = białko × 4 + węglowodany × 4 + tłuszcze × 9 (na gram). Oznacz, czy dany dzień
                 jest treningowy czy wolny, i ustaw liczbę posiłków oraz ich nazwy.
               </p>
-              <DietGoalsForm goals={goals} />
+              <DietGoalsForm goals={goals} dayTypeMacros={dayTypeMacros} />
             </section>
 
             <section className="panel p-5 sm:p-7">

@@ -6,7 +6,7 @@ import { saveDietGoalsAction } from "@/actions/diet";
 import type { DietGoal } from "@/db/schema";
 import { WEEKDAYS, defaultMealName, kcalFromMacros, parseMealNames } from "@/lib/diet";
 import type { DayTypeMacros, MacroSet } from "@/lib/day-type-macros";
-import { hasMacros } from "@/lib/day-type-macros";
+import { hasMacros, sameMacros } from "@/lib/day-type-macros";
 import { SubmitButton } from "@/components/submit-button";
 
 type GoalValues = Record<
@@ -14,16 +14,26 @@ type GoalValues = Record<
   { protein: string; fat: string; carbs: string; training: boolean; meals: string; mealNames: string[] }
 >;
 
+/** Typ dnia: treningowy albo wolny. */
+type DayType = "training" | "rest";
+
+/** Makro szablonu jako wartości pól formularza (stringi). */
+type MacroFields = { protein: string; fat: string; carbs: string };
+
+const toFields = (macro: MacroSet): MacroFields => ({
+  protein: macro.protein ? String(macro.protein) : "",
+  fat: macro.fat ? String(macro.fat) : "",
+  carbs: macro.carbs ? String(macro.carbs) : "",
+});
+
+const fromFields = (fields: MacroFields): MacroSet => ({
+  protein: Number(fields.protein) || 0,
+  fat: Number(fields.fat) || 0,
+  carbs: Number(fields.carbs) || 0,
+});
+
 function formatKcal(n: number): string {
   return n.toLocaleString("pl-PL");
-}
-
-/** Formatuje makro jako „B 180 · T 60 · W 250 g" — do podpowiedzi o szablonie dnia. */
-function formatMacroSet(macro: MacroSet): string {
-  const g = (n: number) => n.toLocaleString("pl-PL", { maximumFractionDigits: 1 });
-  return `B ${g(macro.protein)} · T ${g(macro.fat)} · W ${g(macro.carbs)} g · ${formatKcal(
-    kcalFromMacros(macro.protein, macro.fat, macro.carbs),
-  )} kcal`;
 }
 
 export function DietGoalsForm({
@@ -57,9 +67,17 @@ export function DietGoalsForm({
       }),
     ),
   );
-  // Makro „na dzień treningowy" i „na dzień wolny" — podstawiane przy przełączaniu
-  // typu dnia. Startuje z wartości wyliczonych na serwerze i uczy się w trakcie edycji.
-  const [macroMemory, setMacroMemory] = useState<DayTypeMacros>(dayTypeMacros);
+  // Makro „na dzień treningowy" i „na dzień wolny" — edytowalne wprost przez
+  // użytkownika. To one są podstawiane przy przełączaniu typu dnia i to one
+  // trafiają do ustawień przy zapisie celów.
+  const [templates, setTemplates] = useState<Record<DayType, MacroFields>>(() => ({
+    training: toFields(dayTypeMacros.training),
+    rest: toFields(dayTypeMacros.rest),
+  }));
+  const templateMacros = useMemo(
+    () => ({ training: fromFields(templates.training), rest: fromFields(templates.rest) }),
+    [templates],
+  );
 
   const totalKcal = useMemo(() => {
     let sum = 0;
@@ -87,23 +105,12 @@ export function DietGoalsForm({
   /**
    * Przełącza dzień treningowy ⇄ wolny i **podmienia makro** na przypisane do
    * nowego typu dnia — kaloryka (liczona z makro) zmienia się od razu.
-   * Makro dotychczasowego typu zapamiętujemy, żeby powrót nic nie gubił.
    */
   function toggleTraining(n: number) {
     const prev = values[n];
     if (!prev) return;
     const nextTraining = !prev.training;
-    const previousMacro: MacroSet = {
-      protein: Number(prev.protein) || 0,
-      fat: Number(prev.fat) || 0,
-      carbs: Number(prev.carbs) || 0,
-    };
-    const memory: DayTypeMacros = hasMacros(previousMacro)
-      ? { ...macroMemory, [prev.training ? "training" : "rest"]: previousMacro }
-      : macroMemory;
-    if (memory !== macroMemory) setMacroMemory(memory);
-
-    const target = nextTraining ? memory.training : memory.rest;
+    const target = nextTraining ? templateMacros.training : templateMacros.rest;
     setValues((current) => ({
       ...current,
       [n]: {
@@ -119,6 +126,29 @@ export function DietGoalsForm({
           : {}),
       },
     }));
+  }
+
+  /** Wpisuje makro szablonu do wszystkich dni oznaczonych danym typem. */
+  function applyTemplateToDays(type: DayType) {
+    const macro = templateMacros[type];
+    if (!hasMacros(macro)) return;
+    setValues((current) => {
+      const next = { ...current };
+      for (const { n } of WEEKDAYS) {
+        if ((next[n].training ? "training" : "rest") !== type) continue;
+        next[n] = {
+          ...next[n],
+          protein: String(macro.protein),
+          fat: String(macro.fat),
+          carbs: String(macro.carbs),
+        };
+      }
+      return next;
+    });
+  }
+
+  function setTemplateField(type: DayType, field: keyof MacroFields, value: string) {
+    setTemplates((current) => ({ ...current, [type]: { ...current[type], [field]: value } }));
   }
 
   function setMeals(n: number, raw: string) {
@@ -140,29 +170,83 @@ export function DietGoalsForm({
 
   return (
     <form action={saveDietGoalsAction} className="space-y-6">
-      {/* Makro przypisane do typu dnia — to je podstawia przełącznik przy każdym dniu. */}
-      <div className="grid gap-2 rounded-2xl border border-white/[.07] bg-black/15 p-4 sm:grid-cols-2">
-        <p className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-          <span className="inline-flex items-center gap-1.5 font-bold text-lime-300">
-            <Dumbbell size={13} /> Dzień treningowy
-          </span>
-          <span className="text-slate-500">
-            {hasMacros(macroMemory.training) ? formatMacroSet(macroMemory.training) : "brak — uzupełnij makro"}
-          </span>
+      {/* Makro przypisane do typu dnia — te wartości podstawia przełącznik przy każdym dniu. */}
+      <div className="rounded-2xl border border-lime-400/20 bg-lime-400/[.04] p-4">
+        <p className="text-xs font-black uppercase tracking-wider text-lime-400">
+          Makro wg typu dnia
         </p>
-        <p className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-          <span className="inline-flex items-center gap-1.5 font-bold text-slate-300">
-            <Sofa size={13} /> Dzień wolny
-          </span>
-          <span className="text-slate-500">
-            {hasMacros(macroMemory.rest) ? formatMacroSet(macroMemory.rest) : "brak — uzupełnij makro"}
-          </span>
+        <p className="mt-1 text-[11px] leading-5 text-slate-500">
+          Ustaw raz makro dnia treningowego i dnia wolnego. Przełącznik przy każdym dniu tygodnia
+          (a także plakietka „Dzisiaj” w Michy i na dashboardzie) podmienia makro i kcal na
+          wartości z tego panelu.
         </p>
-        <p className="text-[11px] text-slate-600 sm:col-span-2">
-          Przełącznik przy dniu podmienia makro (i kcal) na wartości przypisane do wybranego typu
-          dnia. Zmieniasz makro ręcznie? Nowe wartości stają się szablonem tego typu dnia po
-          zapisaniu celów.
-        </p>
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          {(
+            [
+              { type: "training" as DayType, label: "Dzień treningowy", icon: <Dumbbell size={14} /> },
+              { type: "rest" as DayType, label: "Dzień wolny", icon: <Sofa size={14} /> },
+            ]
+          ).map(({ type, label, icon }) => {
+            const fields = templates[type];
+            const macro = templateMacros[type];
+            const kcal = kcalFromMacros(macro.protein, macro.fat, macro.carbs);
+            return (
+              <div key={type} className="rounded-xl border border-white/[.07] bg-black/20 p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span
+                    className={`inline-flex items-center gap-2 text-xs font-extrabold ${
+                      type === "training" ? "text-lime-300" : "text-slate-300"
+                    }`}
+                  >
+                    {icon} {label}
+                  </span>
+                  <span className="text-xs font-black text-lime-300">
+                    {formatKcal(kcal)} <span className="text-[10px] text-lime-400/70">kcal</span>
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { key: "protein" as const, label: "Białko", icon: <Beef size={13} /> },
+                      { key: "fat" as const, label: "Tłuszcze", icon: <Droplets size={13} /> },
+                      { key: "carbs" as const, label: "Węglow.", icon: <Croissant size={13} /> },
+                    ]
+                  ).map(({ key, label: macroLabel, icon: macroIcon }) => (
+                    <label key={key} className="field-label !text-[10px]">
+                      {macroLabel} (g)
+                      <span className="input-shell !min-h-10">
+                        {macroIcon}
+                        <input
+                          name={`dayType-${type}-${key}`}
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={fields[key]}
+                          onFocus={(event) => event.target.select()}
+                          onChange={(event) => setTemplateField(type, key, event.target.value)}
+                        />
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => applyTemplateToDays(type)}
+                  disabled={!hasMacros(macro)}
+                  className="mt-2 w-full rounded-lg bg-white/[.05] px-3 py-1.5 text-[11px] font-bold text-slate-300 ring-1 ring-white/10 transition hover:text-white disabled:opacity-40"
+                >
+                  Zastosuj do wszystkich dni tego typu
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {sameMacros(templateMacros.training, templateMacros.rest) && (
+          <p className="mt-3 rounded-xl bg-amber-400/10 px-3 py-2 text-[11px] font-semibold text-amber-200">
+            Oba typy dnia mają teraz identyczne makro — przełączanie nie zmieni kaloryki. Ustaw
+            wyższe makro dla dnia treningowego (albo niższe dla wolnego).
+          </p>
+        )}
       </div>
 
       <div className="space-y-3">

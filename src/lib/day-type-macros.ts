@@ -82,23 +82,41 @@ export function macrosFromGoals(goals: GoalLike[], training: boolean): MacroSet 
   )[0].macro;
 }
 
+/** Czy oba zestawy makro są identyczne (a więc przełącznik nic by nie zmienił)? */
+export function sameMacros(a: MacroSet, b: MacroSet): boolean {
+  return a.protein === b.protein && a.fat === b.fat && a.carbs === b.carbs;
+}
+
 /**
  * Wyznacza makro dla obu typów dnia:
- *   1. szablon zapisany w ustawieniach (kalkulator TDEE / ostatni zapis celów),
+ *   1. szablon zapisany wprost w ustawieniach (panel „Makro wg typu dnia”,
+ *      kalkulator TDEE) — zawsze ma pierwszeństwo,
  *   2. makro dni tego typu z tygodniowego planu,
  *   3. makro drugiego typu skorygowane o domyślny bonus treningowy
- *      (+/- 200 kcal na węglowodanach) — dzięki temu przełącznik zawsze zmienia
- *      kalorykę, nawet gdy wszystkie dni miały dotąd ten sam typ.
+ *      (+/- 200 kcal na węglowodanach).
+ *
+ * Punkt 3 działa też wtedy, gdy oba typy wyszły *identyczne* (typowe, gdy
+ * wszystkie dni mają te same makro) — inaczej przełącznik nie zmieniałby
+ * kaloryki. Zestawu ustawionego ręcznie przez użytkownika nigdy nie ruszamy.
  */
 export function resolveDayTypeMacros(
   goals: GoalLike[],
   settings?: Parameters<typeof fromSettings>[0],
 ): DayTypeMacros {
-  let training = fromSettings(settings, true) ?? macrosFromGoals(goals, true);
-  let rest = fromSettings(settings, false) ?? macrosFromGoals(goals, false);
+  const trainingExplicit = fromSettings(settings, true);
+  const restExplicit = fromSettings(settings, false);
+  let training = trainingExplicit ?? macrosFromGoals(goals, true);
+  let rest = restExplicit ?? macrosFromGoals(goals, false);
 
   if (!training && rest) training = shiftKcal(rest, DEFAULT_TRAINING_BONUS_KCAL);
   if (!rest && training) rest = shiftKcal(training, -DEFAULT_TRAINING_BONUS_KCAL);
+
+  // Oba typy wyszły tak samo — rozsuń je o domyślny bonus treningowy, żeby
+  // przełącznik miał co zmieniać. Ręcznie zapisany zestaw zostaje nietknięty.
+  if (training && rest && sameMacros(training, rest)) {
+    if (!restExplicit) rest = shiftKcal(training, -DEFAULT_TRAINING_BONUS_KCAL);
+    else if (!trainingExplicit) training = shiftKcal(rest, DEFAULT_TRAINING_BONUS_KCAL);
+  }
 
   return { training: training ?? EMPTY, rest: rest ?? EMPTY };
 }

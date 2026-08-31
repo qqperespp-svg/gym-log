@@ -127,11 +127,19 @@ export async function saveDietGoalsAction(formData: FormData): Promise<void> {
       });
     savedDays.push({ weekday: n, protein, fat, carbs, trainingDay });
   }
-  // Zapamiętaj makro obu typów dnia — użyje ich przełącznik treningowy ⇄ wolny.
+  // Makro typu dnia z panelu „Makro wg typu dnia" — jeśli użytkownik je wpisał,
+  // mają pierwszeństwo; inaczej odtwarzamy je z zapisanych dni tygodnia.
+  const templateFrom = (type: "training" | "rest"): MacroSet | null => {
+    const keys = [`dayType-${type}-protein`, `dayType-${type}-fat`, `dayType-${type}-carbs`];
+    if (!keys.some((key) => formData.has(key))) return null;
+    const [protein, fat, carbs] = keys.map((key) => clamp1(Number(formData.get(key)) || 0, 0, 9999));
+    const macro = { protein, fat, carbs };
+    return hasMacros(macro) ? macro : null;
+  };
   await rememberDayTypeMacros(
     user.id,
-    macrosFromGoals(savedDays, true),
-    macrosFromGoals(savedDays, false),
+    templateFrom("training") ?? macrosFromGoals(savedDays, true),
+    templateFrom("rest") ?? macrosFromGoals(savedDays, false),
   );
   revalidatePath("/micha");
   revalidatePath("/dashboard");
@@ -154,39 +162,25 @@ export async function setDayTypeAction(weekday: number, training: boolean): Prom
     db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1),
   ]);
   const current = goals.find((goal) => goal.weekday === day) ?? null;
+  const settings = settingsRows[0] ?? null;
 
-  // Zanim podmienimy makro — zapamiętaj obecne makro dnia jako szablon jego
-  // dotychczasowego typu (żeby powrót do niego niczego nie zgubił).
-  if (current) {
-    const currentMacro = { protein: current.protein, fat: current.fat, carbs: current.carbs };
+  // Makro obu typów dnia: panel „Makro wg typu dnia" > plan tygodnia > domyślna
+  // różnica treningowy/wolny. Zapisanych ręcznie szablonów tu nie nadpisujemy.
+  const macros = resolveDayTypeMacros(goals, settings);
+  const hasStoredTemplate =
+    settings != null &&
+    (isTraining
+      ? settings.trainingProtein != null || settings.trainingFat != null || settings.trainingCarbs != null
+      : settings.restProtein != null || settings.restFat != null || settings.restCarbs != null);
+  if (!hasStoredTemplate) {
+    // Uzupełnij brakujący szablon, żeby kolejne przełączenia były przewidywalne.
     await rememberDayTypeMacros(
       user.id,
-      current.trainingDay === 1 ? currentMacro : null,
-      current.trainingDay === 1 ? null : currentMacro,
+      isTraining ? macros.training : null,
+      isTraining ? null : macros.rest,
     );
   }
 
-  const settings = settingsRows[0] ?? null;
-  const macros = resolveDayTypeMacros(
-    goals,
-    // Świeżo zapamiętane makro bieżącego dnia ma pierwszeństwo nad starym szablonem.
-    current && settings
-      ? {
-          ...settings,
-          ...(current.trainingDay === 1
-            ? {
-                trainingProtein: current.protein,
-                trainingFat: current.fat,
-                trainingCarbs: current.carbs,
-              }
-            : {
-                restProtein: current.protein,
-                restFat: current.fat,
-                restCarbs: current.carbs,
-              }),
-        }
-      : settings,
-  );
   const target = isTraining ? macros.training : macros.rest;
   // Brak makro dla docelowego typu — zostaw dotychczasowe wartości, zmień samą flagę.
   const next = hasMacros(target)

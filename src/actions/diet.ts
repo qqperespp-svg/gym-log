@@ -3,7 +3,7 @@
 import { db } from "@/db";
 import { dietGoals, dietLogs, foodProducts, progressPhotos, recipes, userFavorites } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, defaultMealName, kcalFromMacros } from "@/lib/diet";
+import { WEEKDAYS, defaultMealName, kcalFromMacros, round1 } from "@/lib/diet";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -382,5 +382,31 @@ export async function logMealEstimateAction(formData: FormData): Promise<void> {
   }
   revalidatePath("/micha");
   revalidatePath("/dashboard");
+  redirect("/micha?saved=1");
+}
+
+/**
+ * Edycja istniejącego wpisu dziennika. Makro (B/T/W) i kcal są przeliczane
+ * automatycznie: wartości w bazie traktujemy jako „na 100 g” i skalujemy
+ * proporcjonalnie do nowej gramatury — dokładnie tak, jak w formularzu dodawania.
+ */
+export async function updateDietLogAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(formData.get("id")) || 0;
+  const grams = Math.max(0, Number(formData.get("grams")) || 0);
+  const proteinPer100 = Number(formData.get("proteinPer100")) || 0;
+  const fatPer100 = Number(formData.get("fatPer100")) || 0;
+  const carbsPer100 = Number(formData.get("carbsPer100")) || 0;
+  const protein = round1((proteinPer100 * grams) / 100);
+  const fat = round1((fatPer100 * grams) / 100);
+  const carbs = round1((carbsPer100 * grams) / 100);
+  const kcal = kcalFromMacros(protein, fat, carbs);
+  const note = String(formData.get("note") ?? "").trim() || null;
+  const mealNumber = readMealNumber(formData);
+  await db
+    .update(dietLogs)
+    .set({ protein, fat, carbs, kcal, mealNumber, note })
+    .where(and(eq(dietLogs.id, id), eq(dietLogs.userId, user.id)));
+  revalidatePath("/micha");
   redirect("/micha?saved=1");
 }

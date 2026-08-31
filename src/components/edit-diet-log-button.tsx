@@ -12,6 +12,7 @@ export type EditableDietLog = {
   fat: number;
   carbs: number;
   kcal: number;
+  grams: number;
   mealNumber: number | null;
   note: string | null;
 };
@@ -24,15 +25,17 @@ const MEAL_LABELS = ["1. Śniadanie", "2. Obiad", "3. Kolacja"];
  */
 export function EditDietLogButton({ log }: { log: EditableDietLog }) {
   const [open, setOpen] = useState(false);
-  const [grams, setGrams] = useState("100");
+  const [grams, setGrams] = useState(() => String(log.grams > 0 ? log.grams : 100));
   const [note, setNote] = useState(log.note ?? "");
   const [meal, setMeal] = useState(String(log.mealNumber ?? 1));
 
-  // Bazą są aktualne makro wpisu (traktowane jako wartości na 100 g) —
-  // użytkownik edytuje gramaturę, a makro przeliczają się proporcjonalnie.
-  const baseProtein = log.protein || 0;
-  const baseFat = log.fat || 0;
-  const baseCarbs = log.carbs || 0;
+  // Bazą są makro z zapisanej porcji przeliczone na wartości „na 100 g”:
+  // edycja startuje od realnej gramatury (log.grams), a makro skalują się
+  // proporcjonalnie do zmienionej ilości — dokładnie jak w formularzu dodawania.
+  const baseGrams = log.grams > 0 ? log.grams : 100;
+  const baseProtein = baseGrams > 0 ? (log.protein / baseGrams) * 100 : 0;
+  const baseFat = baseGrams > 0 ? (log.fat / baseGrams) * 100 : 0;
+  const baseCarbs = baseGrams > 0 ? (log.carbs / baseGrams) * 100 : 0;
 
   const g = Math.max(0, Number(grams) || 0);
   const computed = useMemo(() => {

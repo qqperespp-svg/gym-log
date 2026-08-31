@@ -25,6 +25,13 @@ function readMealNumber(formData: FormData): number | null {
   return Math.round(raw);
 }
 
+/** Odczytuje gramaturę porcji z formularza; domyślnie 100 g, minimum 1 g. */
+function readGrams(formData: FormData): number {
+  const raw = Number(formData.get("grams"));
+  if (!Number.isFinite(raw)) return 100;
+  return Math.max(1, Math.round(raw));
+}
+
 /** Zapisuje dzienne cele makro (i liczone z nich kcal) oraz liczbę posiłków dla każdego dnia tygodnia. */
 export async function saveDietGoalsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
@@ -94,6 +101,7 @@ export async function logDietEntryAction(formData: FormData): Promise<void> {
     fat,
     carbs,
     kcal,
+    grams: readGrams(formData),
     mealNumber: readMealNumber(formData),
     note,
   });
@@ -127,6 +135,7 @@ export async function logScannedEntryAction(formData: FormData): Promise<void> {
     fat,
     carbs,
     kcal,
+    grams: readGrams(formData),
     mealNumber: readMealNumber(formData),
     note,
   });
@@ -386,14 +395,15 @@ export async function logMealEstimateAction(formData: FormData): Promise<void> {
 }
 
 /**
- * Edycja istniejącego wpisu dziennika. Makro (B/T/W) i kcal są przeliczane
- * automatycznie: wartości w bazie traktujemy jako „na 100 g” i skalujemy
- * proporcjonalnie do nowej gramatury — dokładnie tak, jak w formularzu dodawania.
+ * Edycja istniejącego wpisu dziennika. Gramatura startuje od realnej wielkości
+ * porcji zapisanej przy dodaniu. Formularz wysyła makro jako wartości „na 100 g”
+ * (wyliczone z zapisanej porcji), a my skalujemy je proporcjonalnie do nowej
+ * gramatury — dokładnie tak, jak w formularzu dodawania.
  */
 export async function updateDietLogAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const id = Number(formData.get("id")) || 0;
-  const grams = Math.max(0, Number(formData.get("grams")) || 0);
+  const grams = readGrams(formData);
   const proteinPer100 = Number(formData.get("proteinPer100")) || 0;
   const fatPer100 = Number(formData.get("fatPer100")) || 0;
   const carbsPer100 = Number(formData.get("carbsPer100")) || 0;
@@ -405,7 +415,7 @@ export async function updateDietLogAction(formData: FormData): Promise<void> {
   const mealNumber = readMealNumber(formData);
   await db
     .update(dietLogs)
-    .set({ protein, fat, carbs, kcal, mealNumber, note })
+    .set({ protein, fat, carbs, kcal, grams, mealNumber, note })
     .where(and(eq(dietLogs.id, id), eq(dietLogs.userId, user.id)));
   revalidatePath("/micha");
   redirect("/micha?saved=1");

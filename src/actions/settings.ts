@@ -178,6 +178,7 @@ export async function importDataAction(formData: FormData): Promise<void> {
         fat: l.fat ?? 0,
         carbs: l.carbs ?? 0,
         kcal: l.kcal ?? kcalFromMacros(l.protein ?? 0, l.fat ?? 0, l.carbs ?? 0),
+        grams: l.grams ? Number(l.grams) : 100,
         mealNumber: l.mealNumber ?? null,
         note: l.note ?? null,
       });

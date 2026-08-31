@@ -513,6 +513,7 @@ export function BarcodeScanner({
               Ilość (g)
               <input
                 className="input"
+                name="grams"
                 type="number"
                 min="0"
                 step="1"

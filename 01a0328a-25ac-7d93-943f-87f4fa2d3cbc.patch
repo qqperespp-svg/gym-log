@@ -1,0 +1,2524 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..8811ca0
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,8 @@
++node_modules/
++.next/
++out/
++build/
++*.tsbuildinfo
++.env
++.env.*
++package-lock.json
+diff --git a/src/actions/diet.ts b/src/actions/diet.ts
+index 459519d..6601e1d 100644
+--- a/src/actions/diet.ts
++++ b/src/actions/diet.ts
+@@ -161,6 +161,32 @@ export async function addFoodProductAction(formData: FormData): Promise<void> {
+   redirect("/micha?saved=1");
+ }
+ 
++/** Aktualizuje istniejący produkt spożywczy w katalogu użytkownika. */
++export async function updateFoodProductAction(formData: FormData): Promise<void> {
++  const user = await requireUser();
++  const id = Number(formData.get("id")) || 0;
++  const name = String(formData.get("name") ?? "").trim();
++  if (name.length < 2) redirect("/micha?saved=1");
++  const protein = clamp1(Number(formData.get("protein")) || 0, 0, 999);
++  const fat = clamp1(Number(formData.get("fat")) || 0, 0, 999);
++  const carbs = clamp1(Number(formData.get("carbs")) || 0, 0, 999);
++  const kcal = kcalFromMacros(protein, fat, carbs);
++  const barcode = String(formData.get("barcode") ?? "").trim() || null;
++  await db
++    .update(foodProducts)
++    .set({
++      name: name.slice(0, 255),
++      barcode,
++      protein,
++      fat,
++      carbs,
++      kcal,
++    })
++    .where(and(eq(foodProducts.id, id), eq(foodProducts.userId, user.id)));
++  revalidatePath("/micha");
++  redirect("/micha?saved=1");
++}
++
+ export async function deleteFoodProductAction(id: number): Promise<void> {
+   const user = await requireUser();
+   await db
+@@ -358,3 +384,28 @@ export async function logMealEstimateAction(formData: FormData): Promise<void> {
+   revalidatePath("/dashboard");
+   redirect("/micha?saved=1");
+ }
++
++export async function updateDietLogAction(formData: FormData): Promise<void> {
++  const user = await requireUser();
++  const id = Number(formData.get("id")) || 0;
++  const grams = Math.max(0, Number(formData.get("grams")) || 0);
++  const proteinPer100 = Number(formData.get("proteinPer100")) || 0;
++  const fatPer100 = Number(formData.get("fatPer100")) || 0;
++  const carbsPer100 = Number(formData.get("carbsPer100")) || 0;
++  const protein = Math.round((proteinPer100 * grams / 100) * 10) / 10;
++  const fat = Math.round((fatPer100 * grams / 100) * 10) / 10;
++  const carbs = Math.round((carbsPer100 * grams / 100) * 10) / 10;
++  const kcal = kcalFromMacros(protein, fat, carbs);
++  const note = String(formData.get("note") ?? "").trim() || null;
++  const mealNumber = readMealNumber(formData);
++  await db.update(dietLogs).set({
++    protein,
++    fat,
++    carbs,
++    kcal,
++    mealNumber,
++    note,
++  }).where(and(eq(dietLogs.id, id), eq(dietLogs.userId, user.id)));
++  revalidatePath("/micha");
++  redirect("/micha?saved=1");
++}
+diff --git a/src/actions/workouts.ts b/src/actions/workouts.ts
+index 91eb325..c66da1b 100644
+--- a/src/actions/workouts.ts
++++ b/src/actions/workouts.ts
+@@ -3,7 +3,7 @@
+ import { db } from "@/db";
+ import { exerciseSets, exercises, workouts } from "@/db/schema";
+ import { requireUser } from "@/lib/auth";
+-import { and, eq } from "drizzle-orm";
++import { and, asc, eq, sql } from "drizzle-orm";
+ import { revalidatePath } from "next/cache";
+ import { redirect } from "next/navigation";
+ 
+@@ -192,20 +192,7 @@ export async function saveWorkoutSessionAction(
+   }
+ 
+   const intent = String(formData.get("intent") ?? "save");
+-  const completed = allSets.filter((set) => set.completed).length;
+-
+-  for (const set of allSets) {
+-    await db
+-      .update(exerciseSets)
+-      .set({
+-        reps: clamp(set.reps, 0, 100),
+-        weight: clamp(set.weight, 0, 999, 1),
+-        rir: set.rir != null ? clamp(set.rir, 0, 10) : null,
+-        note: set.note?.trim() || null,
+-        completed: set.completed ? 1 : 0,
+-      })
+-      .where(eq(exerciseSets.id, set.id));
+-  }
++  const completed = await persistSessionSets(workoutId, allSets);
+ 
+   if (intent === "finish") {
+     await db
+@@ -229,3 +216,190 @@ export async function saveWorkoutSessionAction(
+   revalidatePath(`/workouts/${workoutId}/session`);
+   return { success: `Zapisano postęp (${completed} wykonanych serii).` };
+ }
++
++// ---------- Serie dodawane w trakcie treningu ----------
++
++export type SessionSet = {
++  id: number;
++  setNumber: number;
++  reps: number;
++  weight: number;
++  rir: number | null;
++  note: string | null;
++  completed: boolean;
++  isExtra: boolean;
++};
++export type AddSetResult = { error: string } | { set: SessionSet; savedAt: number };
++export type RemoveSetResult = { error: string } | { removedId: number; savedAt: number };
++export type AutosaveResult = { error: string } | { savedAt: number };
++
++/**
++ * Sprawdza, czy ćwiczenie należy do treningu zalogowanego użytkownika.
++ */
++async function ownedExercise(exerciseId: number, workoutId: number, userId: number) {
++  const [row] = await db
++    .select({ id: exercises.id })
++    .from(exercises)
++    .innerJoin(workouts, eq(workouts.id, exercises.workoutId))
++    .where(
++      and(
++        eq(exercises.id, exerciseId),
++        eq(exercises.workoutId, workoutId),
++        eq(workouts.userId, userId),
++      ),
++    )
++    .limit(1);
++  return row;
++}
++
++/**
++ * Zapisuje wartości serii należących do wskazanego treningu.
++ * Zwraca liczbę wykonanych serii (spośród przesłanych).
++ */
++async function persistSessionSets(
++  workoutId: number,
++  rows: Array<SerializedSet & { id: number }>,
++): Promise<number> {
++  const owned = await db
++    .select({ id: exerciseSets.id })
++    .from(exerciseSets)
++    .innerJoin(exercises, eq(exercises.id, exerciseSets.exerciseId))
++    .where(eq(exercises.workoutId, workoutId));
++  const allowed = new Set(owned.map((row) => row.id));
++  let completed = 0;
++  for (const set of rows) {
++    if (!allowed.has(Number(set.id))) continue;
++    if (set.completed) completed += 1;
++    await db
++      .update(exerciseSets)
++      .set({
++        reps: clamp(set.reps, 0, 100),
++        weight: clamp(set.weight, 0, 999, 1),
++        rir: set.rir != null ? clamp(set.rir, 0, 10) : null,
++        note: set.note?.trim() || null,
++        completed: set.completed ? 1 : 0,
++      })
++      .where(eq(exerciseSets.id, Number(set.id)));
++  }
++  return completed;
++}
++
++/**
++ * Dodaje dodatkową serię do ćwiczenia w trakcie treningu.
++ *
++ * Świadomie NIE modyfikuje planu treningowego: kolumna `exercises.sets`
++ * (założona liczba serii) ani program pozostają bez zmian — nowy wiersz
++ * trafia wyłącznie do `exercise_sets` z flagą `is_extra = 1`.
++ */
++export async function addSessionSetAction(
++  workoutId: number,
++  exerciseId: number,
++): Promise<AddSetResult> {
++  const user = await requireUser();
++  if (!(await ownedExercise(exerciseId, workoutId, user.id))) {
++    return { error: "Nie znaleziono ćwiczenia w tym treningu." };
++  }
++  const existing = await db
++    .select({
++      setNumber: exerciseSets.setNumber,
++      reps: exerciseSets.reps,
++      weight: exerciseSets.weight,
++      rir: exerciseSets.rir,
++    })
++    .from(exerciseSets)
++    .where(eq(exerciseSets.exerciseId, exerciseId))
++    .orderBy(asc(exerciseSets.setNumber));
++  const last = existing.at(-1);
++  const nextNumber = (last?.setNumber ?? 0) + 1;
++  const [created] = await db
++    .insert(exerciseSets)
++    .values({
++      exerciseId,
++      setNumber: nextNumber,
++      reps: clamp(last?.reps ?? 0, 0, 100),
++      weight: clamp(last?.weight ?? 0, 0, 999, 1),
++      rir: last?.rir != null ? clamp(last.rir, 0, 10) : null,
++      note: null,
++      completed: 0,
++      isExtra: 1,
++    })
++    .returning();
++  revalidatePath(`/workouts/${workoutId}/session`);
++  return {
++    savedAt: Date.now(),
++    set: {
++      id: created.id,
++      setNumber: created.setNumber,
++      reps: created.reps,
++      weight: created.weight,
++      rir: created.rir,
++      note: created.note,
++      completed: created.completed === 1,
++      isExtra: true,
++    },
++  };
++}
++
++/**
++ * Usuwa serię dodaną w trakcie treningu. Serie z planu są nietykalne.
++ */
++export async function removeSessionSetAction(
++  workoutId: number,
++  setId: number,
++): Promise<RemoveSetResult> {
++  const user = await requireUser();
++  const [row] = await db
++    .select({ id: exerciseSets.id, exerciseId: exerciseSets.exerciseId, isExtra: exerciseSets.isExtra })
++    .from(exerciseSets)
++    .innerJoin(exercises, eq(exercises.id, exerciseSets.exerciseId))
++    .innerJoin(workouts, eq(workouts.id, exercises.workoutId))
++    .where(
++      and(
++        eq(exerciseSets.id, setId),
++        eq(exercises.workoutId, workoutId),
++        eq(workouts.userId, user.id),
++      ),
++    )
++    .limit(1);
++  if (!row) return { error: "Nie znaleziono serii." };
++  if (row.isExtra !== 1) return { error: "Serii z planu nie można usunąć w trybie treningu." };
++  await db.delete(exerciseSets).where(eq(exerciseSets.id, setId));
++  // Domknij numerację (unikalny indeks exercise_id + set_number) — najpierw
++  // przesuń numery poza zakres, potem ponumeruj od 1.
++  await db
++    .update(exerciseSets)
++    .set({ setNumber: sql`${exerciseSets.setNumber} + 1000` })
++    .where(eq(exerciseSets.exerciseId, row.exerciseId));
++  const rest = await db
++    .select({ id: exerciseSets.id })
++    .from(exerciseSets)
++    .where(eq(exerciseSets.exerciseId, row.exerciseId))
++    .orderBy(asc(exerciseSets.setNumber));
++  for (const [index, item] of rest.entries()) {
++    await db
++      .update(exerciseSets)
++      .set({ setNumber: index + 1 })
++      .where(eq(exerciseSets.id, item.id));
++  }
++  revalidatePath(`/workouts/${workoutId}/session`);
++  return { removedId: setId, savedAt: Date.now() };
++}
++
++/**
++ * Autozapis postępu treningu (wywoływany m.in. po oznaczeniu serii
++ * jako wykonanej). Nie zmienia statusu treningu ani planu.
++ */
++export async function autosaveSessionAction(
++  workoutId: number,
++  rows: Array<SerializedSet & { id: number }>,
++): Promise<AutosaveResult> {
++  const user = await requireUser();
++  if (!(await ownedWorkout(workoutId, user.id))) return { error: "Brak dostępu do treningu." };
++  if (!Array.isArray(rows)) return { error: "Nie udało się zapisać postępu." };
++  try {
++    await persistSessionSets(workoutId, rows);
++  } catch {
++    return { error: "Nie udało się zapisać postępu." };
++  }
++  return { savedAt: Date.now() };
++}
+diff --git a/src/app/(app)/history/page.tsx b/src/app/(app)/history/page.tsx
+index 6141aba..122421b 100644
+--- a/src/app/(app)/history/page.tsx
++++ b/src/app/(app)/history/page.tsx
+@@ -4,6 +4,7 @@ import { ArrowUpRight, BarChart3, CalendarDays, Dumbbell, Medal } from "lucide-r
+ import { db } from "@/db";
+ import { exercises, exerciseSets, workouts } from "@/db/schema";
+ import { requireUser } from "@/lib/auth";
++import { ExerciseProgressTile } from "@/components/exercise-progress-tile";
+ 
+ export const dynamic = "force-dynamic";
+ 
+@@ -65,6 +66,48 @@ export default async function HistoryPage() {
+   const chartData = sessions.slice(0, 8).reverse();
+   const maxVolume = Math.max(...chartData.map((item) => item.volume), 1);
+   const totalVolume = sessions.reduce((sum, item) => sum + item.volume, 0);
++  const totalSetsMap = new Map<number, number>();
++  const exerciseNames = new Map<number, string>();
++  for (const row of rows) {
++    if (row.exerciseId) {
++      exerciseNames.set(row.exerciseId, row.exerciseName ?? "Brak nazwy");
++      totalSetsMap.set(row.exerciseId, (totalSetsMap.get(row.exerciseId) ?? 0) + (row.setId ? 1 : 0));
++    }
++  }
++  const exercisesData = Array.from(totalSetsMap.entries()).map(([id, totalSets]) => ({
++    id,
++    name: exerciseNames.get(id) ?? "Brak nazwy",
++    totalSets,
++  }));
++
++  const workoutsData = new Map<number, Map<number, { volume: number; maxWeight: number }>>();
++  for (const row of rows) {
++    if (!row.exerciseId || !row.setId) continue;
++    const wMap = workoutsData.get(row.id) ?? new Map<number, { volume: number; maxWeight: number }>();
++    const eData = wMap.get(row.exerciseId) ?? { volume: 0, maxWeight: 0 };
++    if (row.completed === 1) {
++      eData.volume += (row.reps ?? 0) * (row.weight ?? 0);
++      eData.maxWeight = Math.max(eData.maxWeight, row.weight ?? 0);
++    }
++    wMap.set(row.exerciseId, eData);
++    workoutsData.set(row.id, wMap);
++  }
++  const workoutsProgress = Array.from(workoutsData.entries()).map(([workoutId, eMap]) => {
++    const session = grouped.get(workoutId);
++    return {
++      id: workoutId,
++      date: session ? session.date : new Date(),
++      volume: 0,
++      maxWeight: 0,
++      exerciseIds: Array.from(eMap.keys()),
++      exercises: Array.from(eMap.entries()).map(([exerciseId, data]) => ({
++        exerciseId,
++        volume: data.volume,
++        maxWeight: data.maxWeight,
++      })),
++    };
++  });
++
+   const totalMinutes = sessions.reduce((sum, item) => sum + item.duration, 0);
+   return (
+     <div className="space-y-7">
+@@ -122,6 +165,21 @@ export default async function HistoryPage() {
+           </div>
+         )}
+       </section>
++      <section className="panel p-5 sm:p-7">
++        <h2 className="font-extrabold text-white mb-3">Historia ćwiczeń — progres</h2>
++        <ExerciseProgressTile
++          exercises={exercisesData.map((e) => ({ id: e.id, name: e.name, totalSets: e.totalSets }))}
++          workouts={workoutsProgress.map((w) => ({
++            id: w.id,
++            date: new Date(w.date),
++            volume: 0,
++            maxWeight: 0,
++            exerciseIds: w.exerciseIds ?? [],
++            exercises: w.exercises ? w.exercises.map((e) => ({ exerciseId: e.exerciseId, volume: e.volume, maxWeight: e.maxWeight })) : [],
++          }))}
++        />
++      </section>
++
+       <section className="panel overflow-hidden">
+         <div className="border-b border-white/[.06] p-5 sm:px-6">
+           <h2 className="font-extrabold text-white">Dziennik sesji</h2>
+diff --git a/src/app/(app)/micha/page.tsx b/src/app/(app)/micha/page.tsx
+index 3eec716..5e2f95e 100644
+--- a/src/app/(app)/micha/page.tsx
++++ b/src/app/(app)/micha/page.tsx
+@@ -9,20 +9,23 @@ import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAct
+ import { DietGoalsForm } from "@/components/diet-goals-form";
+ import { DietLogForm } from "@/components/diet-log-form";
+ import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
++import { EditDietLogButton } from "@/components/edit-diet-log-button";
+ import { MacroBar } from "@/components/macro-bar";
+ import { CodeScanInput } from "@/components/code-scan-input";
+ import { FoodCatalogSearch } from "@/components/food-catalog-search";
+ import { MichaTabs } from "@/components/micha-tabs";
+ import { TdeeCalculator } from "@/components/tdee-calculator";
+ import { MealEstimate } from "@/components/meal-estimate";
++import { SuggestMealTile } from "@/components/suggest-meal-tile";
+ import { RecipeForm, RecipeItem } from "@/components/recipe-form";
+ 
++
+ export const dynamic = "force-dynamic";
+ 
+ export default async function MichaPage({
+   searchParams,
+ }: {
+-  searchParams: Promise<{ saved?: string }>;
++  searchParams: Promise<{ saved?: string; scan?: string; week?: string }>;
+ }) {
+   const user = await requireUser();
+   const params = await searchParams;
+@@ -32,7 +35,8 @@ export default async function MichaPage({
+       .select()
+       .from(dietLogs)
+       .where(eq(dietLogs.userId, user.id))
+-      .orderBy(desc(dietLogs.date), desc(dietLogs.id)),
++      .orderBy(desc(dietLogs.date), desc(dietLogs.id))
++      .limit(200),
+     db
+       .select()
+       .from(foodProducts)
+@@ -43,8 +47,8 @@ export default async function MichaPage({
+       .from(bodyMeasurements)
+       .where(eq(bodyMeasurements.userId, user.id))
+       .orderBy(asc(bodyMeasurements.date)),
+-    db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)),
+-    db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)),
++    db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)).limit(50),
++    db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)).limit(50),
+   ]);
+   const favoriteIds = new Set(favRows.map((f) => f.productId));
+   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
+@@ -60,7 +64,8 @@ export default async function MichaPage({
+     const names = mealNamesByWeekday.get(weekdayOf(date));
+     return names?.[mealNumber - 1] || `Posiłek ${mealNumber}`;
+   };
+-  const weekStart = startOfWeek(new Date());
++  const weekParam = params.week ? new Date(params.week + "T00:00:00") : null;
++  const weekStart = weekParam ? startOfWeek(weekParam) : startOfWeek(new Date());
+   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+ 
+   // ----- Sumy makro -----
+@@ -128,6 +133,7 @@ export default async function MichaPage({
+       )}
+ 
+       <MichaTabs
++        defaultTab={params.scan === "1" ? "wprowadzanie" : "makro"}
+         makro={
+           <>
+             <section className="grid gap-5 xl:grid-cols-2">
+@@ -229,6 +235,22 @@ export default async function MichaPage({
+               </div>
+             </section>
+ 
++            <section className="panel p-5 sm:p-7">
++              <h2 className="font-extrabold text-white mb-1">AI: Zaproponuj posiłki</h2>
++              <p className="mb-5 text-sm text-slate-500">
++                Na podstawie pozostałych makro do końca dnia AI zaproponuje składniki i gramaturę, aby wypełnić zapotrzebowanie.
++              </p>
++              <SuggestMealTile
++                remaining={{
++                  protein: Math.max(0, (todayGoal?.protein ?? 0) - todaySum.protein),
++                  fat: Math.max(0, (todayGoal?.fat ?? 0) - todaySum.fat),
++                  carbs: Math.max(0, (todayGoal?.carbs ?? 0) - todaySum.carbs),
++                  kcal: Math.max(0, (todayGoal?.kcalGoal ?? 0) - todaySum.kcal),
++                }}
++                products={products}
++              />
++            </section>
++
+             <section className="panel p-5 sm:p-7">
+               <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                 <h2 className="font-extrabold text-white">Wpisy z posiłkami</h2>
+@@ -256,38 +278,61 @@ export default async function MichaPage({
+                       </tr>
+                     </thead>
+                     <tbody>
+-                      {logs.slice(0, 40).map((log) => {
+-                        const goal = goalByWeekday.get(weekdayOf(log.date));
+-                        return (
+-                          <tr key={log.id}>
+-                            <td className="font-bold text-white">
+-                              {log.date.toLocaleDateString("pl-PL")}
+-                            </td>
+-                            <td>
+-                              {log.mealNumber ? (
+-                                <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
+-                                  <UtensilsCrossed size={11} /> {mealNameFor(log.date, log.mealNumber)}
+-                                </span>
+-                              ) : (
+-                                <span className="text-slate-600">—</span>
+-                              )}
+-                            </td>
+-                            <td>{formatMacro(log.protein)} g</td>
+-                            <td>{formatMacro(log.fat)} g</td>
+-                            <td>{formatMacro(log.carbs)} g</td>
+-                            <td className="font-bold text-lime-300">
+-                              {log.kcal.toLocaleString("pl-PL")}
+-                            </td>
+-                            <td className="hidden text-slate-400 md:table-cell">
+-                              {goal ? `${goal.kcalGoal.toLocaleString("pl-PL")} kcal` : "—"}
+-                            </td>
+-                            <td className="text-slate-400">{log.note ?? "—"}</td>
+-                            <td className="flex gap-1">
+-                              <DeleteDietLogButton id={log.id} />
+-                            </td>
+-                          </tr>
+-                        );
+-                      })}
++                      {(() => {
++                        // Grupowanie wpisów po dacie (dla sekcji "Wpisy z posiłkami")
++                        const grouped = new Map<string, DietLog[]>();
++                        for (const log of logs.slice(0, 40)) {
++                          const key = log.date.toLocaleDateString("pl-PL");
++                          if (!grouped.has(key)) grouped.set(key, []);
++                          grouped.get(key)!.push(log);
++                        }
++                        const sortedKeys = Array.from(grouped.keys()).sort((a, b) => b.localeCompare(a));
++                        return sortedKeys.map((dateKey) => {
++                          const groupLogs = grouped.get(dateKey)!;
++                          return (
++                            <>
++                              <tr key={`grp-${dateKey}`} className="bg-white/[.02]">
++                                <td colSpan={9} className="px-3 py-2 text-xs font-black uppercase tracking-wider text-lime-400">
++                                  {dateKey}
++                                </td>
++                              </tr>
++                              {groupLogs.map((log) => {
++                                const goal = goalByWeekday.get(weekdayOf(log.date));
++                                return (
++                                  <tr key={log.id}>
++                                    <td className="font-bold text-white">
++                                      {log.date.toLocaleDateString("pl-PL")}
++                                    </td>
++                                    <td>
++                                      {log.mealNumber ? (
++                                        <span className="inline-flex items-center gap-1 rounded-full bg-white/[.05] px-2 py-0.5 text-xs font-bold text-lime-300 ring-1 ring-white/10">
++                                          <UtensilsCrossed size={11} /> {mealNameFor(log.date, log.mealNumber)}
++                                        </span>
++                                      ) : (
++                                        <span className="text-slate-600">—</span>
++                                      )}
++                                    </td>
++                                    <td>{formatMacro(log.protein)} g</td>
++                                    <td>{formatMacro(log.fat)} g</td>
++                                    <td>{formatMacro(log.carbs)} g</td>
++                                    <td className="font-bold text-lime-300">
++                                      {log.kcal.toLocaleString("pl-PL")}
++                                    </td>
++                                    <td className="hidden text-slate-400 md:table-cell">
++                                      {goal ? `${goal.kcalGoal.toLocaleString("pl-PL")} kcal` : "—"}
++                                    </td>
++                                    <td className="text-slate-400">{log.note ?? "—"}</td>
++                                    <td className="flex gap-1">
++                                      <EditDietLogButton log={{ id: log.id, protein: log.protein, fat: log.fat, carbs: log.carbs, kcal: log.kcal, mealNumber: log.mealNumber, note: log.note ?? "", date: log.date }} />
++                                      <DeleteDietLogButton id={log.id} />
++                                    </td>
++                                  </tr>
++                                );
++                              })}
++                            </>
++                          );
++                        });
++                      })()}
+                     </tbody>
+                   </table>
+                 </div>
+@@ -300,9 +345,36 @@ export default async function MichaPage({
+ 
+             {/* Analiza tygodnia */}
+             <section className="panel p-5 sm:p-7">
+-              <h2 className="mb-4 flex items-center gap-2 font-extrabold text-white">
+-                <TrendingUp size={18} className="text-lime-400" /> Analiza tygodnia
+-              </h2>
++              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
++                <h2 className="flex items-center gap-2 font-extrabold text-white">
++                  <TrendingUp size={18} className="text-lime-400" /> Analiza tygodnia
++                </h2>
++                <div className="flex items-center gap-2">
++                  <button
++                    type="button"
++                    onClick={() => {
++                      const w = new Date(weekStart.getTime() - 7 * 86400000);
++                      window.location.href = `/micha?week=${w.toISOString().slice(0, 10)}`;
++                    }}
++                    className="button-secondary text-xs px-2 py-1"
++                  >
++                    ◀ Poprzedni tydzień
++                  </button>
++                  <span className="rounded-full bg-white/[.04] px-3 py-1 text-xs font-bold text-slate-300 ring-1 ring-white/10">
++                    {weekStart.toLocaleDateString("pl-PL")} – {weekEnd.toLocaleDateString("pl-PL")}
++                  </span>
++                  <button
++                    type="button"
++                    onClick={() => {
++                      const w = new Date(weekStart.getTime() + 7 * 86400000);
++                      window.location.href = `/micha?week=${w.toISOString().slice(0, 10)}`;
++                    }}
++                    className="button-secondary text-xs px-2 py-1"
++                  >
++                    Następny tydzień ▶
++                  </button>
++                </div>
++              </div>
+               {(() => {
+                 const weights = measurements.filter((m) => m.weightKg != null).map((m) => ({ date: m.date, w: m.weightKg as number }));
+                 const latest = weights[weights.length - 1]?.w ?? null;
+@@ -398,13 +470,13 @@ export default async function MichaPage({
+                 (produkt wypełni się automatycznie z Open Food Facts) albo podaj makro ręcznie
+                 (na 100 g), ustaw gramaturę i wybierz, do którego posiłku dnia go przypisać.
+               </p>
+-              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} favoriteIds={favoriteIds} />
++              <DietLogForm products={products} meals={todayMeals} mealNames={todayMealNames} favoriteIds={favoriteIds} autoScan={params.scan === "1"} />
+             </section>
+ 
+             <section className="panel p-5 sm:p-7">
+               <h2 className="font-extrabold text-white mb-1">Posiłki złożone (przepisy)</h2>
+               <p className="mb-5 text-sm text-slate-500">
+-                Zbuduj posiłek z produktów katalogu (np. „Obiad = kurczak 150 g + ryż 80 g"), a makro
++                Zbuduj posiłek z produktów katalogu (np. „Obiad = kurczak 150 g + ryż 80 g”), a makro
+                 zsumuje się automatycznie. Dodajesz go do dziennika jednym kliknięciem.
+               </p>
+               <div className="grid gap-5 xl:grid-cols-2">
+@@ -441,7 +513,7 @@ export default async function MichaPage({
+                 z makroskładnikami (na 100 g) — polskie produkty z otwartej bazy Open Food Facts (mleko,
+                 jogurty, pieczywo, mięsa, owoce, warzywa, przekąski i wiele innych) + produkty dodawane
+                 przez użytkowników (<b>wspólny katalog</b>). Pozycje dodane ręcznie są oznaczone etykietą
+-                <b className="text-violet-300"> „wpis gymrata"</b>. Wyszukaj po nazwie, zeskanuj kod albo
++                <b className="text-violet-300"> „wpis gymrata”</b>. Wyszukaj po nazwie, zeskanuj kod albo
+                 dodaj własny produkt.
+               </p>
+               <div className="grid gap-5 xl:grid-cols-2">
+@@ -501,7 +573,7 @@ export default async function MichaPage({
+             <h2 className="font-extrabold text-white mb-1">Planowanie kalorii (TDEE)</h2>
+             <p className="mb-5 text-sm text-slate-500">
+               Oblicz zapotrzebowanie, ustaw proporcje białko / węglowodany / tłuszcze i dodatek na
+-              dzień treningowy. Po zapisie każdy dzień oznaczony jako „treningowy" dostanie
++              dzień treningowy. Po zapisie każdy dzień oznaczony jako „treningowy” dostanie
+               podwyższoną kalorykę, pozostałe — bazową (z proporcjami przeliczonymi na gramy).
+             </p>
+             <TdeeCalculator />
+diff --git a/src/app/(app)/sen/page.tsx b/src/app/(app)/sen/page.tsx
+index 50331b4..30282e7 100644
+--- a/src/app/(app)/sen/page.tsx
++++ b/src/app/(app)/sen/page.tsx
+@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowUpRight, Award, BedDouble, Clock, Moon, TrendingUp } fr
+ import { db } from "@/db";
+ import { sleepLogs } from "@/db/schema";
+ import { requireUser } from "@/lib/auth";
++import { SleepNightRow } from "@/components/sleep-night-row";
+ 
+ export const dynamic = "force-dynamic";
+ 
+@@ -15,7 +16,7 @@ function fmtDur(min: number): string {
+ 
+ function fmtHM(d: Date | null): string {
+   if (!d) return "—";
+-  return d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
++  return d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Warsaw" });
+ }
+ 
+ function quality(eff: number): { label: string; color: string } {
+@@ -24,6 +25,12 @@ function quality(eff: number): { label: string; color: string } {
+   return { label: "Do poprawy", color: "text-amber-300" };
+ }
+ 
++function durationQuality(min: number): { label: string; color: string } {
++  if (min < 360) return { label: "Niska (poniżej 6h)", color: "text-rose-300" };
++  if (min < 420) return { label: "Średnia (6–7h)", color: "text-amber-300" };
++  return { label: "Wysoka (powyżej 7h)", color: "text-emerald-300" };
++}
++
+ export default async function SleepPage() {
+   const user = await requireUser();
+   const logs = await db
+@@ -101,6 +108,12 @@ export default async function SleepPage() {
+                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Efektywność</p>
+                 <p className="mt-1 text-sm font-extrabold text-white">{Math.round(eff(today) * 100)}%</p>
+               </div>
++              <div className="rounded-2xl border border-white/[.07] bg-black/15 px-4 py-3 text-center">
++                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Jakość długości</p>
++                <p className={`mt-1 text-sm font-extrabold ${durationQuality(today.totalMinutes).color}`}>
++                  {durationQuality(today.totalMinutes).label}
++                </p>
++              </div>
+               <div className="rounded-2xl border border-white/[.07] bg-black/15 px-4 py-3 text-center">
+                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Czuwanie</p>
+                 <p className="mt-1 text-sm font-extrabold text-white">{fmtDur(today.awakeMinutes)}</p>
+@@ -207,36 +220,15 @@ export default async function SleepPage() {
+       {nights.length > 0 && (
+         <section className="panel p-5 sm:p-7">
+           <h2 className="font-extrabold text-white">Historia nocy</h2>
+-          <div className="mt-4 divide-y divide-white/[.05]">
++          <p className="mt-1 text-[11px] text-slate-500">Kliknij noc, aby rozwinąć wszystkie parametry.</p>
++          <div className="mt-4">
+             {nights
+               .slice()
+               .reverse()
+               .slice(0, 30)
+-              .map((l) => {
+-                const e = eff(l);
+-                return (
+-                  <div key={l.id} className="flex items-center gap-4 py-3">
+-                    <div className="w-28 shrink-0">
+-                      <p className="text-sm font-bold text-white">
+-                        {l.date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" })}
+-                      </p>
+-                      <p className="text-[10px] uppercase tracking-wider text-slate-600">
+-                        {l.date.toLocaleDateString("pl-PL", { weekday: "short" })}
+-                      </p>
+-                    </div>
+-                    <div className="flex h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[.05]">
+-                      <div className="bg-indigo-400" style={{ width: `${(l.deepMinutes / Math.max(l.totalMinutes, 1)) * 100}%` }} />
+-                      <div className="bg-violet-400" style={{ width: `${(l.remMinutes / Math.max(l.totalMinutes, 1)) * 100}%` }} />
+-                      <div className="bg-sky-400" style={{ width: `${(l.lightMinutes / Math.max(l.totalMinutes, 1)) * 100}%` }} />
+-                      <div className="bg-slate-500" style={{ width: `${(l.awakeMinutes / Math.max(l.totalMinutes, 1)) * 100}%` }} />
+-                    </div>
+-                    <div className="shrink-0 text-right">
+-                      <p className="text-sm font-extrabold text-white">{fmtDur(l.totalMinutes)}</p>
+-                      <p className={`text-[10px] font-bold ${quality(e).color}`}>{quality(e).label}</p>
+-                    </div>
+-                  </div>
+-                );
+-              })}
++              .map((l) => (
++                <SleepNightRow key={l.id} log={l} />
++              ))}
+           </div>
+           <p className="mt-3 text-right text-[11px] text-slate-600">
+             <ArrowUpRight size={12} className="inline" /> Najlepsza noc:{" "}
+diff --git a/src/app/(app)/workouts/[id]/session/page.tsx b/src/app/(app)/workouts/[id]/session/page.tsx
+index 81d92e3..db15b2d 100644
+--- a/src/app/(app)/workouts/[id]/session/page.tsx
++++ b/src/app/(app)/workouts/[id]/session/page.tsx
+@@ -2,7 +2,12 @@ import Link from "next/link";
+ import { and, asc, eq } from "drizzle-orm";
+ import { ArrowLeft, CalendarDays, Edit3 } from "lucide-react";
+ import { notFound } from "next/navigation";
+-import { saveWorkoutSessionAction } from "@/actions/workouts";
++import {
++  addSessionSetAction,
++  removeSessionSetAction,
++  autosaveSessionAction,
++  saveWorkoutSessionAction,
++} from "@/actions/workouts";
+ import { WorkoutSession } from "@/components/workout-session";
+ import { db } from "@/db";
+ import { exercises, exerciseSets, workouts } from "@/db/schema";
+@@ -38,6 +43,7 @@ export default async function WorkoutSessionPage({
+       rir: exerciseSets.rir,
+       note: exerciseSets.note,
+       completed: exerciseSets.completed,
++      isExtra: exerciseSets.isExtra,
+     })
+     .from(exercises)
+     .innerJoin(exerciseSets, eq(exerciseSets.exerciseId, exercises.id))
+@@ -60,6 +66,7 @@ export default async function WorkoutSessionPage({
+             rir: number | null;
+             note: string | null;
+             completed: boolean;
++            isExtra: boolean;
+           }>,
+         };
+         current.sets.push({
+@@ -70,10 +77,11 @@ export default async function WorkoutSessionPage({
+           rir: row.rir,
+           note: row.note,
+           completed: row.completed === 1,
++          isExtra: row.isExtra === 1,
+         });
+         map.set(row.exerciseId, current);
+         return map;
+-      }, new Map<number, { id: number; name: string; restSeconds: number; grp: string | null; position: number; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: number | null; note: string | null; completed: boolean }> }>())
++      }, new Map<number, { id: number; name: string; restSeconds: number; grp: string | null; position: number; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: number | null; note: string | null; completed: boolean; isExtra: boolean }> }>())
+       .values(),
+   ).sort((a, b) => a.position - b.position);
+   return (
+@@ -108,7 +116,13 @@ export default async function WorkoutSessionPage({
+           „{workout.notes}”
+         </p>
+       )}
+-      <WorkoutSession action={saveWorkoutSessionAction.bind(null, id)} initial={items} />
++      <WorkoutSession
++        action={saveWorkoutSessionAction.bind(null, id)}
++        autosave={autosaveSessionAction.bind(null, id)}
++        addSet={addSessionSetAction.bind(null, id)}
++        removeSet={removeSessionSetAction.bind(null, id)}
++        initial={items}
++      />
+     </div>
+   );
+ }
+diff --git a/src/app/(app)/workouts/page.tsx b/src/app/(app)/workouts/page.tsx
+index 1946fa5..4370de1 100644
+--- a/src/app/(app)/workouts/page.tsx
++++ b/src/app/(app)/workouts/page.tsx
+@@ -2,6 +2,7 @@ import Link from "next/link";
+ import { asc, desc, eq } from "drizzle-orm";
+ import { Plus } from "lucide-react";
+ import { WorkoutList } from "@/components/workout-list";
++
+ import { db } from "@/db";
+ import { exercises, exerciseSets, workouts } from "@/db/schema";
+ import { requireUser } from "@/lib/auth";
+@@ -18,6 +19,7 @@ export default async function WorkoutsPage() {
+       durationMinutes: workouts.durationMinutes,
+       status: workouts.status,
+       exerciseId: exercises.id,
++      exerciseName: exercises.name,
+       setId: exerciseSets.id,
+       reps: exerciseSets.reps,
+       weight: exerciseSets.weight,
+@@ -63,6 +65,7 @@ export default async function WorkoutsPage() {
+     ...item,
+     exerciseCount: exerciseIds.size,
+   }));
++
+   return (
+     <div className="space-y-7">
+       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+diff --git a/src/app/api/suggest/route.ts b/src/app/api/suggest/route.ts
+new file mode 100644
+index 0000000..944ae19
+--- /dev/null
++++ b/src/app/api/suggest/route.ts
+@@ -0,0 +1,213 @@
++import { getSessionUser } from "@/lib/auth";
++
++export const dynamic = "force-dynamic";
++
++const RATE_MS = 5000;
++const lastCall = new Map<number, number>();
++
++const PROMPT = `Jesteś dietetykiem. Użytkownikowi pozostało do końca dnia określone makro (białko, tłuszcze, węglowodany, kcal) i ma dostępne produkty z katalogu. Zaproponuj 1-3 posiłki, które najlepiej wypełnią pozostałe zapotrzebowanie, używając dostępnych produktów (możesz też zaproponować dowolne składniki, jeśli katalog jest ograniczony). Dla każdego posiłku podaj składniki (nazwa, szacunkowa gramatura w gramach) oraz makro NA 100 GRAMÓW (jak w Open Food Facts). Odpowiedz WYŁĄCZNIE poprawnym JSON (bez żadnego dodatkowego tekstu), w formacie:
++[{"nazwa":"Pierś z kurczaka","gramy":150,"bialko_na_100g":30,"tluszcze_na_100g":3,"weglowodany_na_100g":0,"kcal_na_100g":140}]
++Wymagania:
++- Wypisz tylko składniki posiłku (osobno każdy).
++- "gramy" = szacunkowa ilość w posiłku.
++- Makro i kcal podaj NA 100 GRAMÓW.
++- Używaj polskich nazw produktów.`;
++
++type EstimateItem = {
++  name: string;
++  grams: number;
++  protein: number;
++  fat: number;
++  carbs: number;
++  kcal: number;
++};
++
++function clamp(v: unknown, max = 999): number {
++  const n = Number(v);
++  return Number.isFinite(n) ? Math.max(0, Math.min(max, n)) : 0;
++}
++
++function parseItems(text: string): EstimateItem[] {
++  const cleaned = text.replace(/```(?:json)?/gi, "").trim();
++  let arr: unknown;
++  try {
++    arr = JSON.parse(cleaned);
++  } catch {
++    const m = cleaned.match(/\[[\s\S]*\]/);
++    if (!m) return [];
++    try {
++      arr = JSON.parse(m[0]);
++    } catch {
++      return [];
++    }
++  }
++  if (!Array.isArray(arr)) return [];
++  return arr
++    .map((it) => {
++      const o = it as Record<string, unknown>;
++      return {
++        name: String(o.nazwa ?? o.name ?? "Produkt").slice(0, 120),
++        grams: Math.round(clamp(o.gramy ?? o.grams, 2000)),
++        protein: Math.round(clamp(o.bialko_na_100g ?? o.protein, 100) * 10) / 10,
++        fat: Math.round(clamp(o.tluszcze_na_100g ?? o.fat, 100) * 10) / 10,
++        carbs: Math.round(clamp(o.weglowodany_na_100g ?? o.carbs, 100) * 10) / 10,
++        kcal: Math.round(clamp(o.kcal_na_100g ?? o.kcal, 900)),
++      };
++    })
++    .filter((it) => it.name && it.grams > 0);
++}
++
++const PRIORITY = [
++  "gemini-2.5-flash-lite",
++  "gemini-2.5-flash",
++  "gemini-2.0-flash",
++  "gemini-2.0-flash-lite",
++  "gemini-2.5-pro",
++  "gemini-1.5-flash-latest",
++  "gemini-1.5-flash",
++  "gemini-1.5-pro-latest",
++];
++
++async function listCandidateModels(apiKey: string): Promise<string[]> {
++  try {
++    const res = await fetch(
++      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
++      { headers: { "Content-Type": "application/json" } },
++    );
++    if (!res.ok) return [];
++    const data = (await res.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
++    const names = (data.models ?? [])
++      .map((m) => String(m.name ?? "").replace(/^models\//, ""))
++      .filter((n) => n.startsWith("gemini-"))
++      .filter((n) => !/thinking|embedding|imagen|tts|tuning/i.test(n));
++    const ordered: string[] = [];
++    for (const p of PRIORITY) if (names.includes(p)) ordered.push(p);
++    for (const n of names) if (!ordered.includes(n)) ordered.push(n);
++    return ordered;
++  } catch {
++    return [];
++  }
++}
++
++async function callGemini(model: string, apiKey: string, textPrompt: string): Promise<Response> {
++  const body = JSON.stringify({
++    contents: [
++      { parts: [{ text: textPrompt + "\n" + PROMPT }] },
++    ],
++    generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
++  });
++  for (const version of ["v1beta", "v1"]) {
++    const res = await fetch(
++      `https://generativelanguage.googleapis.com/${version}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
++      { method: "POST", headers: { "Content-Type": "application/json" }, body },
++    );
++    if (res.ok || res.status !== 404) return res;
++  }
++  return fetch(
++    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
++    { method: "POST", headers: { "Content-Type": "application/json" }, body },
++  );
++}
++
++export async function POST(request: Request) {
++  const user = await getSessionUser();
++  if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
++
++  const now = Date.now();
++  const last = lastCall.get(user.id) ?? 0;
++  if (now - last < RATE_MS) {
++    return Response.json({ error: "Poczekaj chwilę przed kolejnym zapytaniem." }, { status: 429 });
++  }
++  lastCall.set(user.id, now);
++
++  const apiKey = process.env.GEMINI_API_KEY;
++  if (!apiKey) {
++    return Response.json(
++      { error: "AI nie jest skonfigurowane — dodaj GEMINI_API_KEY." },
++      { status: 503 },
++    );
++  }
++
++  let remainingText = "";
++  let productsText = "";
++  try {
++    const body = await request.json();
++    remainingText = String(body.remaining ?? "Brak danych o pozostałych makro.");
++    productsText = String(body.products ?? "Brak katalogu produktów.");
++  } catch {
++    return Response.json({ error: "Nieprawidłowe dane wejściowe." }, { status: 400 });
++  }
++
++  const textPrompt = `Pozostałe makro użytkownika: ${remainingText}\nDostępne produkty: ${productsText}\n`;
++
++  let candidates: string[] = [];
++  if (process.env.GEMINI_MODEL) {
++    candidates = [process.env.GEMINI_MODEL.trim()];
++  } else {
++    candidates = await listCandidateModels(apiKey);
++  }
++  if (!candidates.length) candidates = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-1.5-flash"];
++
++  let lastDetail = "";
++  for (const model of candidates) {
++    let res: Response;
++    try {
++      res = await callGemini(model, apiKey, textPrompt);
++    } catch {
++      lastDetail = "Brak połączenia z AI — spróbuj ponownie.";
++      continue;
++    }
++
++    if (res.ok) {
++      const data = (await res.json()) as {
++        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
++      };
++      const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
++      const items = parseItems(text);
++      if (!items.length) {
++        return Response.json({ error: "Nie udało się wygenerować propozycji." }, { status: 422 });
++      }
++      return Response.json({ items, model });
++    }
++
++    const detail = await res.text().catch(() => "");
++    lastDetail = `Model ${model}: ${detail.slice(0, 140)}`;
++
++    const notFound = res.status === 404 || /no longer available|not found|not supported/i.test(detail);
++    const overloaded = res.status === 429 || res.status === 503 || /high demand|quota|resource exhausted|overloaded|rate limit|temporary/i.test(detail);
++
++    if (notFound) continue;
++
++    if (overloaded) {
++      await new Promise((r) => setTimeout(r, 1200));
++      const retryRes = await callGemini(model, apiKey, textPrompt).catch(() => null);
++      if (retryRes && retryRes.ok) {
++        const data = (await retryRes.json()) as {
++          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
++        };
++        const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
++        const items = parseItems(text);
++        if (!items.length) {
++          return Response.json({ error: "Nie udało się wygenerować propozycji." }, { status: 422 });
++        }
++        return Response.json({ items, model });
++      }
++      if (retryRes) {
++        const d2 = await retryRes.text().catch(() => "");
++        lastDetail = `Model ${model}: ${d2.slice(0, 140)}`;
++      }
++      continue;
++    }
++    break;
++  }
++
++  const overloadAll = /high demand|quota|resource exhausted|overloaded|rate limit|temporary/i.test(lastDetail);
++  return Response.json(
++    {
++      error: overloadAll
++        ? "AI jest chwilowo przeciążone. Poczekaj kilkanaście sekund i spróbuj ponownie."
++        : "AI nie odpowiedziało poprawnie. " + lastDetail,
++    },
++    { status: overloadAll ? 503 : 502 },
++  );
++}
+diff --git a/src/components/barcode-scanner.tsx b/src/components/barcode-scanner.tsx
+index 6eaeac4..c474897 100644
+--- a/src/components/barcode-scanner.tsx
++++ b/src/components/barcode-scanner.tsx
+@@ -101,10 +101,12 @@ export function BarcodeScanner({
+   products,
+   meals,
+   mealNames,
++  autoScan,
+ }: {
+   products: FoodProduct[];
+   meals: number;
+   mealNames: string[];
++  autoScan?: boolean;
+ }) {
+   const videoRef = useRef<HTMLVideoElement>(null);
+   const streamRef = useRef<MediaStream | null>(null);
+@@ -122,6 +124,13 @@ export function BarcodeScanner({
+   const [meal, setMeal] = useState("1");
+   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+ 
++  // eslint-disable-next-line react-hooks/exhaustive-deps
++  useEffect(() => {
++    if (autoScan && !scanning) {
++      void startCamera("barcode");
++    }
++  }, [autoScan]);
++
+   useEffect(() => {
+     return () => {
+       if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+@@ -349,7 +358,7 @@ export function BarcodeScanner({
+               ? void stopCamera()
+               : void startCamera("barcode")
+           }
+-          disabled={loading}
++          disabled={loading || scanning}
+           className={`${scanning && scanMode === "barcode" ? "button-secondary" : "button-primary"} px-4 py-2.5 text-sm`}
+         >
+           {scanning && scanMode === "barcode" ? (
+@@ -365,7 +374,7 @@ export function BarcodeScanner({
+         <button
+           type="button"
+           onClick={() => fileRef.current?.click()}
+-          disabled={loading}
++          disabled={loading || scanning}
+           className="button-secondary px-4 py-2.5 text-sm"
+         >
+           <ImagePlus size={16} /> Wgraj zdjęcie kodu
+@@ -392,7 +401,7 @@ export function BarcodeScanner({
+         <button
+           type="button"
+           onClick={() => lookup(manualCode)}
+-          disabled={loading}
++          disabled={loading || scanning}
+           className="button-secondary px-4 py-2.5 text-sm"
+         >
+           <Search size={16} /> Szukaj
+@@ -408,7 +417,7 @@ export function BarcodeScanner({
+               ? void stopCamera()
+               : void startCamera("qr")
+           }
+-          disabled={loading}
++          disabled={loading || scanning}
+           className={`${scanning && scanMode === "qr" ? "button-secondary" : "button-primary"} px-4 py-2.5 text-sm`}
+         >
+           {scanning && scanMode === "qr" ? (
+@@ -428,21 +437,29 @@ export function BarcodeScanner({
+ 
+       {/* Wideo zawsze w DOM — ref musi istnieć, zanim getUserMedia zwróci strumień. */}
+       <div
+-        className={`relative overflow-hidden rounded-2xl border border-lime-400/25 bg-black/40 ${
+-          scanning ? "block" : "hidden"
++        className={`${
++          scanning
++            ? "fixed inset-0 z-[60] flex items-center justify-center bg-black/95"
++            : "hidden"
+         }`}
+       >
++        <div
++          className={`${
++            scanning ? "relative overflow-hidden rounded-2xl border border-lime-400/25 bg-black/60" : ""
++          }`}
++        >
+         <video
+           ref={videoRef}
+           playsInline
+           muted
+           autoPlay
+-          className="mx-auto aspect-video max-h-72 w-full object-contain"
++          className={`mx-auto aspect-video w-auto max-h-[85vh] max-w-[95vw] object-contain ${scanning ? "" : ""}`}
+         />
+-        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-16 -translate-y-1/2 border-y-2 border-lime-400/80" />
+-        <p className="absolute inset-x-0 bottom-2 text-center text-xs font-bold text-lime-300">
++        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-20 -translate-y-1/2 border-y-2 border-lime-400/80" />
++        <p className="absolute inset-x-0 bottom-4 text-center text-sm font-extrabold text-lime-300 drop-shadow-lg">
+           {scanMode === "qr" ? "Skieruj aparat na kod QR" : "Skieruj aparat na kod kreskowy"}
+         </p>
++        </div>
+       </div>
+ 
+       {cameraError && (
+diff --git a/src/components/diet-log-form.tsx b/src/components/diet-log-form.tsx
+index ebaa359..95d961e 100644
+--- a/src/components/diet-log-form.tsx
++++ b/src/components/diet-log-form.tsx
+@@ -1,8 +1,9 @@
+ "use client";
+ 
+ import { useEffect, useMemo, useState } from "react";
++import { useFormStatus } from "react-dom";
+ import { useRouter } from "next/navigation";
+-import { Beef, Croissant, Droplets, Plus, ScanLine, Search, Star, X } from "lucide-react";
++import { Beef, Croissant, Droplets, LoaderCircle, Plus, ScanLine, Search, Star, X } from "lucide-react";
+ import { logDietEntryAction, saveFoundProductAction } from "@/actions/diet";
+ import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
+ import { suggestMealByHour } from "@/lib/i18n";
+@@ -18,11 +19,13 @@ export function DietLogForm({
+   meals,
+   mealNames,
+   favoriteIds,
++  autoScan,
+ }: {
+   products: FoodProduct[];
+   meals: number;
+   mealNames: string[];
+   favoriteIds?: Set<number>;
++  autoScan?: boolean;
+ }) {
+   const [proteinPer100, setProteinPer100] = useState("");
+   const [fatPer100, setFatPer100] = useState("");
+@@ -36,6 +39,7 @@ export function DietLogForm({
+   const [scanStatus, setScanStatus] = useState<string | null>(null);
+   const [manualCode, setManualCode] = useState("");
+ 
++
+   useEffect(() => {
+     const onSynced = () => setOfflineNote("Zsynchronizowano wpisy offline. ✅");
+     window.addEventListener("gymrat:synced", onSynced);
+@@ -62,7 +66,13 @@ export function DietLogForm({
+   );
+   const matches = useMemo(() => {
+     if (query.trim().length < 2) return [];
+-    return products.filter((p) => matchesWords(p.name, query)).slice(0, 8);
++    const exactFirst = (list: FoodProduct[]) =>
++      [...list].sort((a, b) => {
++        const aExact = a.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
++        const bExact = b.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
++        return bExact - aExact;
++      });
++    return exactFirst(products.filter((p) => matchesWords(p.name, query)));
+   }, [query, products]);
+ 
+   function fill(p: FoodProduct, gramsValue = "100") {
+@@ -170,7 +180,7 @@ export function DietLogForm({
+             )}
+           </div>
+           {matches.length > 0 && (
+-            <div className="mt-2 space-y-1">
++            <div className="mt-2 max-h-96 overflow-y-auto space-y-1 pr-1">
+               {matches.map((p) => {
+                 const labels = productLabels(p.protein, p.fat, p.carbs);
+                 return (
+@@ -209,7 +219,7 @@ export function DietLogForm({
+           <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+             <ScanLine size={12} className="text-lime-400" /> Skanuj kod lub wpisz ręcznie
+           </p>
+-          <ScanCodeBox onCode={(code) => void handleScannedCode(code)} onError={() => {}} />
++          <ScanCodeBox onCode={(code) => void handleScannedCode(code)} onError={() => {}} autoScan={autoScan} />
+ 
+           {/* Ręczne wpisanie kodu kreskowego */}
+           <div className="mt-2 flex items-center gap-2">
+@@ -352,9 +362,7 @@ export function DietLogForm({
+           </p>
+           {offlineNote && <p className="mt-1 text-xs text-sky-300">{offlineNote}</p>}
+         </div>
+-        <button type="submit" className="button-primary shrink-0">
+-          <Plus size={17} /> Dodaj
+-        </button>
++        <SubmitButton />
+       </div>
+ 
+       <input type="hidden" name="protein" value={computed.protein} />
+@@ -364,6 +372,23 @@ export function DietLogForm({
+   );
+ }
+ 
++function SubmitButton() {
++  const { pending } = useFormStatus();
++  return (
++    <button type="submit" className="button-primary shrink-0" disabled={pending} aria-disabled={pending}>
++      {pending ? (
++        <>
++          <LoaderCircle size={17} className="animate-spin" /> Zapisuję…
++        </>
++      ) : (
++        <>
++          <Plus size={17} /> Dodaj
++        </>
++      )}
++    </button>
++  );
++}
++
+ function ScaleIcon() {
+   return (
+     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+diff --git a/src/components/edit-diet-log-button.tsx b/src/components/edit-diet-log-button.tsx
+new file mode 100644
+index 0000000..297472c
+--- /dev/null
++++ b/src/components/edit-diet-log-button.tsx
+@@ -0,0 +1,118 @@
++"use client";
++
++import { useState, useMemo } from "react";
++import { useFormStatus } from "react-dom";
++import { useRouter } from "next/navigation";
++import { Check, X, Scale } from "lucide-react";
++import { updateDietLogAction } from "@/actions/diet";
++import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
++
++export function EditDietLogButton({ log }: { log: { id: number; protein: number; fat: number; carbs: number; kcal: number; mealNumber: number | null; note: string | null; date: Date } }) {
++  const [open, setOpen] = useState(false);
++  const router = useRouter();
++  const [grams, setGrams] = useState("100");
++  const [note, setNote] = useState(log.note ?? "");
++  const [meal, setMeal] = useState(String(log.mealNumber ?? 1));
++
++  // Używamy aktualnych makro jako bazy (zakładamy, że wpis odnosi się do 100g —
++  // użytkownik edytuje gramaturę, a makro przeliczają się proporcjonalnie).
++  const baseProtein = log.protein || 0;
++  const baseFat = log.fat || 0;
++  const baseCarbs = log.carbs || 0;
++
++  const g = Math.max(0, Number(grams) || 0);
++  const computed = useMemo(
++    () => ({
++      protein: round1(baseProtein * (g / 100)),
++      fat: round1(baseFat * (g / 100)),
++      carbs: round1(baseCarbs * (g / 100)),
++      kcal: kcalFromMacros(round1(baseProtein * (g / 100)), round1(baseFat * (g / 100)), round1(baseCarbs * (g / 100))),
++    }),
++    [g, baseProtein, baseFat, baseCarbs],
++  );
++
++  async function submit(formData: FormData) {
++    await updateDietLogAction(formData);
++    setOpen(false);
++  }
++
++  if (!open) {
++    return (
++      <button
++        type="button"
++        onClick={() => setOpen(true)}
++        className="button-secondary text-xs px-2 py-1 text-amber-300 hover:text-amber-200"
++      >
++        Edytuj
++      </button>
++    );
++  }
++
++  const { pending } = useFormStatus();
++
++  return (
++    <form action={submit} className="rounded-xl border border-amber-400/15 bg-amber-400/[.04] p-3 space-y-2">
++      <input type="hidden" name="id" value={log.id} />
++      <input type="hidden" name="grams" value={grams} />
++      <input type="hidden" name="proteinPer100" value={baseProtein} />
++      <input type="hidden" name="fatPer100" value={baseFat} />
++      <input type="hidden" name="carbsPer100" value={baseCarbs} />
++      <input type="hidden" name="protein" value={computed.protein} />
++      <input type="hidden" name="fat" value={computed.fat} />
++      <input type="hidden" name="carbs" value={computed.carbs} />
++
++      <div className="flex items-center gap-2">
++        <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">Edytuj wpis</span>
++        <button type="button" onClick={() => setOpen(false)} className="ml-auto text-slate-500 hover:text-white" aria-label="Anuluj">
++          <X size={14} />
++        </button>
++      </div>
++
++      <div className="grid gap-2 sm:grid-cols-3">
++        <label className="text-[10px] font-bold text-slate-400">Gramatura (g)
++          <input
++            type="number"
++            min="0"
++            step="1"
++            value={grams}
++            onChange={(e) => setGrams(e.target.value)}
++            className="w-full rounded-md bg-black/20 border border-white/10 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-400"
++            required
++          />
++        </label>
++        <label className="text-[10px] font-bold text-slate-400">Posiłek
++          <select name="meal" value={meal} onChange={(e) => setMeal(e.target.value)} className="w-full rounded-md bg-black/20 border border-white/10 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-400">
++            <option value="1">1. Śniadanie</option>
++            <option value="2">2. Obiad</option>
++            <option value="3">3. Kolacja</option>
++          </select>
++        </label>
++        <label className="text-[10px] font-bold text-slate-400">Notatka
++          <input
++            name="note"
++            type="text"
++            maxLength={200}
++            value={note}
++            onChange={(e) => setNote(e.target.value)}
++            className="w-full rounded-md bg-black/20 border border-white/10 px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-400"
++          />
++        </label>
++      </div>
++
++      <div className="flex items-center justify-between gap-2 rounded-lg bg-black/20 px-3 py-2">
++        <div className="text-xs">
++          <span className="text-slate-500">B: {formatMacro(computed.protein)} g</span>
++          <span className="mx-2 text-slate-600">|</span>
++          <span className="text-slate-500">T: {formatMacro(computed.fat)} g</span>
++          <span className="mx-2 text-slate-600">|</span>
++          <span className="text-slate-500">W: {formatMacro(computed.carbs)} g</span>
++          <span className="mx-2 text-slate-600">|</span>
++          <span className="font-bold text-amber-300">{computed.kcal.toLocaleString("pl-PL")} kcal</span>
++        </div>
++        <button type="submit" disabled={pending} className="button-primary text-xs px-3 py-1">
++          {pending ? "Zapisuję…" : "Zapisz"}
++        </button>
++      </div>
++    </form>
++  );
++}
+diff --git a/src/components/edit-food-product-button.tsx b/src/components/edit-food-product-button.tsx
+new file mode 100644
+index 0000000..fe6f7d8
+--- /dev/null
++++ b/src/components/edit-food-product-button.tsx
+@@ -0,0 +1,70 @@
++"use client";
++
++import { useState, useTransition } from "react";
++import { Pencil, X } from "lucide-react";
++import { updateFoodProductAction } from "@/actions/diet";
++import type { FoodProduct } from "@/db/schema";
++
++export function EditFoodProductButton({ product }: { product: FoodProduct }) {
++  const [open, setOpen] = useState(false);
++  const [pending, startTransition] = useTransition();
++
++  if (!open) {
++    return (
++      <button
++        type="button"
++        onClick={() => setOpen(true)}
++        className="button-secondary px-2 py-1 text-xs text-sky-300 hover:text-sky-200"
++        title="Edytuj produkt"
++      >
++        <Pencil size={14} /> Edytuj
++      </button>
++    );
++  }
++
++  return (
++    <form
++      action={(formData) => {
++        startTransition(async () => {
++          await updateFoodProductAction(formData);
++        });
++      }}
++      className="rounded-xl border border-sky-400/20 bg-sky-400/[.06] p-3"
++    >
++      <input type="hidden" name="id" value={product.id} />
++      <div className="mb-2 flex items-center justify-between gap-2">
++        <p className="text-[10px] font-black uppercase tracking-wider text-sky-300">Edytuj produkt</p>
++        <button type="button" onClick={() => setOpen(false)} className="text-slate-500 hover:text-white" aria-label="Zamknij edycję">
++          <X size={14} />
++        </button>
++      </div>
++      <div className="grid gap-2 sm:grid-cols-3">
++        <label className="block text-[11px] font-bold text-slate-400">
++          Nazwa
++          <input className="input !min-h-9 !px-2 !py-1 text-sm" name="name" type="text" defaultValue={product.name} required minLength={2} maxLength={255} />
++        </label>
++        <label className="block text-[11px] font-bold text-slate-400">
++          Kod kreskowy
++          <input className="input !min-h-9 !px-2 !py-1 text-sm" name="barcode" type="text" defaultValue={product.barcode ?? ""} maxLength={64} />
++        </label>
++        <label className="block text-[11px] font-bold text-slate-400">
++          Białko (g/100g)
++          <input className="input !min-h-9 !px-2 !py-1 text-sm" name="protein" type="number" min="0" step="0.1" defaultValue={product.protein} required />
++        </label>
++        <label className="block text-[11px] font-bold text-slate-400">
++          Tłuszcze (g/100g)
++          <input className="input !min-h-9 !px-2 !py-1 text-sm" name="fat" type="number" min="0" step="0.1" defaultValue={product.fat} required />
++        </label>
++        <label className="block text-[11px] font-bold text-slate-400">
++          Węglowodany (g/100g)
++          <input className="input !min-h-9 !px-2 !py-1 text-sm" name="carbs" type="number" min="0" step="0.1" defaultValue={product.carbs} required />
++        </label>
++      </div>
++      <div className="mt-2 flex justify-end gap-2">
++        <button type="submit" disabled={pending} className="button-primary px-3 py-1.5 text-xs">
++          {pending ? "Zapisywanie…" : "Zapisz"}
++        </button>
++      </div>
++    </form>
++  );
++}
+diff --git a/src/components/exercise-progress-tile.tsx b/src/components/exercise-progress-tile.tsx
+new file mode 100644
+index 0000000..42f1990
+--- /dev/null
++++ b/src/components/exercise-progress-tile.tsx
+@@ -0,0 +1,164 @@
++"use client";
++
++import { useState, useEffect } from "react";
++import { TrendingUp, Trophy, ArrowUpRight } from "lucide-react";
++
++type ExerciseProgressProps = {
++  exercises: Array<{ id: number; name: string; totalSets: number }>;
++  workouts: Array<{ id: number; date: Date; volume: number; maxWeight: number; exerciseIds: number[]; exercises: Array<{ exerciseId: number; volume: number; maxWeight: number }> }>
++};
++
++export function ExerciseProgressTile({ exercises, workouts }: ExerciseProgressProps) {
++  const [selected, setSelected] = useState<number | null>(exercises[0]?.id ?? null);
++  const selectedName = exercises.find((e) => e.id === selected)?.name ?? "—";
++  const [inputValue, setInputValue] = useState(selectedName);
++
++  useEffect(() => {
++    setInputValue(selectedName);
++  }, [selectedName]);
++
++  const selectedWorkoutIds = selected !== null ? workouts.filter((w) => w.exerciseIds.includes(selected)).map((w) => w.id) : [];
++  const selectedWorkoutsData = workouts.filter((w) => selectedWorkoutIds.includes(w.id));
++
++  const getPointData = (w: typeof workouts[0]) => {
++    const exData = selected !== null ? w.exercises.find((e) => e.exerciseId === selected) : w.exercises[0];
++    return {
++      id: w.id,
++      date: w.date,
++      volume: exData?.volume ?? 0,
++      maxWeight: exData?.maxWeight ?? 0,
++    };
++  };
++
++  const points = selected !== null ? selectedWorkoutsData.map(getPointData) : [];
++  const maxVolume = Math.max(...points.map((p) => p.volume), 1);
++  const maxWeight = Math.max(...points.map((p) => p.maxWeight), 0);
++
++  return (
++    <div className="space-y-5">
++      <div className="flex flex-wrap items-center justify-between gap-2">
++        <h2 className="font-extrabold text-white">Historia ćwiczeń — objętość i ciężar</h2>
++        <span className="rounded-full bg-white/[.04] px-3 py-1 text-xs font-bold text-slate-400 ring-1 ring-white/10">
++          {exercises.length} ćwiczeń z historią
++        </span>
++      </div>
++
++      {/* Lista ćwiczeń */}
++      <div className="rounded-2xl border border-white/[.06] bg-black/15 p-4">
++        <p className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">Wybierz ćwiczenie</p>
++        <div className="relative">
++          <input
++            type="text"
++            list="exercise-list"
++            value={inputValue}
++            onChange={(e) => {
++              setInputValue(e.target.value);
++              const match = exercises.find((ex) => ex.name === e.target.value);
++              if (match) setSelected(match.id);
++            }}
++            placeholder="Wyszukaj ćwiczenie..."
++            className="w-full rounded-full bg-white/[.04] px-4 py-2.5 text-sm font-bold text-white ring-1 ring-white/10 focus:outline-none focus:ring-lime-400 placeholder:text-slate-500"
++          />
++          <datalist id="exercise-list">
++            {exercises.map((e) => (
++              <option key={e.id} value={e.name} />
++            ))}
++          </datalist>
++        </div>
++      </div>
++
++      {/* Wykres */}
++      <div className="panel p-5 sm:p-7">
++        <div className="mb-4 flex items-center justify-between gap-2">
++          <div>
++            <h3 className="font-extrabold text-white">{selectedName}</h3>
++            <p className="mt-0.5 text-xs text-slate-500">Objętość (kg) i maksymalny ciężar (kg) z treningu na trening</p>
++          </div>
++          <span className="text-xs text-slate-500">Ostatnie {points.length} treningów</span>
++        </div>
++
++        {points.length < 2 ? (
++          <p className="rounded-xl border border-white/[.06] bg-black/15 p-6 text-center text-sm text-slate-500">
++            Potrzebne co najmniej 2 treningi z tym ćwiczeniem, aby pokazać wykres.
++          </p>
++        ) : (
++          <>
++            <div className="h-56 w-full overflow-hidden rounded-xl border border-white/[.06] bg-black/10">
++              <svg viewBox={`0 0 ${Math.max(points.length * 40, 300)} 140`} preserveAspectRatio="none" className="h-full w-full">
++                {/* Oś X — daty */}
++                {points.map((p, i) => (
++                  <text key={`date-${i}`} x={i * 40 + 20} y={130} fill="#94a3b8" fontSize="8" textAnchor="middle" transform={`rotate(-30 ${i * 40 + 20} 130)`}>
++                    {p.date.toLocaleDateString("pl-PL", { month: "short", day: "numeric" })}
++                  </text>
++                ))}
++                {/* Objętość — słupki */}
++                <text x={10} y={16} fill="#a3e635" fontSize="10" fontWeight="bold">Objętość (kg)</text>
++                {points.map((p, i) => {
++                  const h = Math.max(4, (p.volume / maxVolume) * 90);
++                  return (
++                    <rect key={`vol-${i}`} x={i * 40 + 12} y={140 - h} width={16} height={h} rx={3} fill="#a3e635" opacity={0.85} />
++                  );
++                })}
++                {/* Maksymalny ciężar — punkty */}
++                <text x={10} y={28} fill="#f472b6" fontSize="10" fontWeight="bold">Max ciężar (kg)</text>
++                {points.map((p, i) => {
++                  const y = 140 - Math.max(4, (p.maxWeight / Math.max(...points.map((q) => q.maxWeight), 1)) * 90);
++                  return (
++                    <circle key={`max-${i}`} cx={i * 40 + 20} cy={y} r={3.5} fill="#f472b6" stroke="#fff" strokeWidth={0.5} />
++                  );
++                })}
++                {/* Linia trendu objętości */}
++                <polyline
++                  points={points.map((p, i) => {
++                    const x = i * 40 + 20;
++                    const y = 140 - Math.max(4, (p.volume / maxVolume) * 90);
++                    return `${x},${y}`;
++                  }).join(" ")}
++                  fill="none"
++                  stroke="#a3e635"
++                  strokeWidth="2"
++                  strokeDasharray="4 2"
++                />
++                {/* Linia trendu max ciężaru */}
++                <polyline
++                  points={points.map((p, i) => {
++                    const x = i * 40 + 20;
++                    const y = 140 - Math.max(4, (p.maxWeight / Math.max(...points.map((q) => q.maxWeight), 1)) * 90);
++                    return `${x},${y}`;
++                  }).join(" ")}
++                  fill="none"
++                  stroke="#f472b6"
++                  strokeWidth="2"
++                  strokeDasharray="2 2"
++                />
++                {/* Wartości objętości */}
++                {points.map((p, i) => (
++                  <text key={`val-${i}`} x={i * 40 + 20} y={140 - Math.max(4, (p.volume / maxVolume) * 90) - 6} fill="#fff" fontSize="8" textAnchor="middle" fontWeight="bold">
++                    {p.volume} kg
++                  </text>
++                ))}
++                {/* Wartości max ciężaru */}
++                {points.map((p, i) => (
++                  <text key={`maxval-${i}`} x={i * 40 + 20} y={140 - Math.max(4, (p.maxWeight / Math.max(...points.map((q) => q.maxWeight), 1)) * 90) - 14} fill="#fff" fontSize="8" textAnchor="middle" fontWeight="bold">
++                    {p.maxWeight} kg
++                  </text>
++                ))}
++              </svg>
++            </div>
++            <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-400">
++              <span className="inline-flex items-center gap-1.5">
++                <span className="inline-block h-2 w-2 rounded-full bg-[#a3e635]" /> Objętość treningowa
++              </span>
++              <span className="inline-flex items-center gap-1.5">
++                <span className="inline-block h-2 w-2 rounded-full bg-[#f472b6]" /> Maksymalny ciężar
++              </span>
++              <span className="inline-flex items-center gap-1.5 ml-auto">
++                <Trophy size={13} className="text-amber-300" /> Max: {maxWeight} kg
++              </span>
++            </div>
++          </>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/food-catalog-search.tsx b/src/components/food-catalog-search.tsx
+index b92bec5..2d2d68b 100644
+--- a/src/components/food-catalog-search.tsx
++++ b/src/components/food-catalog-search.tsx
+@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
+ import { FilterX, Search, Star } from "lucide-react";
+ import type { FoodProduct } from "@/db/schema";
+ import { DeleteFoodProductButton } from "@/components/delete-food-product-button";
++import { EditFoodProductButton } from "@/components/edit-food-product-button";
+ import { toggleFavoriteProductAction } from "@/actions/diet";
+ import { DIET_LABELS, productLabels } from "@/lib/labels";
+ import { matchesWords } from "@/lib/search";
+@@ -80,8 +81,14 @@ export function FoodCatalogSearch({
+         (cm == null || p.carbs >= cm) &&
+         (cM == null || p.carbs <= cM),
+     );
+-    // ulubione najpierw
+-    return [...list.filter((p) => favoriteIds.has(p.id)), ...list.filter((p) => !favoriteIds.has(p.id))].slice(0, 80);
++    // Priorytet: dokładne dopasowanie (includes) wyżej niż pochodne (matchesWords)
++    list.sort((a, b) => {
++      const aExact = query.trim().length >= 2 && a.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
++      const bExact = query.trim().length >= 2 && b.name.toLowerCase().includes(query.toLowerCase()) ? 1 : 0;
++      return bExact - aExact;
++    });
++    // ulubione najpierw (po sortowaniu dokładnym)
++    return [...list.filter((p) => favoriteIds.has(p.id)), ...list.filter((p) => !favoriteIds.has(p.id))];
+   }, [query, products, favoriteIds, labelKeys, pMin, pMax, fMin, fMax, cMin, cMax]);
+ 
+   const total = products.length;
+@@ -198,7 +205,7 @@ export function FoodCatalogSearch({
+             return (
+               <div key={p.id} className={`rounded-xl border border-white/[.06] px-3 py-2.5 ${p.userId === userId ? "bg-lime-400/[.04]" : "bg-black/15"}`}>
+                 <div className="flex items-start justify-between gap-2">
+-                  <p className="min-w-0 flex-1 truncate text-sm font-bold text-white">
++                  <p className="min-w-0 flex-1 break-words whitespace-normal text-sm font-bold text-white">
+                     {p.name}
+                     {p.userId === userId && (
+                       <span className="ml-2 rounded-full bg-lime-400/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-lime-300">
+@@ -207,6 +214,7 @@ export function FoodCatalogSearch({
+                     )}
+                   </p>
+                   <div className="flex shrink-0 items-center gap-1">
++                    <EditFoodProductButton product={p} />
+                     <button
+                       type="button"
+                       onClick={() => void toggleFavoriteProductAction(p.id)}
+diff --git a/src/components/meal-estimate.tsx b/src/components/meal-estimate.tsx
+index db59028..e8711a0 100644
+--- a/src/components/meal-estimate.tsx
++++ b/src/components/meal-estimate.tsx
+@@ -209,7 +209,7 @@ export function MealEstimate({ meals, mealNames }: { meals: number; mealNames: s
+           <div className="space-y-2">
+             {items.map((it, idx) => (
+               <div key={idx} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[.06] bg-black/15 px-3 py-2">
+-                <span className="min-w-0 flex-1 truncate text-sm font-bold text-white">{it.name}</span>
++                <span className="min-w-0 flex-1 break-words whitespace-normal text-sm font-bold text-white">{it.name}</span>
+                 <input
+                   type="number"
+                   min="0"
+diff --git a/src/components/micha-tabs.tsx b/src/components/micha-tabs.tsx
+index e1d80b1..3d3f580 100644
+--- a/src/components/micha-tabs.tsx
++++ b/src/components/micha-tabs.tsx
+@@ -9,12 +9,14 @@ export function MichaTabs({
+   makro,
+   wprowadzanie,
+   planowanie,
++  defaultTab,
+ }: {
+   makro: React.ReactNode;
+   wprowadzanie: React.ReactNode;
+   planowanie: React.ReactNode;
++  defaultTab?: Section;
+ }) {
+-  const [active, setActive] = useState<Section>("makro");
++  const [active, setActive] = useState<Section>(defaultTab ?? "makro");
+ 
+   const tile = (section: Section) =>
+     `rounded-2xl border p-4 text-left transition ${
+diff --git a/src/components/scan-code-box.tsx b/src/components/scan-code-box.tsx
+index 8a6c576..cc4b30f 100644
+--- a/src/components/scan-code-box.tsx
++++ b/src/components/scan-code-box.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useEffect, useRef, useState } from "react";
++import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+ import { Barcode, ImagePlus, LoaderCircle, QrCode, ScanLine, X } from "lucide-react";
+ import { cameraHint, extractCodeFromQR, loadZxing, waitForVideoFrames, type ZXingReader } from "@/lib/zxing-client";
+ 
+@@ -10,7 +10,7 @@ import { cameraHint, extractCodeFromQR, loadZxing, waitForVideoFrames, type ZXin
+  * Tryby są rozdzielone przez `setHints` (ograniczenie listy formatów).
+  * Po rozpoznaniu wywołuje `onCode(czystyKod)`.
+  */
+-export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => void; onError?: (msg: string) => void }) {
++export function ScanCodeBox({ onCode, onError, autoScan }: { onCode: (code: string) => void; onError?: (msg: string) => void; autoScan?: boolean }) {
+   const [mode, setMode] = useState<"barcode" | "qr">("barcode");
+   const [scanning, setScanning] = useState(false);
+   const [busy, setBusy] = useState(false);
+@@ -31,7 +31,7 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
+     };
+   }, []);
+ 
+-  function stopScan() {
++  const stopScan = useCallback(function stopScan() {
+     setScanning(false);
+     try {
+       readerRef.current?.reset();
+@@ -48,9 +48,9 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
+       video.srcObject = null;
+       video.removeAttribute("src");
+     }
+-  }
++  }, []);
+ 
+-  function handleDecoded(raw: string) {
++  const handleDecoded = useCallback(function handleDecoded(raw: string) {
+     const text = raw.trim();
+     const code = /^\d{8,14}$/.test(text) ? text : extractCodeFromQR(text);
+     if (code) {
+@@ -61,9 +61,9 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
+       setErr("Nie znaleziono kodu produktu w zeskanowanej treści.");
+       onError?.("Nie znaleziono kodu produktu w zeskanowanej treści.");
+     }
+-  }
++  }, [onCode, onError, setErr, stopScan]);
+ 
+-  async function startScan(nextMode: "barcode" | "qr") {
++  const startScan = useCallback(async (nextMode: "barcode" | "qr") => {
+     if (streamRef.current) await stopScan(); // przełączanie trybu w locie
+     setMode(nextMode);
+     setErr(null);
+@@ -140,7 +140,14 @@ export function ScanCodeBox({ onCode, onError }: { onCode: (code: string) => voi
+       setErr(msg);
+       onError?.(msg);
+     }
+-  }
++  }, [handleDecoded, stopScan, onError]);
++
++  useLayoutEffect(() => {
++    if (autoScan && !scanning) {
++      const timer = setTimeout(() => { void startScan("barcode"); }, 0);
++      return () => clearTimeout(timer);
++    }
++  }, [autoScan, scanning, startScan]);
+ 
+   async function onFile(file: File | null) {
+     if (!file) return;
+diff --git a/src/components/sidebar-nav.tsx b/src/components/sidebar-nav.tsx
+index 56b2500..61d3eb8 100644
+--- a/src/components/sidebar-nav.tsx
++++ b/src/components/sidebar-nav.tsx
+@@ -44,10 +44,13 @@ export function SidebarNav({
+   const [curTheme, setCurTheme] = useState<Theme>(theme);
+   const [curAccent, setCurAccent] = useState<Accent>(accent);
+   useEffect(() => {
+-    const t = document.documentElement.getAttribute("data-theme") as Theme | null;
+-    const a = document.documentElement.getAttribute("data-accent") as Accent | null;
+-    if (t) setCurTheme(t);
+-    if (a) setCurAccent(a);
++    const timer = setTimeout(() => {
++      const t = document.documentElement.getAttribute("data-theme") as Theme | null;
++      const a = document.documentElement.getAttribute("data-accent") as Accent | null;
++      if (t) setCurTheme(t);
++      if (a) setCurAccent(a);
++    }, 0);
++    return () => clearTimeout(timer);
+   }, []);
+   function changeTheme() {
+     const next: Theme = curTheme === "dark" ? "light" : "dark";
+@@ -109,6 +112,13 @@ export function SidebarNav({
+         >
+           <Plus size={17} /> {t(lang, "nav.newWorkout")}
+         </Link>
++        <Link
++          href="/micha?scan=1"
++          onClick={() => setOpen(false)}
++          className="button-secondary w-full justify-center py-2.5 text-sm"
++        >
++          <UtensilsCrossed size={17} /> Dodaj posiłek
++        </Link>
+       </div>
+       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-5 py-7">
+         <p className="mb-3 px-3 text-[10px] font-extrabold uppercase tracking-[.2em] text-slate-600">
+diff --git a/src/components/sleep-card.tsx b/src/components/sleep-card.tsx
+index e4182bb..d92fe8a 100644
+--- a/src/components/sleep-card.tsx
++++ b/src/components/sleep-card.tsx
+@@ -37,6 +37,13 @@ function quality(eff: number): { label: string; color: string } {
+   return { label: "Do poprawy", color: "text-amber-300" };
+ }
+ 
++/** Ocena jakości snu na podstawie długości snu (minuty). */
++function durationQuality(min: number): { label: string; color: string } {
++  if (min < 360) return { label: "Niska (poniżej 6h)", color: "text-rose-300" };
++  if (min < 420) return { label: "Średnia (6–7h)", color: "text-amber-300" };
++  return { label: "Wysoka (powyżej 7h)", color: "text-emerald-300" };
++}
++
+ const STAGES = [
+   { key: "deep", label: "Głęboki", color: "bg-indigo-400", text: "text-indigo-300" },
+   { key: "rem", label: "REM", color: "bg-violet-400", text: "text-violet-300" },
+@@ -186,6 +193,9 @@ export function SleepCard({ logs }: { logs: SleepLog[] }) {
+               <p className="mt-1 text-3xl font-black tracking-tight text-white">
+                 {fmtDur(total)}
+                 <span className="ml-2 text-sm font-black text-violet-300">{q.label}</span>
++                <span className={`ml-2 text-sm font-black ${durationQuality(total).color}`}>
++                  · {durationQuality(total).label}
++                </span>
+               </p>
+               <p className="mt-1 text-[11px] text-slate-500">
+                 {fmtHM(log.startAt)} – {fmtHM(log.endAt)} · efektywność{" "}
+diff --git a/src/components/sleep-night-row.tsx b/src/components/sleep-night-row.tsx
+new file mode 100644
+index 0000000..82d4ce9
+--- /dev/null
++++ b/src/components/sleep-night-row.tsx
+@@ -0,0 +1,134 @@
++"use client";
++
++import { useState } from "react";
++import { ChevronDown, ChevronUp } from "lucide-react";
++import type { SleepLog } from "@/db/schema";
++
++function fmtDur(min: number): string {
++  const h = Math.floor(min / 60);
++  const m = Math.round(min % 60);
++  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m} min`;
++}
++
++function fmtHM(d: Date | null): string {
++  if (!d) return "—";
++  return d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Warsaw" });
++}
++
++function quality(eff: number): { label: string; color: string } {
++  if (eff >= 0.85) return { label: "Wysoka", color: "text-emerald-300" };
++  if (eff >= 0.75) return { label: "Dobra", color: "text-lime-300" };
++  return { label: "Do poprawy", color: "text-amber-300" };
++}
++
++function durationQuality(min: number): { label: string; color: string } {
++  if (min < 360) return { label: "Niska (poniżej 6h)", color: "text-rose-300" };
++  if (min < 420) return { label: "Średnia (6–7h)", color: "text-amber-300" };
++  return { label: "Wysoka (powyżej 7h)", color: "text-emerald-300" };
++}
++
++type SleepNightRowProps = {
++  log: SleepLog;
++};
++
++export function SleepNightRow({ log }: SleepNightRowProps) {
++  const [open, setOpen] = useState(false);
++  const total = log.totalMinutes;
++  const sleepMin = log.lightMinutes + log.deepMinutes + log.remMinutes + log.asleepMinutes;
++  const eff = total > 0 ? sleepMin / total : 0;
++
++  return (
++    <div className="divide-y divide-white/[.05]">
++      <button
++        type="button"
++        onClick={() => setOpen((s) => !s)}
++        className="flex w-full items-center gap-4 py-3 text-left transition hover:bg-white/[.02]"
++        aria-expanded={open}
++      >
++        <div className="w-28 shrink-0">
++          <p className="text-sm font-bold text-white">
++            {log.date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" })}
++          </p>
++          <p className="text-[10px] uppercase tracking-wider text-slate-600">
++            {log.date.toLocaleDateString("pl-PL", { weekday: "short" })}
++          </p>
++        </div>
++        <div className="flex h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[.05]">
++          <div className="bg-indigo-400" style={{ width: `${(log.deepMinutes / Math.max(total, 1)) * 100}%` }} />
++          <div className="bg-violet-400" style={{ width: `${(log.remMinutes / Math.max(total, 1)) * 100}%` }} />
++          <div className="bg-sky-400" style={{ width: `${(log.lightMinutes / Math.max(total, 1)) * 100}%` }} />
++          <div className="bg-slate-500" style={{ width: `${(log.awakeMinutes / Math.max(total, 1)) * 100}%` }} />
++        </div>
++        <div className="shrink-0 text-right">
++          <p className="text-sm font-extrabold text-white">{fmtDur(total)}</p>
++          <div className="flex flex-wrap gap-1 justify-end">
++            <span className={`text-[10px] font-bold ${quality(eff).color}`}>{quality(eff).label}</span>
++            <span className={`text-[10px] font-bold ${durationQuality(total).color}`}>
++              · {durationQuality(total).label}
++            </span>
++          </div>
++        </div>
++        <span className="ml-1 shrink-0 text-slate-600">
++          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
++        </span>
++      </button>
++
++      {open && (
++        <div className="bg-white/[.02] px-4 pb-4 pt-2">
++          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Całkowity czas</p>
++              <p className="text-sm font-extrabold text-white">{fmtDur(total)}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Efektywność</p>
++              <p className="text-sm font-extrabold text-white">{Math.round(eff * 100)}%</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Jakość (efektywność)</p>
++              <p className={`text-sm font-extrabold ${quality(eff).color}`}>{quality(eff).label}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Jakość (długość)</p>
++              <p className={`text-sm font-extrabold ${durationQuality(total).color}`}>
++                {durationQuality(total).label}
++              </p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Początek snu</p>
++              <p className="text-sm font-extrabold text-white">{fmtHM(log.startAt)}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Koniec snu</p>
++              <p className="text-sm font-extrabold text-white">{fmtHM(log.endAt)}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Głęboki</p>
++              <p className="text-sm font-extrabold text-indigo-300">{fmtDur(log.deepMinutes)}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">REM</p>
++              <p className="text-sm font-extrabold text-violet-300">{fmtDur(log.remMinutes)}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Płytki</p>
++              <p className="text-sm font-extrabold text-sky-300">{fmtDur(log.lightMinutes)}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Czuwanie</p>
++              <p className="text-sm font-extrabold text-slate-300">{fmtDur(log.awakeMinutes)}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Asleep (sen ogólny)</p>
++              <p className="text-sm font-extrabold text-violet-300">{fmtDur(log.asleepMinutes)}</p>
++            </div>
++            <div className="rounded-xl border border-white/[.05] bg-black/15 px-3 py-2.5">
++              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Źródło</p>
++              <p className="text-sm font-extrabold text-white">{log.source}</p>
++            </div>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/suggest-meal-tile.tsx b/src/components/suggest-meal-tile.tsx
+new file mode 100644
+index 0000000..32c6d85
+--- /dev/null
++++ b/src/components/suggest-meal-tile.tsx
+@@ -0,0 +1,149 @@
++"use client";
++
++import { useState } from "react";
++import { Sparkles, LoaderCircle, X, CheckCircle2 } from "lucide-react";
++import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
++import { logMealEstimateAction } from "@/actions/diet";
++
++export function SuggestMealTile({
++  remaining,
++  products,
++}: {
++  remaining: { protein: number; fat: number; carbs: number; kcal: number };
++  products: Array<{ id: number; name: string; protein: number; fat: number; carbs: number; kcal: number; barcode?: string | null; userId: number | null }>;
++}) {
++  const [loading, setLoading] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [items, setItems] = useState<Array<{ name: string; grams: number; protein: number; fat: number; carbs: number; kcal: number }>>([]);
++
++  async function handleSuggest() {
++    setLoading(true);
++    setError(null);
++    setItems([]);
++    try {
++      const res = await fetch("/api/suggest", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({
++          remaining: JSON.stringify(remaining),
++          products: JSON.stringify(
++            products.map((p) => ({
++              name: p.name,
++              protein: p.protein,
++              fat: p.fat,
++              carbs: p.carbs,
++              kcal: p.kcal,
++              barcode: p.barcode ?? null,
++            }))
++          ),
++        }),
++      });
++      const body = await res.json().catch(() => ({}));
++      if (!res.ok) {
++        setError(body.error ?? "Nie udało się uzyskać propozycji od AI.");
++        return;
++      }
++      setItems(Array.isArray(body.items) ? body.items : []);
++      if (!body.items?.length) setError("Nie udało się wygenerować propozycji — spróbuj ponownie.");
++    } catch {
++      setError("Błąd połączenia — spróbuj ponownie.");
++    } finally {
++      setLoading(false);
++    }
++  }
++
++  const total = items.reduce(
++    (a, it) => {
++      const g = Math.max(0, Number(it.grams) || 0) / 100;
++      return {
++        protein: a.protein + round1((Number(it.protein) || 0) * g),
++        fat: a.fat + round1((Number(it.fat) || 0) * g),
++        carbs: a.carbs + round1((Number(it.carbs) || 0) * g),
++        kcal: a.kcal + kcalFromMacros(round1((Number(it.protein) || 0) * g), round1((Number(it.fat) || 0) * g), round1((Number(it.carbs) || 0) * g)),
++      };
++    },
++    { protein: 0, fat: 0, carbs: 0, kcal: 0 },
++  );
++
++  return (
++    <div className="space-y-4">
++      <div className="flex flex-wrap items-center gap-3">
++        <button type="button" onClick={handleSuggest} disabled={loading} className="button-primary">
++          <Sparkles size={16} /> AI: Zaproponuj posiłki
++        </button>
++        <span className="text-xs text-slate-500">AI (Gemini) zaproponuje dania na podstawie pozostałych makro.</span>
++      </div>
++
++      {loading && (
++        <p className="flex items-center gap-2 text-sm text-slate-400">
++          <LoaderCircle size={16} className="animate-spin text-lime-400" /> AI generuje propozycje…
++        </p>
++      )}
++      {error && (
++        <p className="rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">{error}</p>
++      )}
++
++      {items.length > 0 && (
++        <div className="rounded-2xl border border-lime-400/20 bg-lime-400/[.05] p-4">
++          <p className="mb-3 text-xs font-black uppercase tracking-wider text-lime-400">
++            Propozycja AI — popraw gramaturę i dodaj
++          </p>
++          <div className="space-y-2">
++            {items.map((it, idx) => (
++              <div key={idx} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[.06] bg-black/15 px-3 py-2">
++                <span className="min-w-0 flex-1 break-words whitespace-normal text-sm font-bold text-white">{it.name}</span>
++                <input
++                  type="number"
++                  min="0"
++                  step="5"
++                  className="input !min-h-9 !w-20 !px-2 !py-1 text-center"
++                  value={it.grams}
++                  onFocus={(e) => e.target.select()}
++                  onChange={(e) =>
++                    setItems((cur) => cur.map((x, i) => (i === idx ? { ...x, grams: Number(e.target.value) || 0 } : x)))
++                  }
++                />
++                <span className="text-[11px] text-slate-500">g</span>
++                <span className="text-[11px] text-slate-400">
++                  B {formatMacro(round1(it.protein * (Number(it.grams) || 0) / 100))} · T{" "}
++                  {formatMacro(round1(it.fat * (Number(it.grams) || 0) / 100))} · W{" "}
++                  {formatMacro(round1(it.carbs * (Number(it.grams) || 0) / 100))}
++                </span>
++                <button type="button" onClick={() => setItems((cur) => cur.filter((_, i) => i !== idx))} className="text-slate-500 hover:text-rose-300" aria-label="Usuń">
++                  <X size={14} />
++                </button>
++              </div>
++            ))}
++          </div>
++          <p className="mt-3 text-sm text-slate-300">
++            Razem: <b className="text-lime-300">{total.kcal.toLocaleString("pl-PL")} kcal</b> · B{" "}
++            {formatMacro(total.protein)} g · T {formatMacro(total.fat)} g · W {formatMacro(total.carbs)} g
++          </p>
++
++          <form action={logMealEstimateAction} className="mt-4 grid gap-3 sm:grid-cols-3">
++            <input type="hidden" name="items" value={JSON.stringify(items)} />
++            <label className="field-label">
++              Data
++              <input className="input" type="date" name="date" defaultValue={new Date().toISOString().slice(0, 10)} />
++            </label>
++            <label className="field-label">
++              Posiłek
++              <select className="input" name="meal" defaultValue="1">
++                <option value="1">1. Posiłek 1</option>
++                <option value="2">2. Posiłek 2</option>
++                <option value="3">3. Posiłek 3</option>
++                <option value="4">4. Posiłek 4</option>
++                <option value="5">5. Posiłek 5</option>
++              </select>
++            </label>
++            <div className="flex items-end">
++              <button type="submit" className="button-primary w-full justify-center">
++                <CheckCircle2 size={17} /> Dodaj do dziennika
++              </button>
++            </div>
++          </form>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/workout-session.tsx b/src/components/workout-session.tsx
+index 1fa6c59..019adc3 100644
+--- a/src/components/workout-session.tsx
++++ b/src/components/workout-session.tsx
+@@ -1,19 +1,27 @@
+ "use client";
+ 
+ import Link from "next/link";
+-import { useActionState, useMemo, useState } from "react";
++import { useActionState, useCallback, useMemo, useRef, useState } from "react";
+ import {
+   Check,
+   CheckCircle2,
+   ChevronLeft,
+   Circle,
++  CloudUpload,
+   Dumbbell,
+   LoaderCircle,
++  Plus,
+   Save,
++  Trash2,
+   Trophy,
+ } from "lucide-react";
+ import { useFormStatus } from "react-dom";
+-import type { SessionFormState } from "@/actions/workouts";
++import type {
++  AddSetResult,
++  AutosaveResult,
++  RemoveSetResult,
++  SessionFormState,
++} from "@/actions/workouts";
+ 
+ type SetRow = {
+   id: number;
+@@ -23,8 +31,15 @@ type SetRow = {
+   rir: number | null;
+   note: string | null;
+   completed: boolean;
++  isExtra: boolean;
+ };
+ type ExerciseRow = { id: number; name: string; restSeconds: number; grp: string | null; sets: SetRow[] };
++type SaveStatus =
++  | { status: "idle" }
++  | { status: "dirty" }
++  | { status: "saving" }
++  | { status: "saved"; at: number }
++  | { status: "error"; message: string };
+ 
+ function SessionButtons() {
+   const { pending } = useFormStatus();
+@@ -40,15 +55,55 @@ function SessionButtons() {
+   );
+ }
+ 
++function AutosaveBadge({ state }: { state: SaveStatus }) {
++  if (state.status === "idle") return null;
++  const base = "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold";
++  if (state.status === "saving")
++    return (
++      <span className={`${base} bg-white/[.06] text-slate-300`}>
++        <LoaderCircle className="animate-spin" size={13} /> Autozapis…
++      </span>
++    );
++  if (state.status === "saved")
++    return (
++      <span className={`${base} bg-lime-400/10 text-lime-300`}>
++        <CloudUpload size={13} /> Zapisano{" "}
++        {new Date(state.at).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}
++      </span>
++    );
++  if (state.status === "dirty")
++    return <span className={`${base} bg-amber-400/10 text-amber-300`}>Niezapisane zmiany</span>;
++  return <span className={`${base} bg-rose-400/10 text-rose-300`}>{state.message}</span>;
++}
++
+ export function WorkoutSession({
+   action,
++  autosave,
++  addSet,
++  removeSet,
+   initial,
+ }: {
+   action: (state: SessionFormState, formData: FormData) => Promise<SessionFormState>;
++  autosave: (
++    rows: Array<{
++      id: number;
++      reps: number;
++      weight: number;
++      rir: number | null;
++      note: string | null;
++      completed: boolean;
++    }>,
++  ) => Promise<AutosaveResult>;
++  addSet: (exerciseId: number) => Promise<AddSetResult>;
++  removeSet: (setId: number) => Promise<RemoveSetResult>;
+   initial: ExerciseRow[];
+ }) {
+   const [state, formAction] = useActionState(action, undefined);
+   const [items, setItems] = useState(initial);
++  const [saveState, setSaveState] = useState<SaveStatus>({ status: "idle" });
++  const [busyExerciseId, setBusyExerciseId] = useState<number | null>(null);
++  const [busySetId, setBusySetId] = useState<number | null>(null);
++  const saveSeq = useRef(0);
+   const allSets = items.flatMap((item) => item.sets);
+   const completed = allSets.filter((set) => set.completed).length;
+   const progress = allSets.length ? Math.round((completed / allSets.length) * 100) : 0;
+@@ -59,7 +114,35 @@ export function WorkoutSession({
+         .reduce((sum, set) => sum + set.reps * set.weight, 0),
+     [allSets],
+   );
+-  const updateSet = (exerciseId: number, setId: number, patch: Partial<SetRow>) =>
++
++  /** Autozapis — wysyła aktualny stan wszystkich serii na serwer. */
++  const runAutosave = useCallback(
++    async (rows: SetRow[]) => {
++      const seq = ++saveSeq.current;
++      setSaveState({ status: "saving" });
++      try {
++        const result = await autosave(
++          rows.map(({ id, reps, weight, rir, note, completed: done }) => ({
++            id,
++            reps,
++            weight,
++            rir,
++            note,
++            completed: done,
++          })),
++        );
++        if (seq !== saveSeq.current) return;
++        if ("error" in result) setSaveState({ status: "error", message: result.error });
++        else setSaveState({ status: "saved", at: result.savedAt });
++      } catch {
++        if (seq === saveSeq.current)
++          setSaveState({ status: "error", message: "Autozapis nieudany — zapisz ręcznie." });
++      }
++    },
++    [autosave],
++  );
++
++  const updateSet = (exerciseId: number, setId: number, patch: Partial<SetRow>) => {
+     setItems((current) =>
+       current.map((exercise) =>
+         exercise.id === exerciseId
+@@ -70,6 +153,79 @@ export function WorkoutSession({
+           : exercise,
+       ),
+     );
++    setSaveState((current) => (current.status === "saving" ? current : { status: "dirty" }));
++  };
++
++  /** Oznaczenie serii jako wykonanej/niewykonanej + natychmiastowy autozapis. */
++  const toggleCompleted = (exerciseId: number, setId: number) => {
++    const next = items.map((exercise) =>
++      exercise.id === exerciseId
++        ? {
++            ...exercise,
++            sets: exercise.sets.map((set) =>
++              set.id === setId ? { ...set, completed: !set.completed } : set,
++            ),
++          }
++        : exercise,
++    );
++    setItems(next);
++    void runAutosave(next.flatMap((exercise) => exercise.sets));
++  };
++
++  /** Dodanie serii w trakcie treningu — plan treningowy pozostaje bez zmian. */
++  const handleAddSet = async (exerciseId: number) => {
++    setBusyExerciseId(exerciseId);
++    try {
++      const result = await addSet(exerciseId);
++      if ("error" in result) {
++        setSaveState({ status: "error", message: result.error });
++        return;
++      }
++      const created = result.set;
++      const savedAt = result.savedAt;
++      setItems((current) =>
++        current.map((exercise) =>
++          exercise.id === exerciseId
++            ? { ...exercise, sets: [...exercise.sets, created] }
++            : exercise,
++        ),
++      );
++      setSaveState({ status: "saved", at: savedAt });
++    } catch {
++      setSaveState({ status: "error", message: "Nie udało się dodać serii." });
++    } finally {
++      setBusyExerciseId(null);
++    }
++  };
++
++  /** Usunięcie dodatkowej serii (serie z planu są nieusuwalne w tym trybie). */
++  const handleRemoveSet = async (exerciseId: number, setId: number) => {
++    setBusySetId(setId);
++    try {
++      const result = await removeSet(setId);
++      if ("error" in result) {
++        setSaveState({ status: "error", message: result.error });
++        return;
++      }
++      setItems((current) =>
++        current.map((exercise) =>
++          exercise.id === exerciseId
++            ? {
++                ...exercise,
++                sets: exercise.sets
++                  .filter((set) => set.id !== setId)
++                  .map((set, index) => ({ ...set, setNumber: index + 1 })),
++              }
++            : exercise,
++        ),
++      );
++      setSaveState({ status: "saved", at: result.savedAt });
++    } catch {
++      setSaveState({ status: "error", message: "Nie udało się usunąć serii." });
++    } finally {
++      setBusySetId(null);
++    }
++  };
+ 
+   return (
+     <form action={formAction} className="space-y-5">
+@@ -86,6 +242,9 @@ export function WorkoutSession({
+             <div className="h-2 overflow-hidden rounded-full bg-white/[.06]">
+               <div className="h-full rounded-full bg-lime-400 transition-all" style={{ width: `${progress}%` }} />
+             </div>
++            <div className="mt-3 min-h-6">
++              <AutosaveBadge state={saveState} />
++            </div>
+           </div>
+           <div className="flex shrink-0 gap-6 text-center">
+             <div>
+@@ -133,13 +292,21 @@ export function WorkoutSession({
+                   <th>RIR</th>
+                   <th>Notatka</th>
+                   <th>Wykonana</th>
++                  <th aria-label="Akcje" />
+                 </tr>
+               </thead>
+               <tbody>
+                 {exercise.sets.map((set) => (
+                   <tr key={set.id} className={set.completed ? "set-completed" : ""}>
+                     <td>
+-                      <span className="set-number">{set.setNumber}</span>
++                      <span className="inline-flex items-center gap-2">
++                        <span className="set-number">{set.setNumber}</span>
++                        {set.isExtra && (
++                          <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-300 ring-1 ring-amber-400/30">
++                            Extra
++                          </span>
++                        )}
++                      </span>
+                     </td>
+                     <td>
+                       <input
+@@ -192,18 +359,56 @@ export function WorkoutSession({
+                     <td>
+                       <button
+                         type="button"
+-                        onClick={() => updateSet(exercise.id, set.id, { completed: !set.completed })}
++                        onClick={() => toggleCompleted(exercise.id, set.id)}
++                        disabled={saveState.status === "saving"}
+                         className={`complete-toggle ${set.completed ? "complete-toggle-on" : ""}`}
+                         aria-label="Oznacz serię jako wykonaną"
++                        aria-pressed={set.completed}
+                       >
+                         {set.completed ? <Check size={18} /> : <Circle size={18} />}
+                       </button>
+                     </td>
++                    <td>
++                      {set.isExtra ? (
++                        <button
++                          type="button"
++                          onClick={() => handleRemoveSet(exercise.id, set.id)}
++                          disabled={busySetId === set.id}
++                          className="mx-auto grid size-9 place-items-center rounded-xl border border-white/10 text-slate-600 hover:border-rose-400/30 hover:text-rose-400 disabled:opacity-50"
++                          aria-label={`Usuń dodatkową serię ${set.setNumber}`}
++                          title="Usuń dodatkową serię"
++                        >
++                          {busySetId === set.id ? (
++                            <LoaderCircle className="animate-spin" size={16} />
++                          ) : (
++                            <Trash2 size={16} />
++                          )}
++                        </button>
++                      ) : null}
++                    </td>
+                   </tr>
+                 ))}
+               </tbody>
+             </table>
+           </div>
++          <div className="flex flex-col gap-2 border-t border-white/[.06] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
++            <p className="text-[11px] text-slate-600">
++              Dodatkowe serie zapisują się tylko w tym treningu — plan pozostaje bez zmian.
++            </p>
++            <button
++              type="button"
++              onClick={() => handleAddSet(exercise.id)}
++              disabled={busyExerciseId === exercise.id}
++              className="button-secondary justify-center self-start px-4 py-2 text-xs disabled:opacity-50 sm:self-auto"
++            >
++              {busyExerciseId === exercise.id ? (
++                <LoaderCircle className="animate-spin" size={15} />
++              ) : (
++                <Plus size={15} />
++              )}
++              Dodaj serię
++            </button>
++          </div>
+         </section>
+       ))}
+ 
+diff --git a/src/db/schema-sync.ts b/src/db/schema-sync.ts
+index d3066cf..c216dc8 100644
+--- a/src/db/schema-sync.ts
++++ b/src/db/schema-sync.ts
+@@ -122,6 +122,11 @@ async function runSchemaSync(): Promise<void> {
+       "exercise_sets.note",
+       sql`ALTER TABLE exercise_sets ADD COLUMN IF NOT EXISTS note text`,
+     ],
++    // Seria dodana w trakcie treningu (poza planem) — oznaczana jako „dodatkowa”.
++    [
++      "exercise_sets.is_extra",
++      sql`ALTER TABLE exercise_sets ADD COLUMN IF NOT EXISTS is_extra integer NOT NULL DEFAULT 0`,
++    ],
+     // Tabele zakładki „Micha” — dzienne cele kcal (z makro) i dziennik spożycia.
+     [
+       "diet_goals",
+diff --git a/src/db/schema.ts b/src/db/schema.ts
+index 02608d6..5b3f631 100644
+--- a/src/db/schema.ts
++++ b/src/db/schema.ts
+@@ -156,6 +156,8 @@ export const exerciseSets = pgTable(
+     rir: integer("rir"),
+     note: text("note"),
+     completed: integer("completed").notNull().default(0),
++    // 1 = seria dodana ad-hoc w trakcie treningu (poza planem)
++    isExtra: integer("is_extra").notNull().default(0),
+   },
+   (table) => [
+     index("exercise_sets_exercise_idx").on(table.exerciseId),
+diff --git a/src/db/seed-products.ts b/src/db/seed-products.ts
+new file mode 100644
+index 0000000..1110ad0
+--- /dev/null
++++ b/src/db/seed-products.ts
+@@ -0,0 +1,44 @@
++import { db } from "@/db";
++import { foodProducts } from "@/db/schema";
++import { eq } from "drizzle-orm";
++
++export async function seedFoodProducts() {
++  const products = [
++    { barcode: "5900491000016", name: "Mleko UHT 2%", protein: 3.2, fat: 2.0, carbs: 4.7, kcal: 47 },
++    { barcode: "5900491000023", name: "Jogurt naturalny 2%", protein: 3.6, fat: 2.0, carbs: 6.0, kcal: 60 },
++    { barcode: "5900491000030", name: "Chleb żytni", protein: 7.0, fat: 1.5, carbs: 45.0, kcal: 230 },
++    { barcode: "5900491000047", name: "Ser żółty gouda", protein: 25.0, fat: 28.0, carbs: 0.0, kcal: 356 },
++    { barcode: "5900491000054", name: "Masło 82% tłuszczu", protein: 0.5, fat: 81.0, carbs: 0.5, kcal: 717 },
++    { barcode: "5900491000061", name: "Jajko kurze (średnie)", protein: 13.0, fat: 11.0, carbs: 1.0, kcal: 155 },
++    { barcode: "5900491000078", name: "Płatki owsiane górskie", protein: 13.0, fat: 7.0, carbs: 66.0, kcal: 389 },
++    { barcode: "5900491000085", name: "Ryż biały długi", protein: 7.0, fat: 1.0, carbs: 78.0, kcal: 365 },
++    { barcode: "5900491000092", name: "Pierś z kurczaka (surowa)", protein: 31.0, fat: 3.6, carbs: 0.0, kcal: 165 },
++    { barcode: "5900491000108", name: "Twaróg półtłusty", protein: 18.0, fat: 4.0, carbs: 3.5, kcal: 98 },
++    { barcode: "5900491000115", name: "Banan", protein: 1.1, fat: 0.3, carbs: 23.0, kcal: 89 },
++    { barcode: "5900491000122", name: "Jabłko (średnie)", protein: 0.3, fat: 0.2, carbs: 14.0, kcal: 52 },
++  ];
++
++  for (const p of products) {
++    const existing = await db
++      .select({ id: foodProducts.id })
++      .from(foodProducts)
++      .where(eq(foodProducts.barcode, p.barcode))
++      .limit(1);
++
++    if (!existing.length) {
++      await db.insert(foodProducts).values({
++        userId: null,
++        name: p.name,
++        barcode: p.barcode,
++        protein: p.protein,
++        fat: p.fat,
++        carbs: p.carbs,
++        kcal: p.kcal,
++        isCustom: 0,
++        isFavorite: 0,
++      });
++    }
++  }
++
++  console.log(`Dodano / pominięto ${products.length} produktów.`);
++}

@@ -8,10 +8,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 function parseValue(formData: FormData, key: string): number | null {
-  const raw = String(formData.get(key) ?? "").trim();
+  const raw = String(formData.get(key) ?? "").trim().replace(",", ".");
   if (!raw) return null;
   const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  // Waga jest zapisywana z dokładnością do 0,1 kg; obwody pozostają całkowite.
+  return key === "weight" ? Math.round(n * 10) / 10 : Math.round(n);
 }
 
 export async function saveBodyAction(formData: FormData): Promise<void> {

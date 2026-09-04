@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   ArrowUpRight,
   CalendarDays,
@@ -65,6 +65,9 @@ export default async function DashboardPage({
   const query = await searchParams;
 
   // ---------- Treningi ----------
+  // Dashboard potrzebuje tylko ostatnich sesji; nie pobieraj całej historii serii.
+  const recentWorkoutIds = await db.select({ id: workouts.id }).from(workouts)
+    .where(eq(workouts.userId, user.id)).orderBy(desc(workouts.date)).limit(30);
   const rows = await db
     .select({
       id: workouts.id,
@@ -81,7 +84,7 @@ export default async function DashboardPage({
     .from(workouts)
     .leftJoin(exercises, eq(exercises.workoutId, workouts.id))
     .leftJoin(exerciseSets, eq(exerciseSets.exerciseId, exercises.id))
-    .where(eq(workouts.userId, user.id))
+    .where(and(eq(workouts.userId, user.id), inArray(workouts.id, recentWorkoutIds.map((item) => item.id))))
     .orderBy(desc(workouts.date), asc(exercises.position), asc(exerciseSets.setNumber));
 
   const grouped = new Map<

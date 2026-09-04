@@ -41,21 +41,32 @@ async function syncSleepForUser(
 ): Promise<{ nights: number; error?: string } | null> {
   // UWAGA: dane snu (zwłaszcza z opasek Xiaomi) NIE są zwracane przez endpoint
   // dataset:aggregate — trzeba czytać surowy dataset dataSourceId/datasets.
-  const dsId = "derived:com.google.sleep.segment:com.google.android.gms:merged";
-  const dsEnc = encodeURIComponent(dsId);
-  const startNs = (BigInt(Math.floor(start)) * BigInt(1000000)).toString();
-  const endNs = (BigInt(Math.floor(end)) * BigInt(1000000)).toString();
-  const url = `https://www.googleapis.com/fitness/v1/users/me/dataSources/${dsEnc}/datasets/${startNs}-${endNs}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${access}` } });
-  if (res.status === 403) return null; // brak uprawnień do snu — połącz Google Fit ponownie
-  if (!res.ok) return { nights: 0, error: "Google Fit odmówił dostępu do snu (" + res.status + ")." };
-  const data = (await res.json()) as {
-    point?: Array<{
-      startTimeNanos?: string;
-      endTimeNanos?: string;
-      value?: Array<{ intVal?: number; fpVal?: number }>;
-    }>;
-  };
+  const startNs = (BigInt(Math.floor(start - 24 * 3600000)) * BigInt(1000000)).toString();
+  const endNs = (BigInt(Math.floor(end + 24 * 3600000)) * BigInt(1000000)).toString();
+  // Nie każdy telefon tworzy źródło `merged`; wykryj faktyczne źródła snu,
+  // aby synchronizacja nie kończyła się pustym wynikiem.
+  const sourcesRes = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataSources?dataTypeName=com.google.sleep.segment", { headers: { Authorization: `Bearer ${access}` } });
+  if (sourcesRes.status === 403) return null;
+  if (!sourcesRes.ok) return { nights: 0, error: "Nie udało się pobrać źródeł snu z Google Fit." };
+  const sources = (await sourcesRes.json()) as { dataSource?: Array<{ dataStreamId?: string }> };
+  const discoveredIds = (sources.dataSource ?? []).map((s) => s.dataStreamId).filter((id): id is string => !!id);
+  if (!discoveredIds.length) return { nights: 0, error: "Google Fit nie udostępnił źródła danych snu." };
+  // Google Fit często zwraca jednocześnie źródło raw i jego agregat. Sumowanie
+  // obu zawyża sen (np. 8 h staje się kilkanaście godzin). Preferuj agregat,
+  // a gdy go nie ma, użyj jednego najbardziej kompletnego źródła.
+  const merged = discoveredIds.filter((id) => /:merged$/.test(id));
+  const sourceIds = merged.length ? merged : [discoveredIds[0]];
+  const allPoints: Array<{ startTimeNanos?: string; endTimeNanos?: string; value?: Array<{ intVal?: number; fpVal?: number }> }> = [];
+  for (const dsId of sourceIds) {
+    const url = `https://www.googleapis.com/fitness/v1/users/me/dataSources/${encodeURIComponent(dsId)}/datasets/${startNs}-${endNs}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${access}` } });
+    if (res.status === 403) return null;
+    if (!res.ok) continue;
+    const data = (await res.json()) as { point?: typeof allPoints };
+    allPoints.push(...(data.point ?? []));
+  }
+  const data = { point: allPoints };
+  if (!allPoints.length) return { nights: 0 };
   const points = (data.point ?? []).filter(
     (p) => p.startTimeNanos && p.endTimeNanos,
   );
@@ -208,15 +219,13 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
     // liczby, którą wyświetla aplikacja Google Fit: `estimated_steps` (pojedyncza
     // najlepsza estymata Google). Zapas: `merge_step_deltas` tylko gdy estymata
     // to 0 (brak danych dla danego dnia).
-    const stepIds = [
-      "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps",
-      "derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas",
-    ];
     const stepsRes = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
       method: "POST",
       headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        aggregateBy: stepIds.map((dataSourceId) => ({ dataTypeName: "com.google.step_count.delta", dataSourceId })),
+        // Bez wymuszania konkretnego dataSourceId Google Fit sam wybiera
+        // deduplikowany strumień kroków, tak jak aplikacja Google Fit.
+        aggregateBy: [{ dataTypeName: "com.google.step_count.delta" }],
         bucketByTime: { durationMillis: 86400000 },
         startTimeMillis: start,
         endTimeMillis: end,
@@ -227,8 +236,8 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
 
     const sumPoints = (ds?: { point?: Array<{ value?: Array<{ intVal?: number; fpVal?: number }> }> }) =>
       (ds?.point ?? []).reduce((s, p) => s + (p.value?.[0]?.intVal ?? p.value?.[0]?.fpVal ?? 0), 0);
-    const dsAt = (dss: NonNullable<typeof stepsData.bucket>[number]["dataset"], i: number) =>
-      dss && dss[i] ? sumPoints(dss[i]) : 0;
+    const dsAt = (dss: NonNullable<typeof stepsData.bucket>[number]["dataset"]) =>
+      (dss ?? []).reduce((total, dataset) => total + sumPoints(dataset), 0);
 
     // Ważne: usuń stare wiersze w oknie synchronizacji, zanim zapiszemy nowe.
     // Wcześniej te same dni bywały zapisywane pod dwoma różnymi timestampami
@@ -255,12 +264,7 @@ async function performGoogleFitSync(userId: number, tzOffsetMin = 0): Promise<{ 
     for (let bi = 0; bi < buckets.length; bi++) {
       const bucket = buckets[bi];
       const dss = bucket.dataset ?? [];
-      const googleEst = dsAt(dss, 0); // estimated_steps — dokładnie liczba z Google Fit
-      const googleMerge = dsAt(dss, 1); // merge_step_deltas (zapas, gdy estymata = 0)
-
-      // Bezwarunkowo liczba z Google Fit: estymata, a gdy jej brak — merge.
-      // Żadnych symulacji, żadnego łączenia z opaską.
-      const steps = googleEst > 0 ? googleEst : googleMerge;
+      const steps = dsAt(dss);
 
       if (steps > 0) daysWithSteps++;
       totalSteps += steps;

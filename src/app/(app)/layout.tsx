@@ -4,13 +4,11 @@ import { OfflineSync } from "@/components/offline-sync";
 import { ThemeProvider } from "@/components/theme-provider";
 import { db } from "@/db";
 import { userSettings } from "@/db/schema";
-import { ensureExerciseCatalog } from "@/db/seed";
 import { requireUser } from "@/lib/auth";
 import type { Lang } from "@/lib/i18n";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  await ensureExerciseCatalog(user.id);
   const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1);
   const lang: Lang = settings?.lang === "en" ? "en" : "pl";
   const theme = settings?.theme === "light" ? "light" : "dark";

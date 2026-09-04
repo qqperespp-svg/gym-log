@@ -69,7 +69,7 @@ export function SuggestMealTile({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={handleSuggest} disabled={loading} className="button-primary">
-          <Sparkles size={16} /> AI: Zaproponuj posiłki
+          <Sparkles size={16} /> {items.length > 0 ? "Zmień propozycję" : "AI: Zaproponuj posiłki"}
         </button>
         <span className="text-xs text-slate-500">AI (Gemini) zaproponuje dania na podstawie pozostałych makro.</span>
       </div>

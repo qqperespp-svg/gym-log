@@ -12,8 +12,8 @@ function parseValue(formData: FormData, key: string): number | null {
   if (!raw) return null;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
-  // Waga jest zapisywana z dokładnością do 0,1 kg; obwody pozostają całkowite.
-  return key === "weight" ? Math.round(n * 10) / 10 : Math.round(n);
+  // Wszystkie pomiary ciała zapisujemy z dokładnością do 0,1 jednostki.
+  return Math.round(n * 10) / 10;
 }
 
 export async function saveBodyAction(formData: FormData): Promise<void> {

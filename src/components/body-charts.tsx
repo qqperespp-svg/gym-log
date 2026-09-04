@@ -18,7 +18,8 @@ export function BodyCharts({ rows }: { rows: Record<string, unknown>[] }) {
   const [metric, setMetric] = useState<(typeof METRICS)[number]["key"]>("weightKg");
 
   const data: Point[] = useMemo(() => {
-    return rows
+    return [...rows]
+      .reverse()
       .map((r) => ({ date: r.date as Date, value: r[metric] as number | null }))
       .filter((p) => p.value != null && Number.isFinite(p.value))
       .map((p) => ({ date: p.date, value: p.value as number }));

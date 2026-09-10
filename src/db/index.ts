@@ -15,6 +15,11 @@ export const pool =
   globalForDb.__arenaNextJsPostgresqlPool ??
   new Pool({
     connectionString: databaseUrl,
+    // Keep a small warm pool for serverless requests; DATABASE_URL may include
+    // sslmode/pgbouncer settings supplied by Neon or Supabase.
+    max: Number(process.env.DB_POOL_MAX ?? 5),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
   });
 
 if (process.env.NODE_ENV !== "production") {

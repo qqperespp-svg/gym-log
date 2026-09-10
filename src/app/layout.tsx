@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className={`${geist.variable} bg-[#0b0f14] text-slate-200 antialiased`}>
         {children}
         <ServiceWorkerRegister />
+        <SpeedInsights />
       </body>
     </html>
   );

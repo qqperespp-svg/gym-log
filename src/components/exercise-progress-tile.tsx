@@ -5,32 +5,23 @@ import { TrendingUp, Trophy, ArrowUpRight } from "lucide-react";
 
 type ExerciseProgressProps = {
   exercises: Array<{ id: number; name: string; totalSets: number }>;
-  workouts: Array<{ id: number; date: Date; volume: number; maxWeight: number; exerciseIds: number[]; exercises: Array<{ exerciseId: number; volume: number; maxWeight: number }> }>
+  workouts: Array<{ id: number; date: Date; volume: number; maxWeight: number; exerciseIds: number[]; exercises: Array<{ exerciseId: number; name: string; volume: number; maxWeight: number }> }>
 };
 
 export function ExerciseProgressTile({ exercises, workouts }: ExerciseProgressProps) {
   const [selected, setSelected] = useState<number | null>(exercises[0]?.id ?? null);
   const selectedName = exercises.find((e) => e.id === selected)?.name ?? "—";
 
-  // Filtrowanie treningów dla wybranego ćwiczenia i sortowanie po dacie
-  const selectedWorkouts = workouts
-    .filter((w) => selected !== null && (w.exerciseIds.includes(selected) || w.id === selected))
+  // Każdy punkt pochodzi wyłącznie z treningu, w którym wybrane ćwiczenie
+  // ma zapisane serie. Nie używamy objętości całej sesji jako zastępstwa.
+  const points = workouts
+    .flatMap((w) => {
+      if (selected === null) return [];
+      const selectedExercise = exercises.find((item) => item.id === selected);
+      const exercise = w.exercises.find((item) => item.name === selectedExercise?.name);
+      return exercise ? [{ ...w, volume: exercise.volume, maxWeight: exercise.maxWeight }] : [];
+    })
     .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  // Uproszczona wersja — dla każdego treningu pokazujemy objętość i maxWeight z `workouts`
-  // W rzeczywistości należałoby przefiltrować `workouts` po `exerciseId` — tu zakładamy,
-  // że `workouts` to dane dla wybranego ćwiczenia (przekazane z `workouts/page.tsx`).
-  const selectedWorkoutIds = selected !== null ? workouts.filter((w) => w.exerciseIds.includes(selected) || w.id === selected).map((w) => w.id) : workouts.slice(-10).map((w) => w.id);
-  const selectedWorkoutsData = workouts.filter((w) => selectedWorkoutIds.includes(w.id));
-  const basePoints = selectedWorkoutsData.length ? selectedWorkoutsData : workouts.slice(-10);
-  // Dla wybranego ćwiczenia liczymy jego wartości z danego treningu, nie sumę całej sesji.
-  const points =
-    selected !== null
-      ? basePoints.map((w) => {
-          const e = w.exercises.find((x) => x.exerciseId === selected);
-          return e ? { ...w, volume: e.volume, maxWeight: e.maxWeight } : w;
-        })
-      : basePoints;
   const maxVolume = Math.max(...points.map((p) => p.volume), 1);
   const maxWeight = Math.max(...points.map((p) => p.maxWeight), 0);
 

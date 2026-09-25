@@ -33,6 +33,30 @@ function readGrams(formData: FormData): number {
 }
 
 /** Zapisuje dzienne cele makro (i liczone z nich kcal) oraz liczbę posiłków dla każdego dnia tygodnia. */
+export async function updateTodayGoalAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const weekday = WEEKDAYS.find(({ n }) => n === Number(formData.get("weekday")))?.n;
+  if (!weekday) return;
+  const current = (await db.select().from(dietGoals).where(and(eq(dietGoals.userId, user.id), eq(dietGoals.weekday, weekday))))[0];
+  if (!current) return;
+  // Zwykła edycja B/T/W nigdy nie zmienia typu dnia. Typ zmieniamy
+  // wyłącznie po kliknięciu przycisku (usePlan=1).
+  const usePlan = String(formData.get("usePlan")) === "1";
+  const nextTraining = usePlan ? (String(formData.get("training")) === "1" ? 1 : 0) : current.trainingDay;
+  // Przełączenie typu dnia korzysta z celów zapisanych w planie tygodniowym.
+  // Jeśli nie ma jeszcze celu drugiego typu, zachowujemy wartości wpisane ręcznie.
+  const alternate = usePlan
+    ? (await db.select().from(dietGoals).where(and(eq(dietGoals.userId, user.id), eq(dietGoals.trainingDay, nextTraining))))
+        .find((goal) => goal.weekday !== weekday)
+    : null;
+  const protein = clamp1(alternate?.protein ?? (Number(formData.get("protein")) || 0), 0, 9999);
+  const fat = clamp1(alternate?.fat ?? (Number(formData.get("fat")) || 0), 0, 9999);
+  const carbs = clamp1(alternate?.carbs ?? (Number(formData.get("carbs")) || 0), 0, 9999);
+  await db.update(dietGoals).set({ protein, fat, carbs, kcalGoal: kcalFromMacros(protein, fat, carbs), trainingDay: nextTraining, updatedAt: new Date() }).where(and(eq(dietGoals.userId, user.id), eq(dietGoals.weekday, weekday)));
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+}
+
 export async function saveDietGoalsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   for (const { n } of WEEKDAYS) {

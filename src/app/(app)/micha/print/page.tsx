@@ -9,7 +9,10 @@ import { PrintButton } from "@/components/print-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function PrintMichaPage() {
+export default async function PrintMichaPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+  const period = await searchParams;
+  const from = period.from ? new Date(`${period.from}T00:00:00`) : null;
+  const to = period.to ? new Date(`${period.to}T23:59:59`) : null;
   const user = await requireUser();
   const [goals, logs, measurements] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
@@ -27,7 +30,7 @@ export default async function PrintMichaPage() {
   const goalByWeekday = new Map(goals.map((g) => [g.weekday, g]));
   const weekStart = startOfWeek(new Date());
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
-  const weekLogs = logs.filter((l) => l.date >= weekStart && l.date < weekEnd);
+  const weekLogs = logs.filter((l) => (!from || l.date >= from) && (!to || l.date <= to));
   const sum = (items: typeof logs) =>
     items.reduce(
       (a, l) => ({ protein: a.protein + (l.protein ?? 0), fat: a.fat + (l.fat ?? 0), carbs: a.carbs + (l.carbs ?? 0), kcal: a.kcal + (l.kcal ?? 0) }),
@@ -60,6 +63,7 @@ export default async function PrintMichaPage() {
           {weekStart.toLocaleDateString("pl-PL")} – {new Date(weekEnd.getTime() - 1).toLocaleDateString("pl-PL")}
         </h1>
         <p className="mt-2 text-xs text-slate-500">Raport diety i pomiarów · GYMRAT</p>
+        <form className="print-hide mt-4 flex flex-wrap gap-2"><input className="input" type="date" name="from" defaultValue={period.from} /><input className="input" type="date" name="to" defaultValue={period.to} /><button className="button-secondary" type="submit">Filtruj okres</button></form>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

@@ -3,7 +3,7 @@
 import { db } from "@/db";
 import { exerciseSets, exercises, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -402,4 +402,33 @@ export async function autosaveSessionAction(
     return { error: "Nie udało się zapisać postępu." };
   }
   return { savedAt: Date.now() };
+}
+
+/** Dodaje ćwiczenie wyłącznie do bieżącej sesji — nie zmienia programu. */
+export async function addSessionExerciseAction(workoutId: number, input: { name: string; sets?: number; reps?: number; weight?: number; restSeconds?: number }): Promise<{ error: string } | { exercise: { id: number; name: string; restSeconds: number; grp: null; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: null; note: null; completed: boolean; isExtra: boolean }> } }> {
+  const user = await requireUser();
+  const workout = await ownedWorkout(workoutId, user.id);
+  const name = input.name.trim().slice(0, 255);
+  if (!workout || !name) return { error: "Nieprawidłowa sesja lub nazwa ćwiczenia." };
+  const created = await db.transaction(async (tx) => {
+    const existing = await tx.select({ position: exercises.position }).from(exercises).where(eq(exercises.workoutId, workoutId)).orderBy(desc(exercises.position)).limit(1);
+    const [exercise] = await tx.insert(exercises).values({ workoutId, name, position: (existing[0]?.position ?? -1) + 1, sets: Math.max(1, Math.min(input.sets ?? 3, 20)), reps: Math.max(0, Math.min(input.reps ?? 0, 100)), weight: Math.max(0, input.weight ?? 0), restSeconds: Math.max(0, input.restSeconds ?? 90), sessionOnly: 1 }).returning();
+    const setRows = [];
+    for (let i = 1; i <= exercise.sets; i++) {
+      const [set] = await tx.insert(exerciseSets).values({ exerciseId: exercise.id, setNumber: i, reps: exercise.reps, weight: exercise.weight, completed: 0, isExtra: 1 }).returning();
+      setRows.push({ id: set.id, setNumber: set.setNumber, reps: set.reps, weight: set.weight, rir: null, note: null, completed: false, isExtra: true });
+    }
+    return { id: exercise.id, name: exercise.name, restSeconds: exercise.restSeconds, grp: null, sets: setRows };
+  });
+  revalidatePath(`/workouts/${workoutId}/session`);
+  return { exercise: created };
+}
+
+/** Podmienia ćwiczenie tylko w bieżącej sesji. */
+export async function replaceSessionExerciseAction(workoutId: number, exerciseId: number, input: { name: string; sets?: number; reps?: number; weight?: number; restSeconds?: number }) {
+  const user = await requireUser();
+  const original = await ownedExercise(exerciseId, workoutId, user.id);
+  if (!original) return { error: "Nie znaleziono ćwiczenia." };
+  await db.update(exercises).set({ skippedInSession: 1 }).where(eq(exercises.id, exerciseId));
+  return addSessionExerciseAction(workoutId, { ...input });
 }

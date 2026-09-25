@@ -131,6 +131,10 @@ textarea.input { line-height: 1.6; }
 :root[data-theme="light"] .nav-link:hover { color: #0f172a; background-color: rgba(15,23,42,.04); }
 :root[data-theme="light"] .nav-link-active { background-color: rgba(163,230,53,.15); color: #0f172a; }
 
+/* Dodatkowe odcienie motywów */
+:root[data-accent="cyan"] { --accent: #22d3ee; --accent-300: #67e8f9; }
+:root[data-accent="fuchsia"] { --accent: #e879f9; --accent-300: #f0abfc; }
+:root[data-accent="orange"] { --accent: #fb923c; --accent-300: #fdba74; }
 /* ============ KOLORY MOTYWU (data-accent) ============ */
 
 :root { --accent: #a3e635; --accent-300: #bef264; }
@@ -457,3 +461,50 @@ textarea.input { line-height: 1.6; }
   [class*="bg-white/["] { background: #f3f4f6 !important; }
   .rounded-2xl, .rounded-xl, .rounded-lg { border-radius: 8px !important; }
 }
+
+/* Spójny kolor akcentu: wszystkie pomocnicze utility używają wybranego motywu. */
+:root { --accent-unified: #a3e635; --accent-unified-soft: #bef264; }
+:root[data-accent="lime"] { --accent-unified: #a3e635; --accent-unified-soft: #bef264; }
+:root[data-accent="sky"] { --accent-unified: #38bdf8; --accent-unified-soft: #7dd3fc; }
+:root[data-accent="violet"] { --accent-unified: #a78bfa; --accent-unified-soft: #c4b5fd; }
+:root[data-accent="rose"] { --accent-unified: #fb7185; --accent-unified-soft: #fda4af; }
+:root[data-accent="amber"] { --accent-unified: #fbbf24; --accent-unified-soft: #fcd34d; }
+:root[data-accent="emerald"] { --accent-unified: #34d399; --accent-unified-soft: #6ee7b7; }
+:root[data-accent="cyan"] { --accent-unified: #22d3ee; --accent-unified-soft: #67e8f9; }
+:root[data-accent="fuchsia"] { --accent-unified: #e879f9; --accent-unified-soft: #f0abfc; }
+:root[data-accent="orange"] { --accent-unified: #fb923c; --accent-unified-soft: #fdba74; }
+:root[data-accent] .text-sky-400, :root[data-accent] .text-violet-400, :root[data-accent] .text-rose-400, :root[data-accent] .text-amber-400, :root[data-accent] .text-emerald-400, :root[data-accent] .text-cyan-400, :root[data-accent] .text-fuchsia-400 { color: var(--accent-unified) !important; }
+:root[data-accent] .text-sky-300, :root[data-accent] .text-violet-300, :root[data-accent] .text-rose-300, :root[data-accent] .text-amber-300, :root[data-accent] .text-emerald-300, :root[data-accent] .text-cyan-300, :root[data-accent] .text-fuchsia-300 { color: var(--accent-unified-soft) !important; }
+:root[data-accent] .bg-sky-400, :root[data-accent] .bg-violet-400, :root[data-accent] .bg-rose-400, :root[data-accent] .bg-amber-400, :root[data-accent] .bg-emerald-400, :root[data-accent] .bg-cyan-400, :root[data-accent] .bg-fuchsia-400 { background-color: var(--accent-unified) !important; }
+:root[data-accent] .border-sky-400, :root[data-accent] .border-violet-400, :root[data-accent] .border-rose-400, :root[data-accent] .border-amber-400, :root[data-accent] .border-emerald-400 { border-color: var(--accent-unified) !important; }
+/* Ostatnia warstwa akcentu — również dla zielonych klas, które wcześniej
+   miały wyższy priorytet i pozostawały zielone. */
+:root[data-accent] .text-lime-200, :root[data-accent] .text-lime-300, :root[data-accent] .text-lime-400, :root[data-accent] .text-lime-500 { color: var(--accent-unified) !important; }
+:root[data-accent] .bg-lime-300, :root[data-accent] .bg-lime-400, :root[data-accent] .bg-lime-500, :root[data-accent] .bg-lime-600 { background-color: var(--accent-unified) !important; }
+:root[data-accent] .border-lime-300, :root[data-accent] .border-lime-400, :root[data-accent] .border-lime-500, :root[data-accent] .border-lime-400\/20, :root[data-accent] .border-lime-400\/40 { border-color: color-mix(in srgb, var(--accent-unified) 55%, transparent) !important; }
+:root[data-accent] .ring-lime-400, :root[data-accent] .ring-lime-400\/40 { --tw-ring-color: color-mix(in srgb, var(--accent-unified) 55%, transparent) !important; }
+:root[data-accent] .from-lime-300, :root[data-accent] .from-lime-400, :root[data-accent] .from-lime-500, :root[data-accent] .from-lime-600 { --tw-gradient-from: var(--accent-unified) !important; }
+:root[data-accent] .to-lime-200, :root[data-accent] .to-lime-300 { --tw-gradient-to: var(--accent-unified-soft) !important; }
+
+/* Rozszerzona paleta akcentów, działająca tak samo jak podstawowe motywy. */
+:root[data-accent="teal"] { --accent-unified: #2dd4bf; --accent-unified-soft: #99f6e4; }
+:root[data-accent="indigo"] { --accent-unified: #818cf8; --accent-unified-soft: #c7d2fe; }
+:root[data-accent="gold"] { --accent-unified: #facc15; --accent-unified-soft: #fef08a; }
+:root[data-accent="teal"] .button-primary, :root[data-accent="indigo"] .button-primary, :root[data-accent="gold"] .button-primary { background-color: var(--accent-unified); color: #0f172a; }
+:root[data-accent="teal"] .button-primary:hover, :root[data-accent="indigo"] .button-primary:hover, :root[data-accent="gold"] .button-primary:hover { background-color: var(--accent-unified-soft); }
+:root[data-accent="teal"] .text-link, :root[data-accent="indigo"] .text-link, :root[data-accent="gold"] .text-link, :root[data-accent="teal"] .eyebrow, :root[data-accent="indigo"] .eyebrow, :root[data-accent="gold"] .eyebrow { color: var(--accent-unified); }
+:root[data-accent="teal"] .nav-link-active, :root[data-accent="indigo"] .nav-link-active, :root[data-accent="gold"] .nav-link-active { background-color: color-mix(in srgb, var(--accent-unified) 10%, transparent) !important; color: var(--accent-unified-soft) !important; }
+:root[data-accent="teal"] .stat-lime, :root[data-accent="indigo"] .stat-lime, :root[data-accent="gold"] .stat-lime { color: var(--accent-unified); background-color: color-mix(in srgb, var(--accent-unified) 10%, transparent); }
+:root[data-accent="teal"] .text-lime-200, :root[data-accent="indigo"] .text-lime-200, :root[data-accent="gold"] .text-lime-200 { color: var(--accent-unified-soft) !important; }
+
+/* Paski makro zachowują stałe znaczenie niezależnie od motywu: kcal, B, T, W. */
+.macro-bar-fill.bg-lime-400 { background-color: #a3e635 !important; }
+.macro-bar-fill.bg-sky-400 { background-color: #38bdf8 !important; }
+.macro-bar-fill.bg-amber-400 { background-color: #fbbf24 !important; }
+.macro-bar-fill.bg-rose-400 { background-color: #fb7185 !important; }
+
+/* Większa specyficzność niż globalne mapowanie motywu — znaczenie makro jest stałe. */
+:root[data-accent] .macro-bar-fill.bg-lime-400 { background-color: #a3e635 !important; }
+:root[data-accent] .macro-bar-fill.bg-sky-400 { background-color: #38bdf8 !important; }
+:root[data-accent] .macro-bar-fill.bg-amber-400 { background-color: #fbbf24 !important; }
+:root[data-accent] .macro-bar-fill.bg-rose-400 { background-color: #fb7185 !important; }

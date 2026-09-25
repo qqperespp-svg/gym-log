@@ -194,11 +194,17 @@ export default async function SleepPage() {
                   className="group relative flex h-full flex-1 flex-col justify-end"
                   title={`${l.date.toLocaleDateString("pl-PL")}: ${fmtDur(l.totalMinutes)}`}
                 >
-                  <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-md">
-                    <div className="w-full bg-indigo-400/80" style={{ height: `${(l.deepMinutes / maxMinutes) * 100}%` }} />
-                    <div className="w-full bg-violet-400/80" style={{ height: `${(l.remMinutes / maxMinutes) * 100}%` }} />
-                    <div className="w-full bg-sky-400/80" style={{ height: `${(l.lightMinutes / maxMinutes) * 100}%` }} />
-                    <div className="w-full bg-slate-500/70" style={{ height: `${(l.awakeMinutes / maxMinutes) * 100}%` }} />
+                  <div className="flex h-40 w-full flex-col justify-end overflow-hidden rounded-t-md">
+                    {l.deepMinutes + l.remMinutes + l.lightMinutes + l.awakeMinutes > 0 ? (
+                      <>
+                        <div className="w-full bg-indigo-400/80" style={{ height: `${(l.deepMinutes / maxMinutes) * 160}px` }} />
+                        <div className="w-full bg-violet-400/80" style={{ height: `${(l.remMinutes / maxMinutes) * 160}px` }} />
+                        <div className="w-full bg-sky-400/80" style={{ height: `${(l.lightMinutes / maxMinutes) * 160}px` }} />
+                        <div className="w-full bg-slate-500/70" style={{ height: `${(l.awakeMinutes / maxMinutes) * 160}px` }} />
+                      </>
+                    ) : (
+                      <div className="w-full bg-violet-400/80" style={{ height: `${(l.totalMinutes / maxMinutes) * 160}px` }} />
+                    )}
                   </div>
                   <span className="mt-1 hidden text-[9px] font-bold text-slate-600 group-hover:block">
                     {day}

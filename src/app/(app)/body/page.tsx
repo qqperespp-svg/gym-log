@@ -83,7 +83,7 @@ export default async function BodyPage({
           >
             <label className="field-label">
               Waga (kg)
-              <input className="input" name="weight" type="number" step="0.1" defaultValue={editRow.weightKg ?? ""} />
+              <input className="input" name="weight" type="text" inputMode="decimal" defaultValue={editRow.weightKg ?? ""} />
             </label>
             <label className="field-label">
               Wzrost (cm)
@@ -257,7 +257,7 @@ export default async function BodyPage({
           </label>
           <label className="field-label">
             Waga (kg)
-            <input className="input" name="weight" type="number" step="0.1" />
+            <input className="input" name="weight" type="text" inputMode="decimal" />
           </label>
           <label className="field-label">
             Wzrost (cm)

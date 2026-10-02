@@ -132,7 +132,9 @@ export function DietLogGroups({ rows }: { rows: DietLogRow[] }) {
     <div className="space-y-4">
       {tree.map((month) => {
         const mKey = "m:" + month.key;
-        const mOpen = !collapsed[mKey];
+        const today = new Date();
+        const currentMonthKey = monthKey(startOfWeek(today));
+        const mOpen = month.key === currentMonthKey ? collapsed[mKey] !== true : collapsed[mKey] === false;
         return (
           <div key={month.key} className="rounded-xl border border-white/[.07] bg-black/15">
             <button
@@ -149,7 +151,8 @@ export function DietLogGroups({ rows }: { rows: DietLogRow[] }) {
               <div className="space-y-3 px-3 pb-3">
                 {month.weeks.map((week) => {
                   const wKey = "w:" + week.key;
-                  const wOpen = !collapsed[wKey];
+                  const currentWeekKey = dayKey(startOfWeek(new Date()));
+                  const wOpen = week.key === currentWeekKey ? collapsed[wKey] !== true : collapsed[wKey] === false;
                   return (
                     <div key={week.key} className="rounded-lg border border-white/[.06] bg-white/[.02]">
                       <button
@@ -166,7 +169,9 @@ export function DietLogGroups({ rows }: { rows: DietLogRow[] }) {
                         <div className="space-y-3 p-3 pt-1">
                           {week.days.map((day) => {
                             const dKey = "d:" + day.key;
-                            const dOpen = !collapsed[dKey];
+                            // Domyślnie rozwijamy tylko dzisiaj; pozostałe dni pozostają zwinięte.
+                            const isToday = day.key === dayKey(new Date());
+                            const dOpen = isToday ? !collapsed[dKey] : collapsed[dKey] === false;
                             return (
                               <div key={day.key} className="rounded-lg border border-white/[.06] bg-black/15">
                                 <button

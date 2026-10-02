@@ -204,7 +204,7 @@ export function MealEstimate({ meals, mealNames }: { meals: number; mealNames: s
       {items.length > 0 && (
         <div className="rounded-2xl border border-lime-400/20 bg-lime-400/[.05] p-4">
           <p className="mb-3 text-xs font-black uppercase tracking-wider text-lime-400">
-            Wykryte składniki — popraw gramaturę i dodaj
+            Wykryte składniki — popraw gramaturę i makro, a następnie dodaj
           </p>
           <div className="space-y-2">
             {items.map((it, idx) => (
@@ -222,6 +222,15 @@ export function MealEstimate({ meals, mealNames }: { meals: number; mealNames: s
                   }
                 />
                 <span className="text-[11px] text-slate-500">g</span>
+                <label className="text-[9px] text-slate-500">B/100
+                  <input type="number" min="0" step="0.1" className="input !min-h-8 !w-14 !px-1 text-center" value={it.protein} onChange={(e) => setItems((cur) => cur.map((x, i) => (i === idx ? { ...x, protein: Number(e.target.value) || 0 } : x)))} />
+                </label>
+                <label className="text-[9px] text-slate-500">T/100
+                  <input type="number" min="0" step="0.1" className="input !min-h-8 !w-14 !px-1 text-center" value={it.fat} onChange={(e) => setItems((cur) => cur.map((x, i) => (i === idx ? { ...x, fat: Number(e.target.value) || 0 } : x)))} />
+                </label>
+                <label className="text-[9px] text-slate-500">W/100
+                  <input type="number" min="0" step="0.1" className="input !min-h-8 !w-14 !px-1 text-center" value={it.carbs} onChange={(e) => setItems((cur) => cur.map((x, i) => (i === idx ? { ...x, carbs: Number(e.target.value) || 0 } : x)))} />
+                </label>
                 <span className="text-[11px] text-slate-400">
                   B {formatMacro(round1(it.protein * (Number(it.grams) || 0) / 100))} · T{" "}
                   {formatMacro(round1(it.fat * (Number(it.grams) || 0) / 100))} · W{" "}

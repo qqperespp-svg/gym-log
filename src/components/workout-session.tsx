@@ -81,6 +81,8 @@ export function WorkoutSession({
   autosave,
   addSet,
   removeSet,
+  addExercise,
+  replaceExercise,
   initial,
 }: {
   action: (state: SessionFormState, formData: FormData) => Promise<SessionFormState>;
@@ -96,6 +98,8 @@ export function WorkoutSession({
   ) => Promise<AutosaveResult>;
   addSet: (exerciseId: number) => Promise<AddSetResult>;
   removeSet: (setId: number) => Promise<RemoveSetResult>;
+  addExercise?: (input: { name: string; sets?: number; reps?: number; weight?: number; restSeconds?: number }) => Promise<{ error: string } | { exercise: ExerciseRow }>;
+  replaceExercise?: (exerciseId: number, input: { name: string; sets?: number; reps?: number; weight?: number; restSeconds?: number }) => Promise<{ error: string } | { exercise: ExerciseRow }>;
   initial: ExerciseRow[];
 }) {
   const [state, formAction] = useActionState(action, undefined);
@@ -103,6 +107,8 @@ export function WorkoutSession({
   const [saveState, setSaveState] = useState<SaveStatus>({ status: "idle" });
   const [busyExerciseId, setBusyExerciseId] = useState<number | null>(null);
   const [busySetId, setBusySetId] = useState<number | null>(null);
+  const [exerciseDialog, setExerciseDialog] = useState<{ mode: "add" | "replace"; id?: number; currentName?: string } | null>(null);
+  const [exerciseDraft, setExerciseDraft] = useState({ name: "", sets: "3", reps: "", weight: "" });
   const saveSeq = useRef(0);
   const allSets = items.flatMap((item) => item.sets);
   const completed = allSets.filter((set) => set.completed).length;
@@ -198,6 +204,22 @@ export function WorkoutSession({
     }
   };
 
+  const openExerciseDialog = (mode: "add" | "replace", id?: number, currentName?: string) => {
+    setExerciseDraft({ name: "", sets: "3", reps: "", weight: "" });
+    setExerciseDialog({ mode, id, currentName });
+  };
+  const submitExerciseDialog = async () => {
+    const name = exerciseDraft.name.trim();
+    if (!name) return;
+    const input = { name, sets: Number(exerciseDraft.sets) || 3, reps: Number(exerciseDraft.reps) || 0, weight: Number(exerciseDraft.weight) || 0 };
+    const result = exerciseDialog?.mode === "replace" && replaceExercise && exerciseDialog.id
+      ? await replaceExercise(exerciseDialog.id, input)
+      : addExercise ? await addExercise(input) : { error: "Funkcja jest niedostępna." };
+    if ("error" in result) setSaveState({ status: "error", message: result.error });
+    else setItems((current) => exerciseDialog?.mode === "replace" && exerciseDialog.id ? [...current.filter((item) => item.id !== exerciseDialog.id), result.exercise] : [...current, result.exercise]);
+    setExerciseDialog(null);
+  };
+
   /** Usunięcie dodatkowej serii (serie z planu są nieusuwalne w tym trybie). */
   const handleRemoveSet = async (exerciseId: number, setId: number) => {
     setBusySetId(setId);
@@ -259,6 +281,9 @@ export function WorkoutSession({
         </div>
       </section>
 
+      {exerciseDialog && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111820] p-5 shadow-2xl"><div className="mb-5 flex items-start justify-between"><div><p className="eyebrow">Bieżąca sesja</p><h2 className="text-xl font-black text-white">{exerciseDialog.mode === "replace" ? `Podmień: ${exerciseDialog.currentName}` : "Dodaj ćwiczenie"}</h2><p className="mt-1 text-xs text-slate-500">Zmiana dotyczy tylko tego treningu.</p></div><button type="button" onClick={() => setExerciseDialog(null)} className="text-2xl text-slate-500 hover:text-white">×</button></div><div className="grid gap-3"><label className="field-label">Nazwa ćwiczenia<input autoFocus className="input" value={exerciseDraft.name} onChange={(e) => setExerciseDraft((d) => ({ ...d, name: e.target.value }))} placeholder="np. Wyciskanie hantli" /></label><div className="grid grid-cols-3 gap-2"><label className="field-label">Serie<input className="input" type="number" min="1" max="20" value={exerciseDraft.sets} onChange={(e) => setExerciseDraft((d) => ({ ...d, sets: e.target.value }))} /></label><label className="field-label">Powtórzenia<input className="input" type="number" min="0" value={exerciseDraft.reps} onChange={(e) => setExerciseDraft((d) => ({ ...d, reps: e.target.value }))} /></label><label className="field-label">Ciężar<input className="input" type="number" min="0" step="0.1" value={exerciseDraft.weight} onChange={(e) => setExerciseDraft((d) => ({ ...d, weight: e.target.value }))} /></label></div><div className="mt-2 flex justify-end gap-2"><button type="button" className="button-secondary" onClick={() => setExerciseDialog(null)}>Anuluj</button><button type="button" className="button-primary" disabled={!exerciseDraft.name.trim()} onClick={() => void submitExerciseDialog()}>{exerciseDialog.mode === "replace" ? "Podmień ćwiczenie" : "Dodaj ćwiczenie"}</button></div></div></div></div>}
+      {addExercise && <button type="button" onClick={() => openExerciseDialog("add")} className="button-primary"><Plus size={17} /> Dodaj ćwiczenie do tej sesji</button>}
+
       {items.map((exercise, exerciseIndex) => (
         <section key={exercise.id} className="panel overflow-hidden">
           <div className="flex items-center gap-4 border-b border-white/[.06] p-5 sm:px-6">
@@ -278,9 +303,10 @@ export function WorkoutSession({
                 )}
               </h2>
             </div>
-            <span className="hidden text-xs text-slate-500 sm:block">
-              Przerwa {exercise.restSeconds}s
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-xs text-slate-500 sm:block">Przerwa {exercise.restSeconds}s</span>
+              {replaceExercise && <button type="button" onClick={() => openExerciseDialog("replace", exercise.id, exercise.name)} className="button-secondary px-3 py-1.5 text-xs">Podmień</button>}
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="set-table">

@@ -139,6 +139,9 @@ export const exercises = pgTable(
     weight: doublePrecision("weight").notNull().default(0),
     restSeconds: integer("rest_seconds").notNull().default(90),
     grp: varchar("grp", { length: 8 }), // grupa superserii: A/B/C/...
+    sessionOnly: integer("session_only").notNull().default(0),
+    skippedInSession: integer("skipped_in_session").notNull().default(0),
+    replacedExerciseId: integer("replaced_exercise_id"),
   },
   (table) => [index("exercises_workout_idx").on(table.workoutId)],
 );
@@ -172,14 +175,14 @@ export const bodyMeasurements = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    weightKg: integer("weight_kg"),
-    heightCm: integer("height_cm"),
-    chestCm: integer("chest_cm"),
-    waistCm: integer("waist_cm"),
-    hipCm: integer("hip_cm"),
-    thighCm: integer("thigh_cm"),
-    bicepsCm: integer("biceps_cm"),
-    calfCm: integer("calf_cm"),
+    weightKg: doublePrecision("weight_kg"),
+    heightCm: doublePrecision("height_cm"),
+    chestCm: doublePrecision("chest_cm"),
+    waistCm: doublePrecision("waist_cm"),
+    hipCm: doublePrecision("hip_cm"),
+    thighCm: doublePrecision("thigh_cm"),
+    bicepsCm: doublePrecision("biceps_cm"),
+    calfCm: doublePrecision("calf_cm"),
     date: timestamp("date").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

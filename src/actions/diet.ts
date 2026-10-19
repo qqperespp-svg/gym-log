@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { dietGoals, dietLogs, foodProducts, progressPhotos, recipes, userFavorites } from "@/db/schema";
+import { dietGoals, dietLogs, dietVacations, foodProducts, progressPhotos, recipes, userFavorites } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, defaultMealName, kcalFromMacros, round1 } from "@/lib/diet";
 import { and, eq } from "drizzle-orm";
@@ -392,6 +392,101 @@ export async function logMealEstimateAction(formData: FormData): Promise<void> {
   revalidatePath("/micha");
   revalidatePath("/dashboard");
   redirect("/micha?saved=1");
+}
+
+// ---------- Urlop (dni bez liczenia kalorii i makro) ----------
+
+function readLocalNoon(raw: string): Date | null {
+  const s = String(raw ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export async function addVacationAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  let start = readLocalNoon(String(formData.get("startDate") ?? ""));
+  let end = readLocalNoon(String(formData.get("endDate") ?? ""));
+  if (!start || !end) redirect("/micha");
+  if (end.getTime() < start.getTime()) {
+    const tmp = start;
+    start = end;
+    end = tmp;
+  }
+  const note = String(formData.get("note") ?? "").trim() || null;
+  await db.insert(dietVacations).values({
+    userId: user.id,
+    startDate: start,
+    endDate: end,
+    note,
+  });
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+  redirect("/micha?saved=1");
+}
+
+export async function deleteVacationAction(id: number): Promise<void> {
+  const user = await requireUser();
+  await db.delete(dietVacations).where(and(eq(dietVacations.id, id), eq(dietVacations.userId, user.id)));
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+}
+
+// ---------- Liczenie posiłku: porcja z sumy produktów ----------
+
+export async function logMealPortionAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const dateStr = String(formData.get("date") ?? "").trim();
+  const portionGrams = Math.max(1, Math.round(Number(formData.get("portionGrams")) || 0));
+  const cookedGramsRaw = Number(formData.get("cookedGrams"));
+  let items: Array<{ name: string; grams: number; protein: number; fat: number; carbs: number }> = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("items") ?? "[]"));
+    if (Array.isArray(parsed)) items = parsed;
+  } catch {
+    redirect("/micha?tab=liczenie");
+  }
+  if (!dateStr || !items.length) redirect("/micha?tab=liczenie");
+  const sumGrams = items.reduce((s, i) => s + Math.max(0, Number(i.grams) || 0), 0);
+  const cookedGrams = Math.max(1, Number.isFinite(cookedGramsRaw) && cookedGramsRaw > 0 ? cookedGramsRaw : sumGrams);
+  const sums = items.reduce(
+    (a, i) => {
+      const g = Math.max(0, Number(i.grams) || 0) / 100;
+      return {
+        protein: a.protein + (Number(i.protein) || 0) * g,
+        fat: a.fat + (Number(i.fat) || 0) * g,
+        carbs: a.carbs + (Number(i.carbs) || 0) * g,
+      };
+    },
+    { protein: 0, fat: 0, carbs: 0 },
+  );
+  const factor = portionGrams / cookedGrams;
+  const protein = round1(sums.protein * factor);
+  const fat = round1(sums.fat * factor);
+  const carbs = round1(sums.carbs * factor);
+  const names = items
+    .map((i) => `${String(i.name ?? "").trim()} ${Math.round(Number(i.grams) || 0)}g`)
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(", ");
+  const extra = String(formData.get("note") ?? "").trim();
+  const note =
+    extra ||
+    `Porcja ${portionGrams} g z ${Math.round(cookedGrams)} g${names ? ` (${names})` : ""}`.slice(0, 200);
+  await db.insert(dietLogs).values({
+    userId: user.id,
+    date: new Date(`${dateStr}T12:00:00`),
+    protein: clamp1(protein, 0, 9999),
+    fat: clamp1(fat, 0, 9999),
+    carbs: clamp1(carbs, 0, 9999),
+    kcal: kcalFromMacros(protein, fat, carbs),
+    grams: portionGrams,
+    mealNumber: readMealNumber(formData),
+    note,
+  });
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+  redirect("/micha?saved=1&tab=liczenie");
 }
 
 /**

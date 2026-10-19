@@ -23,6 +23,7 @@ type SerializedExercise = {
   name: string;
   restSeconds: number;
   grp?: string | null;
+  notes?: string | null;
   sets: SerializedSet[];
 };
 type SerializedWorkout = {
@@ -91,6 +92,7 @@ async function insertWorkoutExercises(workoutId: number, data: SerializedWorkout
         weight: row.sets[0]?.weight ?? 0,
         restSeconds: clamp(row.restSeconds, 0, 600),
         grp: row.grp ? String(row.grp).slice(0, 8) : null,
+        notes: row.notes?.trim() || null,
       })
       .returning();
     await db.insert(exerciseSets).values(
@@ -193,6 +195,11 @@ export async function saveWorkoutSessionAction(
 
   const intent = String(formData.get("intent") ?? "save");
   const completed = await persistSessionSets(workoutId, allSets);
+  await persistSessionNotes(
+    workoutId,
+    String(formData.get("workoutNotes") ?? ""),
+    parseExerciseNotes(formData.get("exerciseNotes")),
+  );
 
   if (intent === "finish") {
     await db
@@ -232,6 +239,10 @@ export type SessionSet = {
 export type AddSetResult = { error: string } | { set: SessionSet; savedAt: number };
 export type RemoveSetResult = { error: string } | { removedId: number; savedAt: number };
 export type AutosaveResult = { error: string } | { savedAt: number };
+export type SessionNotesPayload = {
+  workoutNotes?: string;
+  exerciseNotes?: Array<{ id: number; notes: string }>;
+};
 
 /**
  * Sprawdza, czy ćwiczenie należy do treningu zalogowanego użytkownika.
@@ -282,6 +293,37 @@ async function persistSessionSets(
       .where(eq(exerciseSets.id, Number(set.id)));
   }
   return completed;
+}
+
+function parseExerciseNotes(raw: FormDataEntryValue | null): Array<{ id: number; notes: string }> {
+  try {
+    const parsed = JSON.parse(String(raw ?? "[]"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function persistSessionNotes(
+  workoutId: number,
+  workoutNotes: string,
+  exerciseNotes: Array<{ id: number; notes: string }>,
+): Promise<void> {
+  await db
+    .update(workouts)
+    .set({ notes: workoutNotes.trim() || null, updatedAt: new Date() })
+    .where(eq(workouts.id, workoutId));
+  if (!exerciseNotes.length) return;
+  const owned = await db.select({ id: exercises.id }).from(exercises).where(eq(exercises.workoutId, workoutId));
+  const allowed = new Set(owned.map((row) => row.id));
+  for (const row of exerciseNotes) {
+    const id = Number(row.id);
+    if (!allowed.has(id)) continue;
+    await db
+      .update(exercises)
+      .set({ notes: String(row.notes ?? "").trim() || null })
+      .where(eq(exercises.id, id));
+  }
 }
 
 /**
@@ -392,12 +434,16 @@ export async function removeSessionSetAction(
 export async function autosaveSessionAction(
   workoutId: number,
   rows: Array<SerializedSet & { id: number }>,
+  extra?: SessionNotesPayload,
 ): Promise<AutosaveResult> {
   const user = await requireUser();
   if (!(await ownedWorkout(workoutId, user.id))) return { error: "Brak dostępu do treningu." };
   if (!Array.isArray(rows)) return { error: "Nie udało się zapisać postępu." };
   try {
     await persistSessionSets(workoutId, rows);
+    if (extra) {
+      await persistSessionNotes(workoutId, extra.workoutNotes ?? "", extra.exerciseNotes ?? []);
+    }
   } catch {
     return { error: "Nie udało się zapisać postępu." };
   }

@@ -1,18 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { Calculator, ChartPie, PenLine } from "lucide-react";
+import { Calculator, ChartPie, PenLine, Scale } from "lucide-react";
 
-type Section = "makro" | "wprowadzanie" | "planowanie";
+type Section = "makro" | "wprowadzanie" | "liczenie" | "planowanie";
 
 export function MichaTabs({
   makro,
   wprowadzanie,
+  liczenie,
   planowanie,
   defaultTab,
 }: {
   makro: React.ReactNode;
   wprowadzanie: React.ReactNode;
+  liczenie: React.ReactNode;
   planowanie: React.ReactNode;
   defaultTab?: Section;
 }) {
@@ -25,22 +27,23 @@ export function MichaTabs({
         : "border-white/[.07] bg-black/15 hover:border-white/15"
     }`;
 
+  const iconWrap = (section: Section) =>
+    `grid size-11 shrink-0 place-items-center rounded-xl transition ${
+      active === section ? "bg-lime-400 text-slate-950" : "bg-white/[.05] text-slate-400"
+    }`;
+
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <button type="button" onClick={() => setActive("makro")} aria-pressed={active === "makro"} className={tile("makro")}>
           <span className="flex items-center gap-3">
-            <span
-              className={`grid size-11 shrink-0 place-items-center rounded-xl transition ${
-                active === "makro" ? "bg-lime-400 text-slate-950" : "bg-white/[.05] text-slate-400"
-              }`}
-            >
+            <span className={iconWrap("makro")}>
               <ChartPie size={20} />
             </span>
             <span className="min-w-0">
               <b className="block text-sm font-extrabold text-white">Makro</b>
               <span className="block text-xs leading-5 text-slate-500">
-                Spożycie vs cel dzienny i tygodniowy, wpisy posiłków
+                Spożycie vs cel, urlop, wpisy posiłków
               </span>
             </span>
           </span>
@@ -52,11 +55,7 @@ export function MichaTabs({
           className={tile("wprowadzanie")}
         >
           <span className="flex items-center gap-3">
-            <span
-              className={`grid size-11 shrink-0 place-items-center rounded-xl transition ${
-                active === "wprowadzanie" ? "bg-lime-400 text-slate-950" : "bg-white/[.05] text-slate-400"
-              }`}
-            >
+            <span className={iconWrap("wprowadzanie")}>
               <PenLine size={20} />
             </span>
             <span className="min-w-0">
@@ -69,16 +68,30 @@ export function MichaTabs({
         </button>
         <button
           type="button"
+          onClick={() => setActive("liczenie")}
+          aria-pressed={active === "liczenie"}
+          className={tile("liczenie")}
+        >
+          <span className="flex items-center gap-3">
+            <span className={iconWrap("liczenie")}>
+              <Scale size={20} />
+            </span>
+            <span className="min-w-0">
+              <b className="block text-sm font-extrabold text-white">Liczenie posiłku</b>
+              <span className="block text-xs leading-5 text-slate-500">
+                Złóż składniki i dodaj porcję z całości
+              </span>
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
           onClick={() => setActive("planowanie")}
           aria-pressed={active === "planowanie"}
           className={tile("planowanie")}
         >
           <span className="flex items-center gap-3">
-            <span
-              className={`grid size-11 shrink-0 place-items-center rounded-xl transition ${
-                active === "planowanie" ? "bg-lime-400 text-slate-950" : "bg-white/[.05] text-slate-400"
-              }`}
-            >
+            <span className={iconWrap("planowanie")}>
               <Calculator size={20} />
             </span>
             <span className="min-w-0">
@@ -91,7 +104,13 @@ export function MichaTabs({
         </button>
       </div>
 
-      {active === "makro" ? makro : active === "wprowadzanie" ? wprowadzanie : planowanie}
+      {active === "makro"
+        ? makro
+        : active === "wprowadzanie"
+          ? wprowadzanie
+          : active === "liczenie"
+            ? liczenie
+            : planowanie}
     </div>
   );
 }

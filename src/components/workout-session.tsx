@@ -10,6 +10,7 @@ import {
   CloudUpload,
   Dumbbell,
   LoaderCircle,
+  MessageSquare,
   Plus,
   Save,
   Trash2,
@@ -21,6 +22,7 @@ import type {
   AutosaveResult,
   RemoveSetResult,
   SessionFormState,
+  SessionNotesPayload,
 } from "@/actions/workouts";
 
 type SetRow = {
@@ -33,7 +35,7 @@ type SetRow = {
   completed: boolean;
   isExtra: boolean;
 };
-type ExerciseRow = { id: number; name: string; restSeconds: number; grp: string | null; sets: SetRow[] };
+type ExerciseRow = { id: number; name: string; restSeconds: number; grp: string | null; notes: string; sets: SetRow[] };
 type SaveStatus =
   | { status: "idle" }
   | { status: "dirty" }
@@ -82,6 +84,7 @@ export function WorkoutSession({
   addSet,
   removeSet,
   initial,
+  initialWorkoutNotes,
 }: {
   action: (state: SessionFormState, formData: FormData) => Promise<SessionFormState>;
   autosave: (
@@ -93,17 +96,21 @@ export function WorkoutSession({
       note: string | null;
       completed: boolean;
     }>,
+    extra?: SessionNotesPayload,
   ) => Promise<AutosaveResult>;
   addSet: (exerciseId: number) => Promise<AddSetResult>;
   removeSet: (setId: number) => Promise<RemoveSetResult>;
   initial: ExerciseRow[];
+  initialWorkoutNotes?: string;
 }) {
   const [state, formAction] = useActionState(action, undefined);
   const [items, setItems] = useState(initial);
+  const [workoutNotes, setWorkoutNotes] = useState(initialWorkoutNotes ?? "");
   const [saveState, setSaveState] = useState<SaveStatus>({ status: "idle" });
   const [busyExerciseId, setBusyExerciseId] = useState<number | null>(null);
   const [busySetId, setBusySetId] = useState<number | null>(null);
   const saveSeq = useRef(0);
+  const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allSets = items.flatMap((item) => item.sets);
   const completed = allSets.filter((set) => set.completed).length;
   const progress = allSets.length ? Math.round((completed / allSets.length) * 100) : 0;
@@ -115,9 +122,9 @@ export function WorkoutSession({
     [allSets],
   );
 
-  /** Autozapis — wysyła aktualny stan wszystkich serii na serwer. */
+  /** Autozapis — wysyła aktualny stan wszystkich serii i komentarzy na serwer. */
   const runAutosave = useCallback(
-    async (rows: SetRow[]) => {
+    async (rows: SetRow[], notes: string, exercisesState: ExerciseRow[]) => {
       const seq = ++saveSeq.current;
       setSaveState({ status: "saving" });
       try {
@@ -130,6 +137,10 @@ export function WorkoutSession({
             note,
             completed: done,
           })),
+          {
+            workoutNotes: notes,
+            exerciseNotes: exercisesState.map((ex) => ({ id: ex.id, notes: ex.notes })),
+          },
         );
         if (seq !== saveSeq.current) return;
         if ("error" in result) setSaveState({ status: "error", message: result.error });
@@ -141,6 +152,18 @@ export function WorkoutSession({
     },
     [autosave],
   );
+
+  const scheduleNotesSave = (nextNotes: string, nextItems: ExerciseRow[]) => {
+    setSaveState((current) => (current.status === "saving" ? current : { status: "dirty" }));
+    if (notesTimer.current) clearTimeout(notesTimer.current);
+    notesTimer.current = setTimeout(() => {
+      void runAutosave(
+        nextItems.flatMap((exercise) => exercise.sets),
+        nextNotes,
+        nextItems,
+      );
+    }, 700);
+  };
 
   const updateSet = (exerciseId: number, setId: number, patch: Partial<SetRow>) => {
     setItems((current) =>
@@ -169,7 +192,7 @@ export function WorkoutSession({
         : exercise,
     );
     setItems(next);
-    void runAutosave(next.flatMap((exercise) => exercise.sets));
+    void runAutosave(next.flatMap((exercise) => exercise.sets), workoutNotes, next);
   };
 
   /** Dodanie serii w trakcie treningu — plan treningowy pozostaje bez zmian. */
@@ -230,6 +253,12 @@ export function WorkoutSession({
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="sessionData" value={JSON.stringify(allSets)} />
+      <input type="hidden" name="workoutNotes" value={workoutNotes} />
+      <input
+        type="hidden"
+        name="exerciseNotes"
+        value={JSON.stringify(items.map((ex) => ({ id: ex.id, notes: ex.notes })))}
+      />
       <section className="panel p-5 sm:p-6">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
@@ -259,6 +288,25 @@ export function WorkoutSession({
         </div>
       </section>
 
+      <section className="panel p-5 sm:p-6">
+        <label className="field-label">
+          <span className="flex items-center gap-2">
+            <MessageSquare size={14} className="text-lime-400" /> Komentarz do treningu
+          </span>
+          <textarea
+            className="input min-h-24 resize-y"
+            maxLength={1000}
+            placeholder="Samopoczucie, sen, energia, co poszło dobrze…"
+            value={workoutNotes}
+            onChange={(event) => {
+              const next = event.target.value;
+              setWorkoutNotes(next);
+              scheduleNotesSave(next, items);
+            }}
+          />
+        </label>
+      </section>
+
       {items.map((exercise, exerciseIndex) => (
         <section key={exercise.id} className="panel overflow-hidden">
           <div className="flex items-center gap-4 border-b border-white/[.06] p-5 sm:px-6">
@@ -281,6 +329,25 @@ export function WorkoutSession({
             <span className="hidden text-xs text-slate-500 sm:block">
               Przerwa {exercise.restSeconds}s
             </span>
+          </div>
+          <div className="border-b border-white/[.06] px-5 py-3 sm:px-6">
+            <label className="field-label">
+              Komentarz do ćwiczenia
+              <textarea
+                className="input min-h-16 resize-y text-sm"
+                maxLength={500}
+                placeholder="Technika, zakres ruchu, ból, uwagi do całego ćwiczenia…"
+                value={exercise.notes}
+                onChange={(event) => {
+                  const nextNotes = event.target.value;
+                  const next = items.map((ex) =>
+                    ex.id === exercise.id ? { ...ex, notes: nextNotes } : ex,
+                  );
+                  setItems(next);
+                  scheduleNotesSave(workoutNotes, next);
+                }}
+              />
+            </label>
           </div>
           <div className="overflow-x-auto">
             <table className="set-table">

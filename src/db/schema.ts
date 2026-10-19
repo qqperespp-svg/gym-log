@@ -139,6 +139,7 @@ export const exercises = pgTable(
     weight: doublePrecision("weight").notNull().default(0),
     restSeconds: integer("rest_seconds").notNull().default(90),
     grp: varchar("grp", { length: 8 }), // grupa superserii: A/B/C/...
+    notes: text("notes"), // komentarz do całego ćwiczenia (nie pojedynczej serii)
   },
   (table) => [index("exercises_workout_idx").on(table.workoutId)],
 );
@@ -207,6 +208,21 @@ export const dietGoals = pgTable(
     index("diet_goals_user_idx").on(table.userId),
     uniqueIndex("diet_goals_user_weekday_idx").on(table.userId, table.weekday),
   ],
+);
+
+export const dietVacations = pgTable(
+  "diet_vacations",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    startDate: timestamp("start_date").notNull(),
+    endDate: timestamp("end_date").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("diet_vacations_user_idx").on(table.userId)],
 );
 
 export const dietLogs = pgTable(
@@ -411,6 +427,7 @@ export type ProgramExercise = typeof programExercises.$inferSelect;
 export type BodyMeasurement = typeof bodyMeasurements.$inferSelect;
 export type DietGoal = typeof dietGoals.$inferSelect;
 export type DietLog = typeof dietLogs.$inferSelect;
+export type DietVacation = typeof dietVacations.$inferSelect;
 export type FoodProduct = typeof foodProducts.$inferSelect;
 export type WaterLog = typeof waterLogs.$inferSelect;
 export type Recipe = typeof recipes.$inferSelect;

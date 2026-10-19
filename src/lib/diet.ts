@@ -57,6 +57,24 @@ export function defaultMealName(n: number): string {
   return DEFAULT_MEAL_NAMES[n - 1] ?? `Posiłek ${n}`;
 }
 
+/** Zakres urlopu dietetycznego (daty lokalne; po hydracji klienta mogą być ISO stringami). */
+export type VacationRange = { startDate: Date | string; endDate: Date | string };
+
+function asLocalDate(value: Date | string): Date {
+  const d = value instanceof Date ? value : new Date(value);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** Czy dany dzień (lokalna data) wypada w którymkolwiek urlopie. */
+export function isVacationDay(date: Date | string, vacations: VacationRange[]): boolean {
+  const t = asLocalDate(date).getTime();
+  return vacations.some((v) => {
+    const s = asLocalDate(v.startDate).getTime();
+    const e = asLocalDate(v.endDate).getTime();
+    return t >= s && t <= e;
+  });
+}
+
 /** Bezpieczne sparsowanie nazw posiłków z JSON (kolumna meal_names). */
 export function parseMealNames(raw: string | null, count: number): string[] {
   let names: string[] = [];

@@ -484,6 +484,29 @@ async function runSchemaSync(): Promise<void> {
       "sleep_logs.user_id+date unique",
       sql`CREATE UNIQUE INDEX IF NOT EXISTS sleep_logs_user_date_idx ON sleep_logs (user_id, date)`,
     ],
+    // Komentarz do całego ćwiczenia w trakcie treningu (obok notatek per-seria).
+    [
+      "exercises.notes",
+      sql`ALTER TABLE exercises ADD COLUMN IF NOT EXISTS notes text`,
+    ],
+    // Urlop dietetyczny — dni, w których kalorie i makro nie wliczają się do celów.
+    [
+      "diet_vacations",
+      sql`
+        CREATE TABLE IF NOT EXISTS diet_vacations (
+          id serial PRIMARY KEY,
+          user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          start_date timestamp NOT NULL,
+          end_date timestamp NOT NULL,
+          note text,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `,
+    ],
+    [
+      "diet_vacations.user_id index",
+      sql`CREATE INDEX IF NOT EXISTS diet_vacations_user_idx ON diet_vacations (user_id)`,
+    ],
   ];
 
   for (const [label, statement] of steps) {

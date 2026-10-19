@@ -2,16 +2,16 @@ import Link from "next/link";
 import { asc, desc, eq } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 import { db } from "@/db";
-import { bodyMeasurements, dietGoals, dietLogs } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, dietVacations } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, formatMacro, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, formatMacro, isVacationDay, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
 import { PrintButton } from "@/components/print-button";
 
 export const dynamic = "force-dynamic";
 
 export default async function PrintMichaPage() {
   const user = await requireUser();
-  const [goals, logs, measurements] = await Promise.all([
+  const [goals, logs, measurements, vacationRows] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db
       .select()
@@ -23,11 +23,12 @@ export default async function PrintMichaPage() {
       .from(bodyMeasurements)
       .where(eq(bodyMeasurements.userId, user.id))
       .orderBy(asc(bodyMeasurements.date)),
+    db.select().from(dietVacations).where(eq(dietVacations.userId, user.id)),
   ]);
   const goalByWeekday = new Map(goals.map((g) => [g.weekday, g]));
   const weekStart = startOfWeek(new Date());
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
-  const weekLogs = logs.filter((l) => l.date >= weekStart && l.date < weekEnd);
+  const weekLogs = logs.filter((l) => l.date >= weekStart && l.date < weekEnd && !isVacationDay(l.date, vacationRows));
   const sum = (items: typeof logs) =>
     items.reduce(
       (a, l) => ({ protein: a.protein + (l.protein ?? 0), fat: a.fat + (l.fat ?? 0), carbs: a.carbs + (l.carbs ?? 0), kcal: a.kcal + (l.kcal ?? 0) }),
@@ -35,7 +36,9 @@ export default async function PrintMichaPage() {
     );
   const weekSum = sum(weekLogs);
   const weekGoal = WEEKDAYS.reduce(
-    (a, { n }) => {
+    (a, { n }, index) => {
+      const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
+      if (isVacationDay(day, vacationRows)) return a;
       const g = goalByWeekday.get(n);
       return { protein: a.protein + (g?.protein ?? 0), fat: a.fat + (g?.fat ?? 0), carbs: a.carbs + (g?.carbs ?? 0), kcal: a.kcal + (g?.kcalGoal ?? 0) };
     },

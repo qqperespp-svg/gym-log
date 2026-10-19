@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { asc, desc, eq } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, Umbrella, UtensilsCrossed } from "lucide-react";
+import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
+import { ArrowLeft, CheckCircle2, FileDown, Plus, Scale, TrendingDown, TrendingUp, Umbrella, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
-import { bodyMeasurements, dietGoals, dietLogs, dietVacations, foodProducts, recipes, userFavorites, type DietLog } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, dietVacations, foodProducts, recipes, userFavorites, workouts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, formatMacro, isVacationDay, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
 import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
@@ -19,6 +19,7 @@ import { SuggestMealTile } from "@/components/suggest-meal-tile";
 import { RecipeForm, RecipeItem } from "@/components/recipe-form";
 import { VacationForm } from "@/components/vacation-form";
 import { MealPortionForm } from "@/components/meal-portion-form";
+import { TodayGoalEditor } from "@/components/today-goal-editor";
 
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,10 @@ export default async function MichaPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [goals, logs, products, measurements, recipeRows, favRows, vacationRows] = await Promise.all([
+  const scheduleStart = new Date();
+  scheduleStart.setHours(0, 0, 0, 0);
+  const scheduleEnd = new Date(scheduleStart.getTime() + 86400000);
+  const [goals, logs, products, measurements, recipeRows, favRows, vacationRows, todayWorkouts] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db
       .select()
@@ -51,6 +55,10 @@ export default async function MichaPage({
     db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)).limit(50),
     db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)).limit(50),
     db.select().from(dietVacations).where(eq(dietVacations.userId, user.id)),
+    db
+      .select({ status: workouts.status })
+      .from(workouts)
+      .where(and(eq(workouts.userId, user.id), gte(workouts.date, scheduleStart), lt(workouts.date, scheduleEnd))),
   ]);
   const favoriteIds = new Set(favRows.map((f) => f.productId));
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
@@ -114,10 +122,24 @@ export default async function MichaPage({
   const todaySum = todayIsVacation ? { protein: 0, fat: 0, carbs: 0, kcal: 0 } : sum(todayLogs);
   const todayEaten = sum(todayLogs);
   const weekSum = sum(weekLogs);
+  const weekDailySums = WEEKDAYS.map(({ n }) => sum(weekLogs.filter((log) => weekdayOf(log.date) === n)));
 
   // ----- Cele -----
   const todayWeekday = weekdayOf(today);
-  const todayGoal = goalByWeekday.get(todayWeekday);
+  const storedTodayGoal = goalByWeekday.get(todayWeekday);
+  const hasScheduledTraining = todayWorkouts.some((workout) => workout.status !== "cancelled");
+  const desiredTraining = hasScheduledTraining ? 1 : storedTodayGoal?.trainingDay ?? 0;
+  const plannedGoal =
+    storedTodayGoal?.trainingDay === desiredTraining
+      ? storedTodayGoal
+      : goals.find((goal) => goal.trainingDay === desiredTraining);
+  const todayGoal = plannedGoal
+    ? {
+        ...plannedGoal,
+        meals: storedTodayGoal?.meals ?? plannedGoal.meals,
+        mealNames: storedTodayGoal?.mealNames ?? plannedGoal.mealNames,
+      }
+    : storedTodayGoal;
   const weekGoal = WEEKDAYS.reduce(
     (acc, { n }, index) => {
       const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
@@ -185,16 +207,9 @@ export default async function MichaPage({
                       <Umbrella size={13} /> Urlop
                     </span>
                   ) : (
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                        isTrainingDay
-                          ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                          : "bg-white/[.04] text-slate-400 ring-white/10"
-                      }`}
-                    >
-                      {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-                      {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-                    </span>
+                    todayGoal && (
+                      <TodayGoalEditor weekday={todayWeekday} goal={todayGoal} training={isTrainingDay} />
+                    )
                   )}
                 </div>
                 {todayIsVacation && todayEaten.kcal > 0 && (
@@ -256,6 +271,7 @@ export default async function MichaPage({
                     target={weekGoal.kcal}
                     unit="kcal"
                     barClass="bg-lime-400"
+                    dailyValues={weekDailySums.map((day) => day.kcal)}
                   />
                   <MacroBar
                     label="Białko"
@@ -263,6 +279,7 @@ export default async function MichaPage({
                     target={weekGoal.protein}
                     unit="g"
                     barClass="bg-sky-400"
+                    dailyValues={weekDailySums.map((day) => day.protein)}
                   />
                   <MacroBar
                     label="Tłuszcze"
@@ -270,6 +287,7 @@ export default async function MichaPage({
                     target={weekGoal.fat}
                     unit="g"
                     barClass="bg-amber-400"
+                    dailyValues={weekDailySums.map((day) => day.fat)}
                   />
                   <MacroBar
                     label="Węglowodany"
@@ -277,6 +295,7 @@ export default async function MichaPage({
                     target={weekGoal.carbs}
                     unit="g"
                     barClass="bg-rose-400"
+                    dailyValues={weekDailySums.map((day) => day.carbs)}
                   />
                 </div>
               </div>

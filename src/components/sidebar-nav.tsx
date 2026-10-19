@@ -156,7 +156,7 @@ export function SidebarNav({
               {curTheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
             </button>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="grid grid-cols-5 gap-1">
             {(
               [
                 ["lime", "#a3e635"],
@@ -165,6 +165,12 @@ export function SidebarNav({
                 ["rose", "#fb7185"],
                 ["amber", "#fbbf24"],
                 ["emerald", "#34d399"],
+                ["cyan", "#22d3ee"],
+                ["fuchsia", "#e879f9"],
+                ["orange", "#fb923c"],
+                ["teal", "#2dd4bf"],
+                ["indigo", "#818cf8"],
+                ["gold", "#facc15"],
               ] as const
             ).map(([key, color]) => (
               <button

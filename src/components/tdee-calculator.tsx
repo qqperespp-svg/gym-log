@@ -22,6 +22,12 @@ export function TdeeCalculator() {
   const [c, setC] = useState("40");
   const [f, setF] = useState("30");
   const [trainingBonus, setTrainingBonus] = useState("200");
+  const [restProtein, setRestProtein] = useState("");
+  const [restFat, setRestFat] = useState("");
+  const [restCarbs, setRestCarbs] = useState("");
+  const [trainingProtein, setTrainingProtein] = useState("");
+  const [trainingFat, setTrainingFat] = useState("");
+  const [trainingCarbs, setTrainingCarbs] = useState("");
 
   const result = useMemo(() => {
     const w = Number(weight) || 0;
@@ -71,6 +77,12 @@ export function TdeeCalculator() {
         <input type="hidden" name="carbsPct" value={c} />
         <input type="hidden" name="fatPct" value={f} />
         <input type="hidden" name="trainingBonus" value={trainingBonus} />
+        <input type="hidden" name="restProtein" value={restProtein} />
+        <input type="hidden" name="restFat" value={restFat} />
+        <input type="hidden" name="restCarbs" value={restCarbs} />
+        <input type="hidden" name="trainingProtein" value={trainingProtein} />
+        <input type="hidden" name="trainingFat" value={trainingFat} />
+        <input type="hidden" name="trainingCarbs" value={trainingCarbs} />
         <label className="field-label">
           Płeć
           <select className={input} value={sex} onChange={(e) => setSex(e.target.value)}>
@@ -159,9 +171,14 @@ export function TdeeCalculator() {
         <p className="mt-2 text-xs text-slate-500">
           Dni oznaczone jako „treningowe" w celach dostaną podwyższoną kalorykę — reszta bazową.
         </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <MacroOverride title="Ręczne makro — dzień wolny" values={[restProtein, restFat, restCarbs]} setters={[setRestProtein, setRestFat, setRestCarbs]} />
+          <MacroOverride title="Ręczne makro — dzień treningowy" values={[trainingProtein, trainingFat, trainingCarbs]} setters={[setTrainingProtein, setTrainingFat, setTrainingCarbs]} />
+        </div>
       </div>
 
       {result && (
+
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-lime-400/25 bg-lime-400/[.07] p-4">
             <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-lime-300">
@@ -196,4 +213,8 @@ export function TdeeCalculator() {
       </p>
     </form>
   );
+}
+
+function MacroOverride({ title, values, setters }: { title: string; values: string[]; setters: Array<(value: string) => void> }) {
+  return <div className="rounded-xl border border-white/[.06] p-3"><p className="mb-2 text-xs font-bold text-slate-400">{title}</p><div className="grid grid-cols-3 gap-2">{["Białko", "Tłuszcze", "Węglowodany"].map((label, i) => <label key={label} className="text-[10px] text-slate-500">{label}<input className="input mt-1 !min-h-9 !px-2" type="number" min="0" step="0.1" value={values[i]} onChange={e => setters[i](e.target.value)} /></label>)}</div></div>;
 }

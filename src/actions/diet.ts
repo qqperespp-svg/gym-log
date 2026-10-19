@@ -32,6 +32,43 @@ function readGrams(formData: FormData): number {
   return Math.max(1, Math.round(raw));
 }
 
+/** Edycja celu na dziś + przełączenie dzień treningowy / wolny (z planu tygodniowego). */
+export async function updateTodayGoalAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const weekday = WEEKDAYS.find(({ n }) => n === Number(formData.get("weekday")))?.n;
+  if (!weekday) return;
+  const current = (
+    await db.select().from(dietGoals).where(and(eq(dietGoals.userId, user.id), eq(dietGoals.weekday, weekday)))
+  )[0];
+  if (!current) return;
+  const usePlan = String(formData.get("usePlan")) === "1";
+  const nextTraining = usePlan ? (String(formData.get("training")) === "1" ? 1 : 0) : current.trainingDay;
+  const alternate = usePlan
+    ? (
+        await db
+          .select()
+          .from(dietGoals)
+          .where(and(eq(dietGoals.userId, user.id), eq(dietGoals.trainingDay, nextTraining)))
+      ).find((goal) => goal.weekday !== weekday)
+    : null;
+  const protein = clamp1(alternate?.protein ?? (Number(formData.get("protein")) || 0), 0, 9999);
+  const fat = clamp1(alternate?.fat ?? (Number(formData.get("fat")) || 0), 0, 9999);
+  const carbs = clamp1(alternate?.carbs ?? (Number(formData.get("carbs")) || 0), 0, 9999);
+  await db
+    .update(dietGoals)
+    .set({
+      protein,
+      fat,
+      carbs,
+      kcalGoal: kcalFromMacros(protein, fat, carbs),
+      trainingDay: nextTraining,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(dietGoals.userId, user.id), eq(dietGoals.weekday, weekday)));
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+}
+
 /** Zapisuje dzienne cele makro (i liczone z nich kcal) oraz liczbę posiłków dla każdego dnia tygodnia. */
 export async function saveDietGoalsAction(formData: FormData): Promise<void> {
   const user = await requireUser();

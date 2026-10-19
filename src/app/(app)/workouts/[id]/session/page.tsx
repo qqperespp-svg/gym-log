@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import {
   addSessionSetAction,
   removeSessionSetAction,
+  addSessionExerciseAction,
+  replaceSessionExerciseAction,
   autosaveSessionAction,
   saveWorkoutSessionAction,
 } from "@/actions/workouts";
@@ -48,7 +50,7 @@ export default async function WorkoutSessionPage({
     })
     .from(exercises)
     .innerJoin(exerciseSets, eq(exerciseSets.exerciseId, exercises.id))
-    .where(eq(exercises.workoutId, id))
+    .where(and(eq(exercises.workoutId, id), eq(exercises.skippedInSession, 0)))
     .orderBy(asc(exercises.position), asc(exerciseSets.setNumber));
   const items = Array.from(
     rows
@@ -118,6 +120,8 @@ export default async function WorkoutSessionPage({
         autosave={autosaveSessionAction.bind(null, id)}
         addSet={addSessionSetAction.bind(null, id)}
         removeSet={removeSessionSetAction.bind(null, id)}
+        addExercise={addSessionExerciseAction.bind(null, id)}
+        replaceExercise={replaceSessionExerciseAction.bind(null, id)}
         initial={items}
         initialWorkoutNotes={workout.notes ?? ""}
       />

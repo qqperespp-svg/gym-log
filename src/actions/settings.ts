@@ -81,7 +81,9 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
   for (const { n } of WEEKDAYS) {
     const isTraining = trainingByDay.get(n) ?? false;
     const kcal = isTraining ? trainingKcal : restKcal;
-    const m = macros(kcal);
+    const manual = isTraining ? ["trainingProtein", "trainingFat", "trainingCarbs"] : ["restProtein", "restFat", "restCarbs"];
+    const manualValues = manual.map((key) => Number(formData.get(key)));
+    const m = manualValues.every((v) => Number.isFinite(v) && v > 0) ? { protein: manualValues[0], fat: manualValues[1], carbs: manualValues[2] } : macros(kcal);
     await db
       .insert(dietGoals)
       .values({

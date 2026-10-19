@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   ArrowUpRight,
   CalendarDays,
@@ -7,7 +7,6 @@ import {
   Flame,
   Play,
   Plus,
-  Sofa,
   Target,
   TrendingDown,
   TrendingUp,
@@ -25,6 +24,7 @@ import { DashboardTiles } from "@/components/dashboard-tiles";
 import { MacroBar } from "@/components/macro-bar";
 import { StepsCard } from "@/components/steps-card";
 import { SleepCard } from "@/components/sleep-card";
+import { TodayGoalEditor } from "@/components/today-goal-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +66,12 @@ export default async function DashboardPage({
   const query = await searchParams;
 
   // ---------- Treningi ----------
+  const recentWorkoutIds = await db
+    .select({ id: workouts.id })
+    .from(workouts)
+    .where(eq(workouts.userId, user.id))
+    .orderBy(desc(workouts.date))
+    .limit(30);
   const rows = await db
     .select({
       id: workouts.id,
@@ -82,7 +88,11 @@ export default async function DashboardPage({
     .from(workouts)
     .leftJoin(exercises, eq(exercises.workoutId, workouts.id))
     .leftJoin(exerciseSets, eq(exerciseSets.exerciseId, exercises.id))
-    .where(eq(workouts.userId, user.id))
+    .where(
+      recentWorkoutIds.length
+        ? and(eq(workouts.userId, user.id), inArray(workouts.id, recentWorkoutIds.map((item) => item.id)))
+        : eq(workouts.userId, user.id),
+    )
     .orderBy(desc(workouts.date), asc(exercises.position), asc(exerciseSets.setNumber));
 
   const grouped = new Map<
@@ -162,7 +172,8 @@ export default async function DashboardPage({
     .select()
     .from(bodyMeasurements)
     .where(eq(bodyMeasurements.userId, user.id))
-    .orderBy(desc(bodyMeasurements.date));
+    .orderBy(desc(bodyMeasurements.date))
+    .limit(100);
   const firstMeasurement = measurementRows[measurementRows.length - 1] ?? null;
   const latestMeasurement = measurementRows[0] ?? null;
   const bodyMetrics = [
@@ -221,8 +232,8 @@ export default async function DashboardPage({
   // ---------- Micha: cele i spożycie w bieżącym tygodniu ----------
   const [goalRows, dietLogRows, waterRows, settingsRows, fitnessRows, sleepRows, vacationRows] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
-    db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)),
-    db.select().from(waterLogs).where(eq(waterLogs.userId, user.id)),
+    db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)).orderBy(desc(dietLogs.date)).limit(400),
+    db.select().from(waterLogs).where(eq(waterLogs.userId, user.id)).orderBy(desc(waterLogs.date)).limit(400),
     db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1),
     db.select().from(fitnessLogs).where(eq(fitnessLogs.userId, user.id)).orderBy(desc(fitnessLogs.date)).limit(60),
     db.select().from(sleepLogs).where(eq(sleepLogs.userId, user.id)).orderBy(desc(sleepLogs.date)).limit(60),
@@ -246,7 +257,8 @@ export default async function DashboardPage({
   );
   const todaySum = todayIsVacation ? { protein: 0, fat: 0, carbs: 0, kcal: 0 } : todaySumRaw;
   const todayWeekday = weekdayOf(now);
-  const todayGoal = todayIsVacation ? null : (goalByWeekday.get(todayWeekday) ?? null);
+  const storedTodayGoal = goalByWeekday.get(todayWeekday) ?? null;
+  const todayGoal = todayIsVacation ? null : storedTodayGoal;
   const waterGoal = settingsRows[0]?.waterGoal ?? 2.5;
   const todayWater = waterRows
     .filter((w) => w.date >= todayStart && w.date < tomorrow)
@@ -481,16 +493,9 @@ export default async function DashboardPage({
                         <Umbrella size={13} /> Urlop — nie liczymy
                       </span>
                     ) : (
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                        isTrainingDay
-                          ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                          : "bg-white/[.04] text-slate-400 ring-white/10"
-                      }`}
-                    >
-                      {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-                      {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-                    </span>
+                      storedTodayGoal && (
+                        <TodayGoalEditor weekday={todayWeekday} goal={storedTodayGoal} training={isTrainingDay} />
+                      )
                     )}
                     <Link href="/micha" className="text-link">
                       Otwórz Michę <ArrowUpRight size={15} />

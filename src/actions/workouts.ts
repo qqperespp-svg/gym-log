@@ -133,6 +133,8 @@ export async function createWorkoutAction(
     .returning();
   await insertWorkoutExercises(workout.id, data);
   revalidatePath("/workouts");
+  revalidatePath("/dashboard");
+  revalidatePath("/micha");
   redirect(`/workouts/${workout.id}/session`);
 }
 
@@ -162,6 +164,8 @@ export async function updateWorkoutAction(
   await db.delete(exercises).where(eq(exercises.workoutId, workoutId));
   await insertWorkoutExercises(workoutId, data);
   revalidatePath("/workouts");
+  revalidatePath("/dashboard");
+  revalidatePath("/micha");
   revalidatePath(`/workouts/${workoutId}/session`);
   redirect(`/workouts/${workoutId}/edit?saved=1`);
 }
@@ -172,6 +176,8 @@ export async function deleteWorkoutAction(workoutId: number): Promise<void> {
   await db.delete(workouts).where(eq(workouts.id, workoutId));
   revalidatePath("/workouts");
   revalidatePath("/history");
+  revalidatePath("/dashboard");
+  revalidatePath("/micha");
   redirect("/workouts");
 }
 
@@ -217,6 +223,7 @@ export async function saveWorkoutSessionAction(
     revalidatePath("/dashboard");
     revalidatePath("/workouts");
     revalidatePath("/history");
+    revalidatePath("/micha");
     redirect("/dashboard?finished=1");
   }
 

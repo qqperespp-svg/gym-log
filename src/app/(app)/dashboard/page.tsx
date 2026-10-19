@@ -18,6 +18,7 @@ import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, dietVacations, exercises, exerciseSets, fitnessLogs, sleepLogs, userSettings, waterLogs, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, isVacationDay, startOfWeek, weekdayOf } from "@/lib/diet";
+import { dayHasScheduledTraining, resolveGoalForDay, scheduledTrainingDayKeys } from "@/lib/training-day";
 import { Droplets } from "lucide-react";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
 import { DashboardTiles } from "@/components/dashboard-tiles";
@@ -258,7 +259,9 @@ export default async function DashboardPage({
   const todaySum = todayIsVacation ? { protein: 0, fat: 0, carbs: 0, kcal: 0 } : todaySumRaw;
   const todayWeekday = weekdayOf(now);
   const storedTodayGoal = goalByWeekday.get(todayWeekday) ?? null;
-  const todayGoal = todayIsVacation ? null : storedTodayGoal;
+  const hasScheduledTraining = dayHasScheduledTraining(now, scheduledTrainingDayKeys(sessions));
+  const plannedTodayGoal = resolveGoalForDay(goalRows, todayWeekday, hasScheduledTraining) ?? storedTodayGoal;
+  const todayGoal = todayIsVacation ? null : plannedTodayGoal;
   const waterGoal = settingsRows[0]?.waterGoal ?? 2.5;
   const todayWater = waterRows
     .filter((w) => w.date >= todayStart && w.date < tomorrow)
@@ -493,8 +496,8 @@ export default async function DashboardPage({
                         <Umbrella size={13} /> Urlop — nie liczymy
                       </span>
                     ) : (
-                      storedTodayGoal && (
-                        <TodayGoalEditor weekday={todayWeekday} goal={storedTodayGoal} training={isTrainingDay} />
+                      plannedTodayGoal && (
+                        <TodayGoalEditor weekday={todayWeekday} goal={plannedTodayGoal} training={isTrainingDay} />
                       )
                     )}
                     <Link href="/micha" className="text-link">

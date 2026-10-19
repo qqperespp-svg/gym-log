@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, dietVacations, foodProducts, recipes, userFavorites, workouts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, formatMacro, isVacationDay, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
+import { dayHasScheduledTraining, resolveGoalForDay, scheduledTrainingDayKeys } from "@/lib/training-day";
 import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
@@ -31,10 +32,16 @@ export default async function MichaPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const scheduleStart = new Date();
-  scheduleStart.setHours(0, 0, 0, 0);
-  const scheduleEnd = new Date(scheduleStart.getTime() + 86400000);
-  const [goals, logs, products, measurements, recipeRows, favRows, vacationRows, todayWorkouts] = await Promise.all([
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const tomorrow = new Date(todayStart.getTime() + 86400000);
+  const weekParam = params.week ? new Date(`${params.week}T00:00:00`) : null;
+  const weekStart =
+    weekParam && !Number.isNaN(weekParam.getTime()) ? startOfWeek(weekParam) : startOfWeek(today);
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+  const scheduleStart = weekStart < todayStart ? weekStart : todayStart;
+  const scheduleEnd = weekEnd > tomorrow ? weekEnd : tomorrow;
+  const [goals, logs, products, measurements, recipeRows, favRows, vacationRows, scheduledWorkouts] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db
       .select()
@@ -56,10 +63,11 @@ export default async function MichaPage({
     db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)).limit(50),
     db.select().from(dietVacations).where(eq(dietVacations.userId, user.id)),
     db
-      .select({ status: workouts.status })
+      .select({ date: workouts.date, status: workouts.status })
       .from(workouts)
       .where(and(eq(workouts.userId, user.id), gte(workouts.date, scheduleStart), lt(workouts.date, scheduleEnd))),
   ]);
+  const trainingDays = scheduledTrainingDayKeys(scheduledWorkouts);
   const favoriteIds = new Set(favRows.map((f) => f.productId));
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
   const todayMeals = Math.max(1, Math.min(goalByWeekday.get(weekdayOf(new Date()))?.meals ?? 3, 10));
@@ -93,16 +101,7 @@ export default async function MichaPage({
       note: log.note,
     };
   });
-  // Selektor tygodnia (◀ / ▶): ?week=YYYY-MM-DD przesuwa analizę na inny tydzień.
-  const weekParam = params.week ? new Date(`${params.week}T00:00:00`) : null;
-  const weekStart =
-    weekParam && !Number.isNaN(weekParam.getTime()) ? startOfWeek(weekParam) : startOfWeek(new Date());
-  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
-
   // ----- Sumy makro -----
-  const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const tomorrow = new Date(todayStart.getTime() + 86400000);
   const inRange = (log: DietLog, from: Date, to: Date) => log.date >= from && log.date < to;
 
   const sum = (items: DietLog[]) =>
@@ -127,24 +126,13 @@ export default async function MichaPage({
   // ----- Cele -----
   const todayWeekday = weekdayOf(today);
   const storedTodayGoal = goalByWeekday.get(todayWeekday);
-  const hasScheduledTraining = todayWorkouts.some((workout) => workout.status !== "cancelled");
-  const desiredTraining = hasScheduledTraining ? 1 : storedTodayGoal?.trainingDay ?? 0;
-  const plannedGoal =
-    storedTodayGoal?.trainingDay === desiredTraining
-      ? storedTodayGoal
-      : goals.find((goal) => goal.trainingDay === desiredTraining);
-  const todayGoal = plannedGoal
-    ? {
-        ...plannedGoal,
-        meals: storedTodayGoal?.meals ?? plannedGoal.meals,
-        mealNames: storedTodayGoal?.mealNames ?? plannedGoal.mealNames,
-      }
-    : storedTodayGoal;
+  const hasScheduledTraining = dayHasScheduledTraining(today, trainingDays);
+  const todayGoal = resolveGoalForDay(goals, todayWeekday, hasScheduledTraining) ?? storedTodayGoal;
   const weekGoal = WEEKDAYS.reduce(
     (acc, { n }, index) => {
       const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
       if (isVacationDay(day, vacationRows)) return acc;
-      const g = goalByWeekday.get(n);
+      const g = resolveGoalForDay(goals, n, dayHasScheduledTraining(day, trainingDays)) ?? goalByWeekday.get(n);
       return {
         protein: acc.protein + (g?.protein ?? 0),
         fat: acc.fat + (g?.fat ?? 0),
@@ -199,7 +187,13 @@ export default async function MichaPage({
                       Dzisiaj · {WEEKDAYS[todayWeekday - 1]?.label}
                     </h2>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      {todayIsVacation ? "Urlop — kalorie i makro nie są liczone" : "Spożycie vs cel dzienny"}
+                      {todayIsVacation
+                        ? "Urlop — kalorie i makro nie są liczone"
+                        : hasScheduledTraining
+                          ? "Cel dnia treningowego — masz dziś trening w planie"
+                          : isTrainingDay
+                            ? "Cel dnia treningowego z planu tygodnia"
+                            : "Spożycie vs cel dnia wolnego"}
                     </p>
                   </div>
                   {todayIsVacation ? (

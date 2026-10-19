@@ -79,7 +79,7 @@ export function MichaTabs({
             <span className="min-w-0">
               <b className="block text-sm font-extrabold text-white">Liczenie posiłku</b>
               <span className="block text-xs leading-5 text-slate-500">
-                Złóż składniki i dodaj porcję z całości
+                Najpierw skład, potem ile zjadłeś z mieszanki
               </span>
             </span>
           </span>

@@ -447,8 +447,8 @@ export default async function MichaPage({
           <section className="panel p-5 sm:p-7">
             <h2 className="mb-1 font-extrabold text-white">Liczenie posiłku</h2>
             <p className="mb-5 text-sm text-slate-500">
-              Wrzuć składniki po nazwie albo kodzie kreskowym, zsumuj całość (np. garnek / blachę),
-              a potem wyznacz porcję w gramach — makro przeliczy się proporcjonalnie i trafi do dziennika.
+              Najpierw zbierz wszystkie składniki mieszanki (ile weszło do garnka / miski).
+              Dopiero potem podaj, ile gramów z całości zjadłeś — makro przeliczy się proporcjonalnie.
             </p>
             <MealPortionForm products={products} meals={todayMeals} mealNames={todayMealNames} />
           </section>

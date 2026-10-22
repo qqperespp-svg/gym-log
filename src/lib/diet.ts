@@ -95,6 +95,21 @@ export function isVacationDay(date: Date | string, vacations: VacationRange[]): 
   });
 }
 
+/** Urlopy nachodzące na podany okres raportu (brak granic = cały czas). */
+export function vacationsOverlapping<T extends VacationRange>(
+  vacations: T[],
+  from: Date | null,
+  to: Date | null,
+): T[] {
+  const fromT = from ? asLocalDate(from).getTime() : Number.NEGATIVE_INFINITY;
+  const toT = to ? asLocalDate(to).getTime() : Number.POSITIVE_INFINITY;
+  return vacations.filter((v) => {
+    const s = asLocalDate(v.startDate).getTime();
+    const e = asLocalDate(v.endDate).getTime();
+    return s <= toT && e >= fromT;
+  });
+}
+
 /** Bezpieczne sparsowanie nazw posiłków z JSON (kolumna meal_names). */
 export function parseMealNames(raw: string | null, count: number): string[] {
   let names: string[] = [];

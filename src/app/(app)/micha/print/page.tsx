@@ -4,8 +4,9 @@ import { ArrowLeft } from "lucide-react";
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, dietVacations } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, formatMacro, isVacationDay, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, formatMacro, isVacationDay, parseMealNames, startOfWeek, vacationsOverlapping, weekdayOf } from "@/lib/diet";
 import { PrintButton } from "@/components/print-button";
+import { PrintVacationSection } from "@/components/print-vacation";
 
 export const dynamic = "force-dynamic";
 
@@ -35,13 +36,16 @@ export default async function PrintMichaPage({
   const goalByWeekday = new Map(goals.map((g) => [g.weekday, g]));
   const weekStart = startOfWeek(new Date());
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
-  const weekLogs = logs.filter(
-    (l) =>
-      (!from || l.date >= from) &&
-      (!to || l.date <= to) &&
-      (from || to ? true : l.date >= weekStart && l.date < weekEnd) &&
-      !isVacationDay(l.date, vacationRows),
-  );
+  const inPeriod = (date: Date) =>
+    (!from || date >= from) &&
+    (!to || date <= to) &&
+    (from || to ? true : date >= weekStart && date < weekEnd);
+  const periodLogs = logs.filter((l) => inPeriod(l.date));
+  const weekLogs = periodLogs.filter((l) => !isVacationDay(l.date, vacationRows));
+  const vacationLogs = periodLogs.filter((l) => isVacationDay(l.date, vacationRows));
+  const reportFrom = from ?? weekStart;
+  const reportTo = to ?? new Date(weekEnd.getTime() - 1);
+  const reportVacations = vacationsOverlapping(vacationRows, reportFrom, reportTo);
   const sum = (items: typeof logs) =>
     items.reduce(
       (a, l) => ({ protein: a.protein + (l.protein ?? 0), fat: a.fat + (l.fat ?? 0), carbs: a.carbs + (l.carbs ?? 0), kcal: a.kcal + (l.kcal ?? 0) }),
@@ -75,7 +79,7 @@ export default async function PrintMichaPage({
         <h1 className="text-2xl font-black text-white">
           {weekStart.toLocaleDateString("pl-PL")} – {new Date(weekEnd.getTime() - 1).toLocaleDateString("pl-PL")}
         </h1>
-        <p className="mt-2 text-xs text-slate-500">Raport diety i pomiarów · GYMRAT</p>
+        <p className="mt-2 text-xs text-slate-500">Raport diety i pomiarów · GYMRAT · sumy bez dni urlopu</p>
         <form className="print-hide mt-4 flex flex-wrap gap-2">
           <input className="input" type="date" name="from" defaultValue={period.from} />
           <input className="input" type="date" name="to" defaultValue={period.to} />
@@ -103,44 +107,77 @@ export default async function PrintMichaPage({
           </p>
         </div>
         <div className="panel p-4">
-          <p className="text-xs font-black uppercase tracking-wider text-slate-500">Wpisy w tygodniu</p>
+          <p className="text-xs font-black uppercase tracking-wider text-slate-500">Wpisy w okresie</p>
           <p className="mt-1 text-xl font-black">{weekLogs.length}</p>
         </div>
       </div>
 
+      <PrintVacationSection vacations={reportVacations} />
+
       <div className="panel p-6">
         <h2 className="mb-3 font-extrabold text-white">Wpisy</h2>
         {weekLogs.length ? (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-white/[.06] text-[10px] uppercase tracking-wider text-slate-500">
-                <th className="py-2">Data</th>
-                <th className="py-2">Posiłek</th>
-                <th className="py-2">kcal</th>
-                <th className="py-2">T / W / B</th>
-                <th className="py-2">Notatka</th>
-              </tr>
-            </thead>
-            <tbody>
-              {weekLogs.map((l) => {
-                const names = parseMealNames(goalByWeekday.get(weekdayOf(l.date))?.mealNames ?? null, 10);
-                const meal = l.mealNumber ? `${l.mealNumber}. ${names[l.mealNumber - 1] ?? ""}`.trim() : "—";
-                return (
-                  <tr key={l.id} className="border-b border-white/[.03]">
-                    <td className="py-2">{l.date.toLocaleDateString("pl-PL")}</td>
-                    <td className="py-2">{meal}</td>
-                    <td className="py-2">{l.kcal.toLocaleString("pl-PL")}</td>
-                    <td className="py-2">{formatMacro(l.fat)} / {formatMacro(l.carbs)} / {formatMacro(l.protein)}</td>
-                    <td className="py-2 text-slate-500">{l.note ?? "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <MealLogTable logs={weekLogs} goalByWeekday={goalByWeekday} />
         ) : (
-          <p className="text-sm text-slate-500">Brak wpisów w tym tygodniu.</p>
+          <p className="text-sm text-slate-500">Brak wpisów w tym okresie (poza urlopem).</p>
         )}
       </div>
+
+      {vacationLogs.length > 0 && (
+        <div className="panel p-6">
+          <h2 className="mb-1 font-extrabold text-amber-200">Wpisy w urlopie</h2>
+          <p className="mb-3 text-xs text-slate-500">Zapisane, ale nie wliczane do kalorii i makro.</p>
+          <MealLogTable logs={vacationLogs} goalByWeekday={goalByWeekday} />
+        </div>
+      )}
     </div>
+  );
+}
+
+function MealLogTable({
+  logs,
+  goalByWeekday,
+}: {
+  logs: Array<{
+    id: number;
+    date: Date;
+    mealNumber: number | null;
+    kcal: number;
+    protein: number;
+    fat: number;
+    carbs: number;
+    note: string | null;
+  }>;
+  goalByWeekday: Map<number, { mealNames: string | null }>;
+}) {
+  return (
+    <table className="w-full text-left text-sm">
+      <thead>
+        <tr className="border-b border-white/[.06] text-[10px] uppercase tracking-wider text-slate-500">
+          <th className="py-2">Data</th>
+          <th className="py-2">Posiłek</th>
+          <th className="py-2">kcal</th>
+          <th className="py-2">T / W / B</th>
+          <th className="py-2">Notatka</th>
+        </tr>
+      </thead>
+      <tbody>
+        {logs.map((l) => {
+          const names = parseMealNames(goalByWeekday.get(weekdayOf(l.date))?.mealNames ?? null, 10);
+          const meal = l.mealNumber ? `${l.mealNumber}. ${names[l.mealNumber - 1] ?? ""}`.trim() : "—";
+          return (
+            <tr key={l.id} className="border-b border-white/[.03]">
+              <td className="py-2">{l.date.toLocaleDateString("pl-PL")}</td>
+              <td className="py-2">{meal}</td>
+              <td className="py-2">{l.kcal.toLocaleString("pl-PL")}</td>
+              <td className="py-2">
+                {formatMacro(l.fat)} / {formatMacro(l.carbs)} / {formatMacro(l.protein)}
+              </td>
+              <td className="py-2 text-slate-500">{l.note ?? "—"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

@@ -137,11 +137,15 @@ export function BarcodeScanner({
   const [meal, setMeal] = useState("1");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const autoStartedRef = useRef(false);
   useEffect(() => {
-    if (autoScan && !scanning) {
-      void startCamera("barcode");
+    if (!autoScan) {
+      autoStartedRef.current = false;
+      return;
     }
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    void startCamera("barcode");
   }, [autoScan]);
 
   useEffect(() => {

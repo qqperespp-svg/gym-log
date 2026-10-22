@@ -142,12 +142,23 @@ export function ScanCodeBox({ onCode, onError, autoScan }: { onCode: (code: stri
     }
   }, [handleDecoded, stopScan, onError]);
 
+  const startScanRef = useRef(startScan);
+  startScanRef.current = startScan;
+  const autoStartedRef = useRef(false);
   useLayoutEffect(() => {
-    if (autoScan && !scanning) {
-      const timer = setTimeout(() => { void startScan("barcode"); }, 0);
-      return () => clearTimeout(timer);
+    if (!autoScan) {
+      autoStartedRef.current = false;
+      return;
     }
-  }, [autoScan, scanning, startScan]);
+    // Tylko jedno automatyczne odpalenie na wejście z „Dodaj posiłek”.
+    // Zatrzymanie skanowania albo udany odczyt nie może odpalać kamery od nowa.
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    const timer = setTimeout(() => {
+      void startScanRef.current("barcode");
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [autoScan]);
 
   async function onFile(file: File | null) {
     if (!file) return;

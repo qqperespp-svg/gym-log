@@ -6,6 +6,7 @@ import type { FoodProduct } from "@/db/schema";
 import { DeleteFoodProductButton } from "@/components/delete-food-product-button";
 import { EditFoodProductButton } from "@/components/edit-food-product-button";
 import { toggleFavoriteProductAction } from "@/actions/diet";
+import { formatMacroCompact } from "@/lib/diet";
 import { DIET_LABELS, productLabels } from "@/lib/labels";
 import { matchesWords } from "@/lib/search";
 
@@ -155,9 +156,9 @@ export function FoodCatalogSearch({
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {[
-            { label: "Białko (g)", color: "text-sky-300", min: pMin, setMin: setPMin, max: pMax, setMax: setPMax },
             { label: "Tłuszcz (g)", color: "text-amber-300", min: fMin, setMin: setFMin, max: fMax, setMax: setFMax },
             { label: "Węglowodany (g)", color: "text-rose-300", min: cMin, setMin: setCMin, max: cMax, setMax: setCMax },
+            { label: "Białko (g)", color: "text-sky-300", min: pMin, setMin: setPMin, max: pMax, setMax: setPMax },
           ].map((r) => (
             <label key={r.label} className="block text-[11px] font-bold text-slate-400">
               <span className={r.color}>{r.label}</span>
@@ -229,9 +230,7 @@ export function FoodCatalogSearch({
                 </div>
                 <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
                   <span className="font-bold text-lime-300">{p.kcal} kcal</span>
-                  <span>B {p.protein} g</span>
-                  <span>T {p.fat} g</span>
-                  <span>W {p.carbs} g</span>
+                  <span>{formatMacroCompact(p.protein, p.fat, p.carbs)}</span>
                   <span className="text-slate-600">/ 100 g</span>
                   {p.barcode && <span className="text-slate-600">kod: {p.barcode}</span>}
                 </p>

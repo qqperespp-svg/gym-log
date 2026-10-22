@@ -104,13 +104,10 @@ export function MichaTabs({
         </button>
       </div>
 
-      {active === "makro"
-        ? makro
-        : active === "wprowadzanie"
-          ? wprowadzanie
-          : active === "liczenie"
-            ? liczenie
-            : planowanie}
+      <div className={active === "makro" ? "" : "hidden"}>{makro}</div>
+      <div className={active === "wprowadzanie" ? "" : "hidden"}>{wprowadzanie}</div>
+      <div className={active === "liczenie" ? "" : "hidden"}>{liczenie}</div>
+      <div className={active === "planowanie" ? "" : "hidden"}>{planowanie}</div>
     </div>
   );
 }

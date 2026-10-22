@@ -145,16 +145,16 @@ export function TdeeCalculator() {
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="field-label">
-            Białko (%)
-            <input className={input} type="number" min="5" max="70" step="1" value={p} onFocus={(e) => e.target.select()} onChange={(e) => setP(e.target.value)} />
+            Tłuszcze (%)
+            <input className={input} type="number" min="5" max="70" step="1" value={f} onFocus={(e) => e.target.select()} onChange={(e) => setF(e.target.value)} />
           </label>
           <label className="field-label">
             Węglowodany (%)
             <input className={input} type="number" min="5" max="80" step="1" value={c} onFocus={(e) => e.target.select()} onChange={(e) => setC(e.target.value)} />
           </label>
           <label className="field-label">
-            Tłuszcze (%)
-            <input className={input} type="number" min="5" max="70" step="1" value={f} onFocus={(e) => e.target.select()} onChange={(e) => setF(e.target.value)} />
+            Białko (%)
+            <input className={input} type="number" min="5" max="70" step="1" value={p} onFocus={(e) => e.target.select()} onChange={(e) => setP(e.target.value)} />
           </label>
         </div>
       </div>
@@ -172,8 +172,8 @@ export function TdeeCalculator() {
           Dni oznaczone jako „treningowe" w celach dostaną podwyższoną kalorykę — reszta bazową.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <MacroOverride title="Ręczne makro — dzień wolny" values={[restProtein, restFat, restCarbs]} setters={[setRestProtein, setRestFat, setRestCarbs]} />
-          <MacroOverride title="Ręczne makro — dzień treningowy" values={[trainingProtein, trainingFat, trainingCarbs]} setters={[setTrainingProtein, setTrainingFat, setTrainingCarbs]} />
+          <MacroOverride title="Ręczne makro — dzień wolny" values={[restFat, restCarbs, restProtein]} setters={[setRestFat, setRestCarbs, setRestProtein]} />
+          <MacroOverride title="Ręczne makro — dzień treningowy" values={[trainingFat, trainingCarbs, trainingProtein]} setters={[setTrainingFat, setTrainingCarbs, setTrainingProtein]} />
         </div>
       </div>
 
@@ -188,7 +188,7 @@ export function TdeeCalculator() {
               {result.training.toLocaleString("pl-PL")} <span className="text-sm text-slate-500">kcal</span>
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              B {result.macrosTraining.protein} g · T {result.macrosTraining.fat} g · W {result.macrosTraining.carbs} g
+              T {result.macrosTraining.fat} g · W {result.macrosTraining.carbs} g · B {result.macrosTraining.protein} g
             </p>
           </div>
           <div className="rounded-2xl border border-sky-400/25 bg-sky-400/[.07] p-4">
@@ -199,7 +199,7 @@ export function TdeeCalculator() {
               {result.rest.toLocaleString("pl-PL")} <span className="text-sm text-slate-500">kcal</span>
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              B {result.macrosRest.protein} g · T {result.macrosRest.fat} g · W {result.macrosRest.carbs} g
+              T {result.macrosRest.fat} g · W {result.macrosRest.carbs} g · B {result.macrosRest.protein} g
             </p>
           </div>
           <button type="submit" className="button-primary sm:col-span-2 justify-center">
@@ -216,5 +216,5 @@ export function TdeeCalculator() {
 }
 
 function MacroOverride({ title, values, setters }: { title: string; values: string[]; setters: Array<(value: string) => void> }) {
-  return <div className="rounded-xl border border-white/[.06] p-3"><p className="mb-2 text-xs font-bold text-slate-400">{title}</p><div className="grid grid-cols-3 gap-2">{["Białko", "Tłuszcze", "Węglowodany"].map((label, i) => <label key={label} className="text-[10px] text-slate-500">{label}<input className="input mt-1 !min-h-9 !px-2" type="number" min="0" step="0.1" value={values[i]} onChange={e => setters[i](e.target.value)} /></label>)}</div></div>;
+  return <div className="rounded-xl border border-white/[.06] p-3"><p className="mb-2 text-xs font-bold text-slate-400">{title}</p><div className="grid grid-cols-3 gap-2">{["Tłuszcze", "Węglowodany", "Białko"].map((label, i) => <label key={label} className="text-[10px] text-slate-500">{label}<input className="input mt-1 !min-h-9 !px-2" type="number" min="0" step="0.1" value={values[i]} onChange={e => setters[i](e.target.value)} /></label>)}</div></div>;
 }

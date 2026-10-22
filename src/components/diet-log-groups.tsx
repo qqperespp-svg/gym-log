@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, UtensilsCrossed } from "lucide-react";
-import { formatMacro } from "@/lib/diet";
+import { formatMacroTriplet } from "@/lib/diet";
 import { EditDietLogButton } from "@/components/edit-diet-log-button";
 import { DeleteDietLogButton } from "@/components/delete-diet-log-button";
 
@@ -237,7 +237,7 @@ function EntryRow({ row }: { row: DietLogRow }) {
         </span>
       )}
       <span className="text-xs text-slate-400">
-        B {formatMacro(row.protein)} g · T {formatMacro(row.fat)} g · W {formatMacro(row.carbs)} g
+        {formatMacroTriplet(row.protein, row.fat, row.carbs)}
       </span>
       <span className="text-[11px] font-bold text-slate-500">{Math.round(row.grams)} g</span>
       <span className="text-xs font-bold text-lime-300">{row.kcal.toLocaleString("pl-PL")} kcal</span>

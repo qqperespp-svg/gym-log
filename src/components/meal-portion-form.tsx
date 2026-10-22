@@ -1,20 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, LoaderCircle, ScanLine, Search, UtensilsCrossed, X } from "lucide-react";
-import { logMealPortionAction, saveFoundProductAction } from "@/actions/diet";
+import { ArrowLeft, ArrowRight, Bookmark, LoaderCircle, ScanLine, Search, UtensilsCrossed, X } from "lucide-react";
+import { addRecipeAction, logMealPortionAction, saveFoundProductAction, updateRecipeAction } from "@/actions/diet";
 import { ScanCodeBox } from "@/components/scan-code-box";
-import type { FoodProduct } from "@/db/schema";
-import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
+import type { FoodProduct, Recipe } from "@/db/schema";
+import { formatMacroCompact, formatMacroTriplet, kcalFromMacros, round1 } from "@/lib/diet";
 import { suggestMealByHour } from "@/lib/i18n";
 import { productLabels } from "@/lib/labels";
 import { lookupProductByCode } from "@/lib/product-lookup";
 import { matchesWords } from "@/lib/search";
 
+const DRAFT_KEY = "gymrat:meal-mix-draft";
+
 type Item = {
   key: string;
+  productId?: number;
   name: string;
   grams: string;
   protein: number; // /100 g
@@ -27,14 +30,35 @@ function newKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function itemsFromRecipe(recipe: Recipe): Item[] {
+  try {
+    const parsed = JSON.parse(recipe.items ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((row: Partial<Item>, i: number) => ({
+      key: newKey() + i,
+      productId: Number(row.productId) || undefined,
+      name: String(row.name ?? `Składnik ${i + 1}`),
+      grams: String(row.grams ?? ""),
+      protein: Number(row.protein) || 0,
+      fat: Number(row.fat) || 0,
+      carbs: Number(row.carbs) || 0,
+      kcal: Number(row.kcal) || 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export function MealPortionForm({
   products,
   meals,
   mealNames,
+  recipes = [],
 }: {
   products: FoodProduct[];
   meals: number;
   mealNames: string[];
+  recipes?: Recipe[];
 }) {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
@@ -46,11 +70,68 @@ export function MealPortionForm({
   const [portion, setPortion] = useState("");
   const [meal, setMeal] = useState(() => String(suggestMealByHour()));
   const [note, setNote] = useState("");
+  const [mixName, setMixName] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as {
+          items?: Item[];
+          cookedOverride?: string;
+          portion?: string;
+          meal?: string;
+          note?: string;
+          step?: 1 | 2;
+          mixName?: string;
+          editingId?: number | null;
+        };
+        if (Array.isArray(draft.items) && draft.items.length) setItems(draft.items);
+        if (typeof draft.cookedOverride === "string") setCookedOverride(draft.cookedOverride);
+        if (typeof draft.portion === "string") setPortion(draft.portion);
+        if (typeof draft.meal === "string" && draft.meal) setMeal(draft.meal);
+        if (typeof draft.note === "string") setNote(draft.note);
+        if (draft.step === 1 || draft.step === 2) setStep(draft.step);
+        if (typeof draft.mixName === "string") setMixName(draft.mixName);
+        if (typeof draft.editingId === "number" || draft.editingId === null) setEditingId(draft.editingId ?? null);
+      }
+    } catch {
+      // ignoruj uszkodzony szkic
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(
+          DRAFT_KEY,
+          JSON.stringify({ items, cookedOverride, portion, meal, note, step, mixName, editingId }),
+        );
+      } catch {
+        // brak miejsca / tryb prywatny
+      }
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, items, cookedOverride, portion, meal, note, step, mixName, editingId]);
 
   const matches = useMemo(() => {
     if (query.trim().length < 2) return [];
     return products.filter((p) => matchesWords(p.name, query)).slice(0, 12);
   }, [query, products]);
+
+  const serializedItems = items.map((i) => ({
+    productId: i.productId ?? 0,
+    name: i.name,
+    grams: Number(i.grams) || 0,
+    protein: i.protein,
+    fat: i.fat,
+    carbs: i.carbs,
+    kcal: i.kcal,
+  }));
 
   const sumGrams = items.reduce((s, i) => s + (Number(i.grams) || 0), 0);
   const cookedGrams = Math.max(0, Number(cookedOverride) || sumGrams);
@@ -79,9 +160,19 @@ export function MealPortionForm({
   const portionKcal = kcalFromMacros(portionMacros.protein, portionMacros.fat, portionMacros.carbs);
   const totalKcal = kcalFromMacros(round1(sums.protein), round1(sums.fat), round1(sums.carbs));
 
-  function addProduct(name: string, protein: number, fat: number, carbs: number, kcal: number) {
-    setItems((cur) => [...cur, { key: newKey(), name, grams: "", protein, fat, carbs, kcal }]);
+  function addProduct(name: string, protein: number, fat: number, carbs: number, kcal: number, productId?: number) {
+    setItems((cur) => [...cur, { key: newKey(), productId, name, grams: "", protein, fat, carbs, kcal }]);
     setQuery("");
+  }
+
+  function loadMix(recipe: Recipe) {
+    setItems(itemsFromRecipe(recipe));
+    setMixName(recipe.name);
+    setEditingId(recipe.id);
+    setCookedOverride("");
+    setPortion("");
+    setStep(1);
+    setScanStatus(`Wczytano mieszankę: ${recipe.name}. Możesz zmienić gramy składników.`);
   }
 
   async function handleScannedCode(code: string) {
@@ -116,30 +207,31 @@ export function MealPortionForm({
   const mealLabel = (m: number) => mealNames[m - 1] || `Posiłek ${m}`;
   const mixReady = items.length > 0 && items.every((i) => (Number(i.grams) || 0) > 0);
   const canSubmit = mixReady && cookedGrams > 0 && portionGrams > 0;
+  const canSaveMix = mixReady && mixName.trim().length >= 2;
 
   return (
     <form
       action={logMealPortionAction}
       className="space-y-5"
       onSubmit={(e) => {
-        if (step !== 2 || !canSubmit) e.preventDefault();
+        const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+        if (submitter?.name === "intent" && submitter.value === "save-mix") return;
+        if (step !== 2 || !canSubmit) {
+          e.preventDefault();
+          return;
+        }
+        try {
+          localStorage.removeItem(DRAFT_KEY);
+        } catch {
+          // ignoruj
+        }
       }}
     >
-      <input
-        type="hidden"
-        name="items"
-        value={JSON.stringify(
-          items.map((i) => ({
-            name: i.name,
-            grams: Number(i.grams) || 0,
-            protein: i.protein,
-            fat: i.fat,
-            carbs: i.carbs,
-          })),
-        )}
-      />
+      <input type="hidden" name="items" value={JSON.stringify(serializedItems)} />
       <input type="hidden" name="cookedGrams" value={String(cookedGrams)} />
       <input type="hidden" name="portionGrams" value={String(portionGrams)} />
+      <input type="hidden" name="tab" value="liczenie" />
+      {editingId != null && <input type="hidden" name="recipeId" value={editingId} />}
 
       <ol className="grid grid-cols-2 gap-2">
         <li>
@@ -193,6 +285,28 @@ export function MealPortionForm({
 
       {step === 1 ? (
         <>
+          {recipes.length > 0 && (
+            <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
+              <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-500">Zapisane mieszanki</p>
+              <div className="flex flex-wrap gap-2">
+                {recipes.map((recipe) => (
+                  <button
+                    key={recipe.id}
+                    type="button"
+                    onClick={() => loadMix(recipe)}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-bold ${
+                      editingId === recipe.id
+                        ? "border-lime-400/40 bg-lime-400/15 text-lime-200"
+                        : "border-white/10 bg-white/[.04] text-slate-300 hover:border-lime-400/30 hover:text-lime-300"
+                    }`}
+                  >
+                    {recipe.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="rounded-xl border border-white/[.06] bg-black/15 p-3">
               <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
@@ -225,7 +339,7 @@ export function MealPortionForm({
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => addProduct(p.name, p.protein, p.fat, p.carbs, p.kcal)}
+                        onClick={() => addProduct(p.name, p.protein, p.fat, p.carbs, p.kcal, p.id)}
                         className="flex w-full items-center justify-between gap-2 rounded-lg bg-white/[.03] px-3 py-2 text-left transition hover:bg-lime-400/10"
                       >
                         <span className="min-w-0">
@@ -239,7 +353,7 @@ export function MealPortionForm({
                           </span>
                         </span>
                         <span className="shrink-0 text-[11px] font-bold text-slate-400">
-                          {p.kcal} kcal · B{p.protein} T{p.fat} W{p.carbs}
+                          {p.kcal} kcal · {formatMacroCompact(p.protein, p.fat, p.carbs)}
                         </span>
                       </button>
                     );
@@ -316,23 +430,45 @@ export function MealPortionForm({
               ))}
               <p className="text-xs text-slate-400">
                 Cała mieszanka: <b className="text-white">{Math.round(sumGrams).toLocaleString("pl-PL")} g</b> ·{" "}
-                <b className="text-lime-300">{totalKcal.toLocaleString("pl-PL")} kcal</b> · B {formatMacro(round1(sums.protein))} g
-                · T {formatMacro(round1(sums.fat))} g · W {formatMacro(round1(sums.carbs))} g
+                <b className="text-lime-300">{totalKcal.toLocaleString("pl-PL")} kcal</b> ·{" "}
+                {formatMacroTriplet(round1(sums.protein), round1(sums.fat), round1(sums.carbs))}
               </p>
             </div>
           ) : (
             <p className="rounded-xl border border-dashed border-white/10 bg-white/[.02] px-4 py-6 text-center text-sm text-slate-500">
               Najpierw zbierz składniki. Gramy przy produkcie to ile weszło do mieszanki — porcję zjesz w następnym kroku.
+              Szkic zostaje po przełączeniu karty.
             </p>
           )}
 
-          <div className="flex justify-end">
+          <div className="grid gap-3 rounded-xl border border-white/[.06] bg-black/15 p-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <label className="field-label">
+              Nazwa mieszanki
+              <input
+                className="input"
+                name="name"
+                type="text"
+                minLength={2}
+                maxLength={160}
+                placeholder="np. Danie z garnka — kurczak z ryżem"
+                value={mixName}
+                onChange={(e) => setMixName(e.target.value)}
+              />
+            </label>
             <button
-              type="button"
-              className="button-primary"
-              disabled={!mixReady}
-              onClick={() => mixReady && setStep(2)}
+              type="submit"
+              name="intent"
+              value="save-mix"
+              className="button-secondary justify-center"
+              disabled={!canSaveMix}
+              formAction={editingId != null ? updateRecipeAction : addRecipeAction}
             >
+              <Bookmark size={16} /> {editingId != null ? "Zapisz zmiany mieszanki" : "Zapamiętaj mieszankę"}
+            </button>
+          </div>
+
+          <div className="flex justify-end">
+            <button type="button" className="button-primary" disabled={!mixReady} onClick={() => mixReady && setStep(2)}>
               Dalej — ile zjadłem <ArrowRight size={16} />
             </button>
           </div>
@@ -341,7 +477,9 @@ export function MealPortionForm({
         <>
           <div className="rounded-xl border border-white/[.06] bg-black/15 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Gotowa mieszanka</p>
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                {mixName.trim() || "Gotowa mieszanka"}
+              </p>
               <button type="button" onClick={() => setStep(1)} className="text-xs font-bold text-lime-300 hover:text-white">
                 Edytuj skład
               </button>
@@ -452,8 +590,8 @@ export function MealPortionForm({
                 {cookedGrams > 0 ? ` z ${Math.round(cookedGrams).toLocaleString("pl-PL")} g mieszanki` : ""}
               </p>
               <p className="mt-0.5 text-sm text-slate-300">
-                <b className="text-lime-300">{portionKcal.toLocaleString("pl-PL")} kcal</b> · B {formatMacro(portionMacros.protein)} g
-                · T {formatMacro(portionMacros.fat)} g · W {formatMacro(portionMacros.carbs)} g
+                <b className="text-lime-300">{portionKcal.toLocaleString("pl-PL")} kcal</b> ·{" "}
+                {formatMacroTriplet(portionMacros.protein, portionMacros.fat, portionMacros.carbs)}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">

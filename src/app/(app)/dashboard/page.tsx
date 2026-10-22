@@ -515,13 +515,6 @@ export default async function DashboardPage({
                       barClass="bg-lime-400"
                     />
                     <MacroBar
-                      label="Białko"
-                      consumed={todaySum.protein}
-                      target={todayGoal?.protein ?? 0}
-                      unit="g"
-                      barClass="bg-sky-400"
-                    />
-                    <MacroBar
                       label="Tłuszcze"
                       consumed={todaySum.fat}
                       target={todayGoal?.fat ?? 0}
@@ -535,10 +528,17 @@ export default async function DashboardPage({
                       unit="g"
                       barClass="bg-rose-400"
                     />
+                    <MacroBar
+                      label="Białko"
+                      consumed={todaySum.protein}
+                      target={todayGoal?.protein ?? 0}
+                      unit="g"
+                      barClass="bg-sky-400"
+                    />
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500">
-                    Ustaw dzienne cele (białko, tłuszcze, węglowodany) i loguj spożycie w zakładce{" "}
+                    Ustaw dzienne cele (tłuszcze, węglowodany, białko) i loguj spożycie w zakładce{" "}
                     <b>Micha</b>.
                   </p>
                 )}

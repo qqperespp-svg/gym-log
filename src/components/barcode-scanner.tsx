@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { logScannedEntryAction } from "@/actions/diet";
-import { formatMacro, round1 } from "@/lib/diet";
+import { formatMacroTriplet, round1 } from "@/lib/diet";
 import type { FoodProduct } from "@/db/schema";
 
 type Product = {
@@ -539,8 +539,7 @@ export function BarcodeScanner({
               </p>
               <h3 className="mt-0.5 font-extrabold text-white">{product.name}</h3>
               <p className="mt-1 text-xs text-slate-400">
-                Na 100 g: {product.kcal} kcal · B {product.protein} g · T {product.fat} g · W{" "}
-                {product.carbs} g
+                Na 100 g: {product.kcal} kcal · {formatMacroTriplet(product.protein, product.fat, product.carbs)}
               </p>
             </div>
             <button
@@ -595,9 +594,8 @@ export function BarcodeScanner({
             </label>
             <div className="flex items-end rounded-xl bg-black/20 px-4 py-2.5">
               <p className="text-sm text-slate-300">
-                Wpis: <b className="text-lime-300">{computed.kcal} kcal</b> · B{" "}
-                {formatMacro(computed.protein)} g · T {formatMacro(computed.fat)} g · W{" "}
-                {formatMacro(computed.carbs)} g
+                Wpis: <b className="text-lime-300">{computed.kcal} kcal</b> ·{" "}
+                {formatMacroTriplet(computed.protein, computed.fat, computed.carbs)}
               </p>
             </div>
             <div className="sm:col-span-4">

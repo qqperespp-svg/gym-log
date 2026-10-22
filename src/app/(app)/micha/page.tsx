@@ -4,9 +4,9 @@ import { ArrowLeft, CheckCircle2, FileDown, Plus, Scale, TrendingDown, TrendingU
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, dietVacations, foodProducts, recipes, userFavorites, workouts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, formatMacro, isVacationDay, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, formatMacro, formatMacroTriplet, isVacationDay, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
 import { dayHasScheduledTraining, resolveGoalForDay, scheduledTrainingDayKeys } from "@/lib/training-day";
-import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
+import { addFoodProductAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DietLogGroups, type DietLogRow } from "@/components/diet-log-groups";
@@ -208,9 +208,8 @@ export default async function MichaPage({
                 </div>
                 {todayIsVacation && todayEaten.kcal > 0 && (
                   <p className="mb-3 text-xs text-slate-500">
-                    Zjedzone dziś (nie wliczane): {todayEaten.kcal.toLocaleString("pl-PL")} kcal · B{" "}
-                    {formatMacro(todayEaten.protein)} g · T {formatMacro(todayEaten.fat)} g · W{" "}
-                    {formatMacro(todayEaten.carbs)} g
+                    Zjedzone dziś (nie wliczane): {todayEaten.kcal.toLocaleString("pl-PL")} kcal ·{" "}
+                    {formatMacroTriplet(todayEaten.protein, todayEaten.fat, todayEaten.carbs)}
                   </p>
                 )}
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -220,13 +219,6 @@ export default async function MichaPage({
                     target={todayTargets.kcal}
                     unit="kcal"
                     barClass="bg-lime-400"
-                  />
-                  <MacroBar
-                    label="Białko"
-                    consumed={todaySum.protein}
-                    target={todayTargets.protein}
-                    unit="g"
-                    barClass="bg-sky-400"
                   />
                   <MacroBar
                     label="Tłuszcze"
@@ -241,6 +233,13 @@ export default async function MichaPage({
                     target={todayTargets.carbs}
                     unit="g"
                     barClass="bg-rose-400"
+                  />
+                  <MacroBar
+                    label="Białko"
+                    consumed={todaySum.protein}
+                    target={todayTargets.protein}
+                    unit="g"
+                    barClass="bg-sky-400"
                   />
                 </div>
               </div>
@@ -268,14 +267,6 @@ export default async function MichaPage({
                     dailyValues={weekDailySums.map((day) => day.kcal)}
                   />
                   <MacroBar
-                    label="Białko"
-                    consumed={weekSum.protein}
-                    target={weekGoal.protein}
-                    unit="g"
-                    barClass="bg-sky-400"
-                    dailyValues={weekDailySums.map((day) => day.protein)}
-                  />
-                  <MacroBar
                     label="Tłuszcze"
                     consumed={weekSum.fat}
                     target={weekGoal.fat}
@@ -290,6 +281,14 @@ export default async function MichaPage({
                     unit="g"
                     barClass="bg-rose-400"
                     dailyValues={weekDailySums.map((day) => day.carbs)}
+                  />
+                  <MacroBar
+                    label="Białko"
+                    consumed={weekSum.protein}
+                    target={weekGoal.protein}
+                    unit="g"
+                    barClass="bg-sky-400"
+                    dailyValues={weekDailySums.map((day) => day.protein)}
                   />
                 </div>
               </div>
@@ -444,7 +443,7 @@ export default async function MichaPage({
               Najpierw zbierz wszystkie składniki mieszanki (ile weszło do garnka / miski).
               Dopiero potem podaj, ile gramów z całości zjadłeś — makro przeliczy się proporcjonalnie.
             </p>
-            <MealPortionForm products={products} meals={todayMeals} mealNames={todayMealNames} />
+            <MealPortionForm products={products} meals={todayMeals} mealNames={todayMealNames} recipes={recipeRows} />
           </section>
         }
         wprowadzanie={
@@ -481,7 +480,9 @@ export default async function MichaPage({
                 <div className="space-y-2">
                   <p className="text-xs font-black uppercase tracking-wider text-slate-500">Twoje przepisy</p>
                   {recipeRows.length ? (
-                    recipeRows.map((r) => <RecipeItem key={r.id} recipe={r} />)
+                    recipeRows.map((r) => (
+                      <RecipeItem key={r.id} recipe={r} meals={todayMeals} mealNames={todayMealNames} />
+                    ))
                   ) : (
                     <p className="rounded-xl border border-white/[.06] bg-black/15 p-4 text-sm text-slate-500">
                       Brak przepisów — stwórz pierwszy po lewej.
@@ -535,16 +536,16 @@ export default async function MichaPage({
                         />
                       </label>
                       <label className="field-label">
-                        Białko (g/100g)
-                        <input className="input" name="protein" type="number" min="0" step="0.1" required />
-                      </label>
-                      <label className="field-label">
                         Tłuszcze (g/100g)
                         <input className="input" name="fat" type="number" min="0" step="0.1" required />
                       </label>
                       <label className="field-label">
                         Węglowodany (g/100g)
                         <input className="input" name="carbs" type="number" min="0" step="0.1" required />
+                      </label>
+                      <label className="field-label">
+                        Białko (g/100g)
+                        <input className="input" name="protein" type="number" min="0" step="0.1" required />
                       </label>
                       <label className="field-label sm:col-span-2">
                         Kod kreskowy / QR (opcjonalnie)

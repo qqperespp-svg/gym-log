@@ -161,21 +161,6 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
 
               <div className="grid items-end gap-3 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
                 <label className="field-label">
-                  Białko (g)
-                  <span className="input-shell !min-h-11">
-                    <Beef size={15} />
-                    <input
-                      name={`protein-${n}`}
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={values[n].protein}
-                      onFocus={(event) => event.target.select()}
-                      onChange={(event) => setField(n, "protein", event.target.value)}
-                    />
-                  </span>
-                </label>
-                <label className="field-label">
                   Tłuszcze (g)
                   <span className="input-shell !min-h-11">
                     <Droplets size={15} />
@@ -202,6 +187,21 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                       value={values[n].carbs}
                       onFocus={(event) => event.target.select()}
                       onChange={(event) => setField(n, "carbs", event.target.value)}
+                    />
+                  </span>
+                </label>
+                <label className="field-label">
+                  Białko (g)
+                  <span className="input-shell !min-h-11">
+                    <Beef size={15} />
+                    <input
+                      name={`protein-${n}`}
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={values[n].protein}
+                      onFocus={(event) => event.target.select()}
+                      onChange={(event) => setField(n, "protein", event.target.value)}
                     />
                   </span>
                 </label>

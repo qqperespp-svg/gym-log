@@ -38,6 +38,26 @@ export function formatMacro(n: number | null | undefined): string {
   return v.toLocaleString("pl-PL", { maximumFractionDigits: 1 });
 }
 
+/** Kolejność jak na etykiecie produktu: tłuszcz → węglowodany → białko. */
+export function formatMacroTriplet(
+  protein: number | null | undefined,
+  fat: number | null | undefined,
+  carbs: number | null | undefined,
+  opts?: { unit?: boolean },
+): string {
+  const u = opts?.unit === false ? "" : " g";
+  return `T ${formatMacro(fat)}${u} · W ${formatMacro(carbs)}${u} · B ${formatMacro(protein)}${u}`;
+}
+
+/** Zwięzły zapis makro na listach produktów (T/W/B). */
+export function formatMacroCompact(
+  protein: number | null | undefined,
+  fat: number | null | undefined,
+  carbs: number | null | undefined,
+): string {
+  return `T${formatMacro(fat)} W${formatMacro(carbs)} B${formatMacro(protein)}`;
+}
+
 /** Zaokrągla do jednej cyfry po przecinku z zabezpieczeniem przed błędami
  *  zmiennoprzecinkowymi (np. 6.1 * 1.5 = 9.149999… -> 9.2). */
 export function round1(n: number): number {

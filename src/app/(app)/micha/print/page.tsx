@@ -91,9 +91,9 @@ export default async function PrintMichaPage({
           <p className="mt-1 text-xl font-black">{weekSum.kcal.toLocaleString("pl-PL")} / {weekGoal.kcal.toLocaleString("pl-PL")} kcal</p>
         </div>
         <div className="panel p-4">
-          <p className="text-xs font-black uppercase tracking-wider text-slate-500">Białko / Tłuszcze / Węgl.</p>
+          <p className="text-xs font-black uppercase tracking-wider text-slate-500">Tłuszcze / Węgl. / Białko</p>
           <p className="mt-1 text-xl font-black">
-            {formatMacro(weekSum.protein)} / {formatMacro(weekSum.fat)} / {formatMacro(weekSum.carbs)} g
+            {formatMacro(weekSum.fat)} / {formatMacro(weekSum.carbs)} / {formatMacro(weekSum.protein)} g
           </p>
         </div>
         <div className="panel p-4">
@@ -117,7 +117,7 @@ export default async function PrintMichaPage({
                 <th className="py-2">Data</th>
                 <th className="py-2">Posiłek</th>
                 <th className="py-2">kcal</th>
-                <th className="py-2">B / T / W</th>
+                <th className="py-2">T / W / B</th>
                 <th className="py-2">Notatka</th>
               </tr>
             </thead>
@@ -130,7 +130,7 @@ export default async function PrintMichaPage({
                     <td className="py-2">{l.date.toLocaleDateString("pl-PL")}</td>
                     <td className="py-2">{meal}</td>
                     <td className="py-2">{l.kcal.toLocaleString("pl-PL")}</td>
-                    <td className="py-2">{formatMacro(l.protein)} / {formatMacro(l.fat)} / {formatMacro(l.carbs)}</td>
+                    <td className="py-2">{formatMacro(l.fat)} / {formatMacro(l.carbs)} / {formatMacro(l.protein)}</td>
                     <td className="py-2 text-slate-500">{l.note ?? "—"}</td>
                   </tr>
                 );

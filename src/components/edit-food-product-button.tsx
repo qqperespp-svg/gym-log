@@ -48,16 +48,16 @@ export function EditFoodProductButton({ product }: { product: FoodProduct }) {
           <input className="input !min-h-9 !px-2 !py-1 text-sm" name="barcode" type="text" defaultValue={product.barcode ?? ""} maxLength={64} />
         </label>
         <label className="block text-[11px] font-bold text-slate-400">
-          Białko (g/100g)
-          <input className="input !min-h-9 !px-2 !py-1 text-sm" name="protein" type="number" min="0" step="0.1" defaultValue={product.protein} required />
-        </label>
-        <label className="block text-[11px] font-bold text-slate-400">
           Tłuszcze (g/100g)
           <input className="input !min-h-9 !px-2 !py-1 text-sm" name="fat" type="number" min="0" step="0.1" defaultValue={product.fat} required />
         </label>
         <label className="block text-[11px] font-bold text-slate-400">
           Węglowodany (g/100g)
           <input className="input !min-h-9 !px-2 !py-1 text-sm" name="carbs" type="number" min="0" step="0.1" defaultValue={product.carbs} required />
+        </label>
+        <label className="block text-[11px] font-bold text-slate-400">
+          Białko (g/100g)
+          <input className="input !min-h-9 !px-2 !py-1 text-sm" name="protein" type="number" min="0" step="0.1" defaultValue={product.protein} required />
         </label>
       </div>
       <div className="mt-2 flex justify-end gap-2">

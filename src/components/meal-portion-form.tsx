@@ -353,7 +353,7 @@ export function MealPortionForm({
                           </span>
                         </span>
                         <span className="shrink-0 text-[11px] font-bold text-slate-400">
-                          {p.kcal} kcal · {formatMacroCompact(p.protein, p.fat, p.carbs)}
+                          {kcalFromMacros(p.protein, p.fat, p.carbs)} kcal · {formatMacroCompact(p.protein, p.fat, p.carbs)}
                         </span>
                       </button>
                     );

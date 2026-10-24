@@ -3,6 +3,7 @@
 // kodu przy dodawaniu produktów.
 
 import type { FoodProduct } from "@/db/schema";
+import { kcalFromMacros } from "@/lib/diet";
 
 export type LookupProduct = {
   code: string;
@@ -34,7 +35,7 @@ export async function lookupProductByCode(
       protein: local.protein,
       fat: local.fat,
       carbs: local.carbs,
-      kcal: local.kcal,
+      kcal: kcalFromMacros(local.protein, local.fat, local.carbs),
     };
   }
 
@@ -55,9 +56,9 @@ export async function lookupProductByCode(
     };
     if (data?.status !== 1 || !data.product) return null;
     const n = data.product.nutriments ?? {};
-    const kcal =
-      n["energy-kcal_100g"] ??
-      (n["energy-kj_100g"] != null ? Math.round((n["energy-kj_100g"] / 4.184) * 10) / 10 : 0);
+    const protein = round1Raw(n.proteins_100g ?? n.protein_100g);
+    const fat = round1Raw(n.fat_100g ?? n.fats_100g);
+    const carbs = round1Raw(n.carbohydrates_100g ?? n.carbs_100g);
     return {
       code: clean,
       name:
@@ -65,10 +66,10 @@ export async function lookupProductByCode(
         data.product.generic_name ||
         data.product.brands ||
         `Produkt (${clean})`,
-      protein: round1Raw(n.proteins_100g ?? n.protein_100g),
-      fat: round1Raw(n.fat_100g ?? n.fats_100g),
-      carbs: round1Raw(n.carbohydrates_100g ?? n.carbs_100g),
-      kcal: Math.round(Number(kcal) || 0),
+      protein,
+      fat,
+      carbs,
+      kcal: kcalFromMacros(protein, fat, carbs),
     };
   } catch {
     return null;

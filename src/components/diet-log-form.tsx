@@ -149,7 +149,7 @@ export function DietLogForm({
                 onClick={() => fill(p, "100")}
                 className="rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200 transition hover:bg-amber-400/20"
               >
-                {p.name.slice(0, 24)} · {p.kcal} kcal
+                {p.name.slice(0, 24)} · {kcalFromMacros(p.protein, p.fat, p.carbs)} kcal
               </button>
             ))}
           </div>
@@ -207,7 +207,7 @@ export function DietLogForm({
                       </span>
                     </span>
                     <span className="shrink-0 text-[11px] font-bold text-slate-400">
-                      {p.kcal} kcal · {formatMacroCompact(p.protein, p.fat, p.carbs)}
+                      {kcalFromMacros(p.protein, p.fat, p.carbs)} kcal · {formatMacroCompact(p.protein, p.fat, p.carbs)}
                     </span>
                   </button>
                 );

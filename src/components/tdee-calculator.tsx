@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Calculator, Dumbbell, Save, Sofa } from "lucide-react";
 import { saveTdeeAction } from "@/actions/settings";
+import { gramsFromKcalPercents } from "@/lib/diet";
 
 const PRESETS: Record<string, { p: number; c: number; f: number; label: string }> = {
   standard: { p: 30, c: 40, f: 30, label: "Standard 30/40/30" },
@@ -45,12 +46,7 @@ export function TdeeCalculator() {
     const pp = Math.max(5, Math.min(70, Number(p) || 30));
     const cc = Math.max(5, Math.min(80, Number(c) || 40));
     const ff = Math.max(5, Math.min(70, Number(f) || 30));
-    const total = pp + cc + ff || 1;
-    const macros = (kcal: number) => ({
-      protein: Math.round((kcal * (pp / total)) / 4),
-      fat: Math.round((kcal * (ff / total)) / 9),
-      carbs: Math.round((kcal * (cc / total)) / 4),
-    });
+    const macros = (kcal: number) => gramsFromKcalPercents(kcal, { protein: pp, fat: ff, carbs: cc });
     return { rest, training, bonus, macrosRest: macros(rest), macrosTraining: macros(training) };
   }, [sex, age, height, weight, activity, goal, p, c, f, trainingBonus]);
 
@@ -209,7 +205,7 @@ export function TdeeCalculator() {
       )}
 
       <p className="text-xs text-slate-600">
-        <Calculator size={13} className="inline" /> Białko i tłuszcze w gramach liczone z proporcji: B = kcal×P%/4, T = kcal×T%/9, W = kcal×W%/4.
+        <Calculator size={13} className="inline" /> Gramy z proporcji kcal: T = kcal×T%/9, W = kcal×W%/4, B = kcal×B%/4.
       </p>
     </form>
   );

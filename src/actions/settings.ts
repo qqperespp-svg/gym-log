@@ -11,7 +11,7 @@ import {
   workouts,
 } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, kcalFromMacros } from "@/lib/diet";
+import { WEEKDAYS, gramsFromKcalPercents, kcalFromMacros } from "@/lib/diet";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -67,12 +67,8 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
   const restKcal = Math.round(base / 10) * 10;
   const trainingKcal = restKcal + trainingBonus;
 
-  const total = proteinPct + carbsPct + fatPct || 1;
-  const macros = (kcal: number) => ({
-    protein: Math.round((kcal * (proteinPct / total)) / 4),
-    fat: Math.round((kcal * (fatPct / total)) / 9),
-    carbs: Math.round((kcal * (carbsPct / total)) / 4),
-  });
+  const macros = (kcal: number) =>
+    gramsFromKcalPercents(kcal, { protein: proteinPct, fat: fatPct, carbs: carbsPct });
 
   // Istniejące flagi treningowy/wolny per dzień tygodnia.
   const existing = await db.select().from(dietGoals).where(eq(dietGoals.userId, user.id));
@@ -81,9 +77,17 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
   for (const { n } of WEEKDAYS) {
     const isTraining = trainingByDay.get(n) ?? false;
     const kcal = isTraining ? trainingKcal : restKcal;
-    const manual = isTraining ? ["trainingProtein", "trainingFat", "trainingCarbs"] : ["restProtein", "restFat", "restCarbs"];
-    const manualValues = manual.map((key) => Number(formData.get(key)));
-    const m = manualValues.every((v) => Number.isFinite(v) && v > 0) ? { protein: manualValues[0], fat: manualValues[1], carbs: manualValues[2] } : macros(kcal);
+    const proteinKey = isTraining ? "trainingProtein" : "restProtein";
+    const fatKey = isTraining ? "trainingFat" : "restFat";
+    const carbsKey = isTraining ? "trainingCarbs" : "restCarbs";
+    const manualProtein = Number(formData.get(proteinKey));
+    const manualFat = Number(formData.get(fatKey));
+    const manualCarbs = Number(formData.get(carbsKey));
+    const useManual = [manualProtein, manualFat, manualCarbs].every((v) => Number.isFinite(v) && v > 0);
+    const m = useManual
+      ? { protein: manualProtein, fat: manualFat, carbs: manualCarbs }
+      : macros(kcal);
+    const kcalGoal = useManual ? kcalFromMacros(m.protein, m.fat, m.carbs) : kcal;
     await db
       .insert(dietGoals)
       .values({
@@ -92,7 +96,7 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
         protein: m.protein,
         fat: m.fat,
         carbs: m.carbs,
-        kcalGoal: kcal,
+        kcalGoal,
         trainingDay: isTraining ? 1 : 0,
         meals: 3,
         mealNames: JSON.stringify(["Śniadanie", "Obiad", "Kolacja"]),
@@ -103,7 +107,7 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
           protein: m.protein,
           fat: m.fat,
           carbs: m.carbs,
-          kcalGoal: kcal,
+          kcalGoal,
           trainingDay: isTraining ? 1 : 0,
           meals: 3,
           mealNames: JSON.stringify(["Śniadanie", "Obiad", "Kolacja"]),

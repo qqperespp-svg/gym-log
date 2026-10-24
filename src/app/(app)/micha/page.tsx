@@ -495,7 +495,7 @@ export default async function MichaPage({
             <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Cele na dni tygodnia</h2>
               <p className="mb-5 text-sm text-slate-500">
-                kcal = białko × 4 + węglowodany × 4 + tłuszcze × 9 (na gram). Oznacz, czy dany dzień
+                kcal = tłuszcze × 9 + węglowodany × 4 + białko × 4 (na gram). Oznacz, czy dany dzień
                 jest treningowy czy wolny, i ustaw liczbę posiłków oraz ich nazwy.
               </p>
               <DietGoalsForm goals={goals} />

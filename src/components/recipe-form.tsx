@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Plus, Save, X } from "lucide-react";
 import { addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
-import { formatMacroTriplet } from "@/lib/diet";
+import { formatMacroTriplet, kcalFromMacros, round1 } from "@/lib/diet";
 import { suggestMealByHour } from "@/lib/i18n";
 import { matchesWords } from "@/lib/search";
 import type { FoodProduct, Recipe } from "@/db/schema";
@@ -38,24 +38,30 @@ export function RecipeForm({ products }: { products: FoodProduct[] }) {
     return products.filter((p) => matchesWords(p.name, query)).slice(0, 6);
   }, [query, products]);
 
-  const sums = useMemo(
-    () =>
-      items.reduce(
-        (a, i) => ({
-          protein: a.protein + (i.protein * (Number(i.grams) || 0)) / 100,
-          fat: a.fat + (i.fat * (Number(i.grams) || 0)) / 100,
-          carbs: a.carbs + (i.carbs * (Number(i.grams) || 0)) / 100,
-          kcal: a.kcal + (i.kcal * (Number(i.grams) || 0)) / 100,
-        }),
-        { protein: 0, fat: 0, carbs: 0, kcal: 0 },
-      ),
-    [items],
-  );
+  const sums = useMemo(() => {
+    const protein = items.reduce((s, i) => s + (i.protein * (Number(i.grams) || 0)) / 100, 0);
+    const fat = items.reduce((s, i) => s + (i.fat * (Number(i.grams) || 0)) / 100, 0);
+    const carbs = items.reduce((s, i) => s + (i.carbs * (Number(i.grams) || 0)) / 100, 0);
+    return {
+      protein,
+      fat,
+      carbs,
+      kcal: kcalFromMacros(round1(protein), round1(fat), round1(carbs)),
+    };
+  }, [items]);
 
   function addItem(p: FoodProduct) {
     setItems((cur) => [
       ...cur,
-      { productId: p.id, name: p.name, grams: "100", protein: p.protein, fat: p.fat, carbs: p.carbs, kcal: p.kcal },
+      {
+        productId: p.id,
+        name: p.name,
+        grams: "100",
+        protein: p.protein,
+        fat: p.fat,
+        carbs: p.carbs,
+        kcal: kcalFromMacros(p.protein, p.fat, p.carbs),
+      },
     ]);
     setQuery("");
   }
@@ -117,7 +123,7 @@ export function RecipeForm({ products }: { products: FoodProduct[] }) {
                     </span>
                   )}
                 </span>
-                <span className="shrink-0 text-[11px] text-slate-400">{p.kcal} kcal/100g</span>
+                <span className="shrink-0 text-[11px] text-slate-400">{kcalFromMacros(p.protein, p.fat, p.carbs)} kcal/100g</span>
               </button>
             ))}
           </div>
@@ -180,15 +186,14 @@ export function RecipeItem({
       protein: a.protein + (i.protein * (Number(i.grams) || 0)) / 100,
       fat: a.fat + (i.fat * (Number(i.grams) || 0)) / 100,
       carbs: a.carbs + (i.carbs * (Number(i.grams) || 0)) / 100,
-      kcal: a.kcal + (i.kcal * (Number(i.grams) || 0)) / 100,
     }),
-    { protein: 0, fat: 0, carbs: 0, kcal: 0 },
+    { protein: 0, fat: 0, carbs: 0 },
   );
-  const hasItemMacros = sums.protein + sums.fat + sums.carbs + sums.kcal > 0;
+  const hasItemMacros = sums.protein + sums.fat + sums.carbs > 0;
   const protein = hasItemMacros ? sums.protein : recipe.protein;
   const fat = hasItemMacros ? sums.fat : recipe.fat;
   const carbs = hasItemMacros ? sums.carbs : recipe.carbs;
-  const kcal = hasItemMacros ? sums.kcal : recipe.kcal;
+  const kcal = kcalFromMacros(round1(protein), round1(fat), round1(carbs));
 
   return (
     <div className="rounded-xl border border-white/[.06] bg-black/15 px-3 py-2.5">

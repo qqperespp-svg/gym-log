@@ -222,7 +222,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
           Suma tygodniowa:{" "}
           <b className="text-white">{formatKcal(totalKcal)} kcal</b>{" "}
           <span className="text-xs text-slate-600">
-            (białko 4 · węglowodany 4 · tłuszcze 9 kcal/g)
+            (tłuszcze 9 · węglowodany 4 · białko 4 kcal/g)
           </span>
         </p>
         <SubmitButton pendingLabel="Zapisywanie…">

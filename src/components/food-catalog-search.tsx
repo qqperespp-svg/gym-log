@@ -6,7 +6,7 @@ import type { FoodProduct } from "@/db/schema";
 import { DeleteFoodProductButton } from "@/components/delete-food-product-button";
 import { EditFoodProductButton } from "@/components/edit-food-product-button";
 import { toggleFavoriteProductAction } from "@/actions/diet";
-import { formatMacroCompact } from "@/lib/diet";
+import { formatMacroCompact, kcalFromMacros } from "@/lib/diet";
 import { DIET_LABELS, productLabels } from "@/lib/labels";
 import { matchesWords } from "@/lib/search";
 
@@ -229,7 +229,7 @@ export function FoodCatalogSearch({
                   </div>
                 </div>
                 <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
-                  <span className="font-bold text-lime-300">{p.kcal} kcal</span>
+                  <span className="font-bold text-lime-300">{kcalFromMacros(p.protein, p.fat, p.carbs)} kcal</span>
                   <span>{formatMacroCompact(p.protein, p.fat, p.carbs)}</span>
                   <span className="text-slate-600">/ 100 g</span>
                   {p.barcode && <span className="text-slate-600">kod: {p.barcode}</span>}

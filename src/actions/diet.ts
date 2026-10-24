@@ -19,6 +19,27 @@ function clamp1(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(n * 10) / 10, min), max);
 }
 
+/** Suma makro z pozycji (wartości na 100 g × gramy); kcal zawsze T×9 + W×4 + B×4. */
+function sumItemMacros(
+  items: Array<{ grams?: number; protein?: number; fat?: number; carbs?: number }>,
+): { protein: number; fat: number; carbs: number; kcal: number } {
+  const raw = items.reduce(
+    (a, i) => {
+      const g = (Number(i.grams) || 0) / 100;
+      return {
+        protein: a.protein + (Number(i.protein) || 0) * g,
+        fat: a.fat + (Number(i.fat) || 0) * g,
+        carbs: a.carbs + (Number(i.carbs) || 0) * g,
+      };
+    },
+    { protein: 0, fat: 0, carbs: 0 },
+  );
+  const protein = round1(raw.protein);
+  const fat = round1(raw.fat);
+  const carbs = round1(raw.carbs);
+  return { protein, fat, carbs, kcal: kcalFromMacros(protein, fat, carbs) };
+}
+
 function readMealNumber(formData: FormData): number | null {
   const raw = Number(formData.get("meal") ?? 0);
   if (!Number.isFinite(raw) || raw < 1 || raw > 12) return null;
@@ -263,7 +284,7 @@ export async function saveFoundProductAction(input: {
   const protein = clamp1(Number(input.protein) || 0, 0, 999);
   const fat = clamp1(Number(input.fat) || 0, 0, 999);
   const carbs = clamp1(Number(input.carbs) || 0, 0, 999);
-  const kcal = Math.round(Number(input.kcal) || kcalFromMacros(protein, fat, carbs));
+  const kcal = kcalFromMacros(protein, fat, carbs);
   try {
     // Nie twórz duplikatów we wspólnym katalogu: jeśli produkt o tym kodzie już
     // istnieje (globalny lub innego użytkownika), pomiń zapis.
@@ -311,23 +332,15 @@ export async function addRecipeAction(formData: FormData): Promise<void> {
   } catch {
     redirect(michaSavedPath(formData));
   }
-  const sums = items.reduce(
-    (a, i) => ({
-      protein: a.protein + (i.protein || 0) * ((i.grams || 0) / 100),
-      fat: a.fat + (i.fat || 0) * ((i.grams || 0) / 100),
-      carbs: a.carbs + (i.carbs || 0) * ((i.grams || 0) / 100),
-      kcal: a.kcal + (i.kcal || 0) * ((i.grams || 0) / 100),
-    }),
-    { protein: 0, fat: 0, carbs: 0, kcal: 0 },
-  );
+  const sums = sumItemMacros(items);
   await db.insert(recipes).values({
     userId: user.id,
     name: name.slice(0, 160),
     items: JSON.stringify(items),
-    protein: Math.round(sums.protein * 10) / 10,
-    fat: Math.round(sums.fat * 10) / 10,
-    carbs: Math.round(sums.carbs * 10) / 10,
-    kcal: Math.round(sums.kcal),
+    protein: sums.protein,
+    fat: sums.fat,
+    carbs: sums.carbs,
+    kcal: sums.kcal,
   });
   revalidatePath("/micha");
   redirect(michaSavedPath(formData));
@@ -345,24 +358,16 @@ export async function updateRecipeAction(formData: FormData): Promise<void> {
   } catch {
     redirect(michaSavedPath(formData));
   }
-  const sums = items.reduce(
-    (a, i) => ({
-      protein: a.protein + (i.protein || 0) * ((i.grams || 0) / 100),
-      fat: a.fat + (i.fat || 0) * ((i.grams || 0) / 100),
-      carbs: a.carbs + (i.carbs || 0) * ((i.grams || 0) / 100),
-      kcal: a.kcal + (i.kcal || 0) * ((i.grams || 0) / 100),
-    }),
-    { protein: 0, fat: 0, carbs: 0, kcal: 0 },
-  );
+  const sums = sumItemMacros(items);
   await db
     .update(recipes)
     .set({
       name: name.slice(0, 160),
       items: JSON.stringify(items),
-      protein: Math.round(sums.protein * 10) / 10,
-      fat: Math.round(sums.fat * 10) / 10,
-      carbs: Math.round(sums.carbs * 10) / 10,
-      kcal: Math.round(sums.kcal),
+      protein: sums.protein,
+      fat: sums.fat,
+      carbs: sums.carbs,
+      kcal: sums.kcal,
     })
     .where(and(eq(recipes.id, id), eq(recipes.userId, user.id)));
   revalidatePath("/micha");
@@ -429,25 +434,15 @@ export async function logRecipeAction(formData: FormData): Promise<void> {
   } catch {
     items = [];
   }
-  const sums = items.reduce(
-    (a, i) => ({
-      protein: a.protein + (Number(i.protein) || 0) * ((Number(i.grams) || 0) / 100),
-      fat: a.fat + (Number(i.fat) || 0) * ((Number(i.grams) || 0) / 100),
-      carbs: a.carbs + (Number(i.carbs) || 0) * ((Number(i.grams) || 0) / 100),
-      kcal: a.kcal + (Number(i.kcal) || 0) * ((Number(i.grams) || 0) / 100),
-    }),
-    { protein: 0, fat: 0, carbs: 0, kcal: 0 },
-  );
-  const hasItemMacros = sums.protein + sums.fat + sums.carbs + sums.kcal > 0;
+  const sums = sumItemMacros(items);
+  const hasItemMacros = sums.protein + sums.fat + sums.carbs > 0;
   const baseGrams = items.reduce((s, i) => s + Math.max(0, Number(i.grams) || 0), 0);
   const portionGrams = Math.max(0, Math.round(Number(formData.get("grams")) || 0));
   const factor = portionGrams > 0 && baseGrams > 0 ? portionGrams / baseGrams : 1;
   const protein = round1((hasItemMacros ? sums.protein : recipe.protein) * factor);
   const fat = round1((hasItemMacros ? sums.fat : recipe.fat) * factor);
   const carbs = round1((hasItemMacros ? sums.carbs : recipe.carbs) * factor);
-  const kcal = hasItemMacros
-    ? Math.round((sums.kcal || kcalFromMacros(sums.protein, sums.fat, sums.carbs)) * factor)
-    : Math.round(recipe.kcal * factor);
+  const kcal = kcalFromMacros(protein, fat, carbs);
   const grams = portionGrams > 0 ? portionGrams : Math.max(1, Math.round(baseGrams) || 100);
   await db.insert(dietLogs).values({
     userId: user.id,

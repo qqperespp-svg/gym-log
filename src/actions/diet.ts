@@ -23,20 +23,18 @@ function clamp1(value: number, min: number, max: number): number {
 function sumItemMacros(
   items: Array<{ grams?: number; protein?: number; fat?: number; carbs?: number }>,
 ): { protein: number; fat: number; carbs: number; kcal: number } {
-  const raw = items.reduce(
-    (a, i) => {
-      const g = (Number(i.grams) || 0) / 100;
-      return {
-        protein: a.protein + (Number(i.protein) || 0) * g,
-        fat: a.fat + (Number(i.fat) || 0) * g,
-        carbs: a.carbs + (Number(i.carbs) || 0) * g,
-      };
-    },
-    { protein: 0, fat: 0, carbs: 0 },
-  );
-  const protein = round1(raw.protein);
-  const fat = round1(raw.fat);
-  const carbs = round1(raw.carbs);
+  let protein = 0;
+  let fat = 0;
+  let carbs = 0;
+  for (const i of items) {
+    const g = (Number(i.grams) || 0) / 100;
+    protein += (Number(i.protein) || 0) * g;
+    fat += (Number(i.fat) || 0) * g;
+    carbs += (Number(i.carbs) || 0) * g;
+  }
+  protein = round1(protein);
+  fat = round1(fat);
+  carbs = round1(carbs);
   return { protein, fat, carbs, kcal: kcalFromMacros(protein, fat, carbs) };
 }
 

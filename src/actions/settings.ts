@@ -87,7 +87,7 @@ export async function saveTdeeAction(formData: FormData): Promise<void> {
     const m = useManual
       ? { protein: manualProtein, fat: manualFat, carbs: manualCarbs }
       : macros(kcal);
-    const kcalGoal = useManual ? kcalFromMacros(m.protein, m.fat, m.carbs) : kcal;
+    const kcalGoal = kcalFromMacros(m.protein, m.fat, m.carbs);
     await db
       .insert(dietGoals)
       .values({

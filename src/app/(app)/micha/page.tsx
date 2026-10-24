@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle2, FileDown, Plus, Scale, TrendingDown, TrendingU
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, dietVacations, foodProducts, recipes, userFavorites, workouts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, formatMacro, formatMacroTriplet, isVacationDay, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, formatMacro, formatMacroTriplet, isVacationDay, kcalFromGoal, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
 import { dayHasScheduledTraining, resolveGoalForDay, scheduledTrainingDayKeys } from "@/lib/training-day";
 import { addFoodProductAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
@@ -97,7 +97,7 @@ export default async function MichaPage({
       carbs: log.carbs,
       kcal: log.kcal,
       grams: log.grams ?? 100,
-      dayGoalKcal: goal?.kcalGoal ?? null,
+      dayGoalKcal: goal ? kcalFromGoal(goal) : null,
       note: log.note,
     };
   });
@@ -137,7 +137,7 @@ export default async function MichaPage({
         protein: acc.protein + (g?.protein ?? 0),
         fat: acc.fat + (g?.fat ?? 0),
         carbs: acc.carbs + (g?.carbs ?? 0),
-        kcal: acc.kcal + (g?.kcalGoal ?? 0),
+        kcal: acc.kcal + kcalFromGoal(g),
       };
     },
     { protein: 0, fat: 0, carbs: 0, kcal: 0 },
@@ -145,7 +145,7 @@ export default async function MichaPage({
   const isTrainingDay = todayGoal?.trainingDay === 1;
   const todayTargets = todayIsVacation
     ? { protein: 0, fat: 0, carbs: 0, kcal: 0 }
-    : { protein: todayGoal?.protein ?? 0, fat: todayGoal?.fat ?? 0, carbs: todayGoal?.carbs ?? 0, kcal: todayGoal?.kcalGoal ?? 0 };
+    : { protein: todayGoal?.protein ?? 0, fat: todayGoal?.fat ?? 0, carbs: todayGoal?.carbs ?? 0, kcal: kcalFromGoal(todayGoal) };
   const defaultTab =
     params.scan === "1" ? "wprowadzanie" : params.tab === "liczenie" ? "liczenie" : "makro";
 

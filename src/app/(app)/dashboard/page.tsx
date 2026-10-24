@@ -17,7 +17,7 @@ import {
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, dietVacations, exercises, exerciseSets, fitnessLogs, sleepLogs, userSettings, waterLogs, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, isVacationDay, startOfWeek, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, isVacationDay, kcalFromGoal, startOfWeek, weekdayOf } from "@/lib/diet";
 import { dayHasScheduledTraining, resolveGoalForDay, scheduledTrainingDayKeys } from "@/lib/training-day";
 import { Droplets } from "lucide-react";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
@@ -482,7 +482,7 @@ export default async function DashboardPage({
             label: "Micha",
             defaultSize: "l",
             node: (
-              <div className="panel p-5 sm:p-6" data-kcal-remaining={Math.max(0, (todayGoal?.kcalGoal ?? 0) - todaySum.kcal)}>
+              <div className="panel p-5 sm:p-6" data-kcal-remaining={Math.max(0, kcalFromGoal(todayGoal) - todaySum.kcal)}>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <UtensilsCrossed size={19} className="text-lime-400" />
@@ -510,7 +510,7 @@ export default async function DashboardPage({
                     <MacroBar
                       label="Kalorie"
                       consumed={todaySum.kcal}
-                      target={todayGoal?.kcalGoal ?? 0}
+                      target={kcalFromGoal(todayGoal)}
                       unit="kcal"
                       barClass="bg-lime-400"
                     />

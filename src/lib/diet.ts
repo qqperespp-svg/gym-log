@@ -41,6 +41,12 @@ export function kcalFromMacros(protein: number, fat: number, carbs: number): num
   );
 }
 
+/** Cel kcal zawsze z gramów makro — nie ze starego pola kcal_goal (np. TDEE). */
+export function kcalFromGoal(goal: { protein?: number | null; fat?: number | null; carbs?: number | null } | null | undefined): number {
+  if (!goal) return 0;
+  return kcalFromMacros(goal.protein ?? 0, goal.fat ?? 0, goal.carbs ?? 0);
+}
+
 /** Gramy makro z udziału % w kaloriach (TDEE): T = kcal×T%/9, W = kcal×W%/4, B = kcal×B%/4. */
 export function gramsFromKcalPercents(
   kcal: number,

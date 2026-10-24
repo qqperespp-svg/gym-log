@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { db } from "@/db";
 import { bodyMeasurements, dietGoals, dietLogs, dietVacations } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, formatMacro, isVacationDay, parseMealNames, startOfWeek, vacationsOverlapping, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, formatMacro, isVacationDay, kcalFromGoal, parseMealNames, startOfWeek, vacationsOverlapping, weekdayOf } from "@/lib/diet";
 import { PrintButton } from "@/components/print-button";
 import { PrintVacationSection } from "@/components/print-vacation";
 
@@ -57,7 +57,7 @@ export default async function PrintMichaPage({
       const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
       if (isVacationDay(day, vacationRows)) return a;
       const g = goalByWeekday.get(n);
-      return { protein: a.protein + (g?.protein ?? 0), fat: a.fat + (g?.fat ?? 0), carbs: a.carbs + (g?.carbs ?? 0), kcal: a.kcal + (g?.kcalGoal ?? 0) };
+      return { protein: a.protein + (g?.protein ?? 0), fat: a.fat + (g?.fat ?? 0), carbs: a.carbs + (g?.carbs ?? 0), kcal: a.kcal + kcalFromGoal(g) };
     },
     { protein: 0, fat: 0, carbs: 0, kcal: 0 },
   );

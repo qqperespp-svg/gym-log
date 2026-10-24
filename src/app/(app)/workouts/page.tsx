@@ -2,7 +2,6 @@ import Link from "next/link";
 import { asc, desc, eq } from "drizzle-orm";
 import { Plus } from "lucide-react";
 import { WorkoutList } from "@/components/workout-list";
-import { ExerciseProgressTile } from "@/components/exercise-progress-tile";
 import { db } from "@/db";
 import { exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -19,7 +18,6 @@ export default async function WorkoutsPage() {
       durationMinutes: workouts.durationMinutes,
       status: workouts.status,
       exerciseId: exercises.id,
-      exerciseName: exercises.name,
       setId: exerciseSets.id,
       reps: exerciseSets.reps,
       weight: exerciseSets.weight,
@@ -65,37 +63,6 @@ export default async function WorkoutsPage() {
     ...item,
     exerciseCount: exerciseIds.size,
   }));
-  const exercisesData = Array.from(
-    new Map(
-      rows
-        .filter((r) => r.exerciseId)
-        .map((r) => [r.exerciseId!, { id: r.exerciseId!, name: r.exerciseName ?? "Brak nazwy", totalSets: 0 }]),
-    ).values(),
-  );
-
-  const workoutsData = new Map<number, Map<number, { volume: number; maxWeight: number }>>();
-  for (const row of rows) {
-    if (!row.exerciseId || !row.setId) continue;
-    const wMap = workoutsData.get(row.id) ?? new Map<number, { volume: number; maxWeight: number }>();
-    const eData = wMap.get(row.exerciseId) ?? { volume: 0, maxWeight: 0 };
-    if (row.completed === 1) {
-      eData.volume += (row.reps ?? 0) * (row.weight ?? 0);
-      eData.maxWeight = Math.max(eData.maxWeight, row.weight ?? 0);
-    }
-    wMap.set(row.exerciseId, eData);
-    workoutsData.set(row.id, wMap);
-  }
-
-  const workoutsProgress = Array.from(workoutsData.entries()).map(([workoutId, eMap]) => ({
-    id: workoutId,
-    date: items.find((i) => i.id === workoutId)?.date ? new Date(items.find((i) => i.id === workoutId)!.date) : new Date(),
-    exerciseIds: Array.from(eMap.keys()),
-    exercises: Array.from(eMap.entries()).map(([exerciseId, data]) => ({
-      exerciseId,
-      volume: data.volume,
-      maxWeight: data.maxWeight,
-    })),
-  }));
 
   return (
     <div className="space-y-7">
@@ -107,26 +74,12 @@ export default async function WorkoutsPage() {
             Otwieraj sesje, zapisuj serie i śledź wykonanie.
           </p>
         </div>
-        <Link href="/workouts/new" className="button-primary self-start sm:self-auto">
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto"><Link href="/workouts/print" className="button-secondary">Raport PDF</Link><Link href="/workouts/new" className="button-primary">
           <Plus size={18} /> Nowy trening
-        </Link>
+        </Link></div>
       </header>
       <WorkoutList workouts={items} />
 
-      <section className="panel p-5 sm:p-7">
-        <h2 className="font-extrabold text-white mb-3">Historia ćwiczeń — progres</h2>
-        <ExerciseProgressTile
-          exercises={exercisesData.map((e) => ({ id: e.id, name: e.name, totalSets: e.totalSets }))}
-          workouts={workoutsProgress.map((w) => ({
-            id: w.id,
-            date: new Date(w.date),
-            volume: w.exercises ? w.exercises.reduce((s, e) => s + e.volume, 0) : 0,
-            maxWeight: w.exercises ? Math.max(...w.exercises.map((e) => e.maxWeight)) : 0,
-            exerciseIds: w.exerciseIds ?? (w.exercises ? w.exercises.map((e) => e.exerciseId) : []),
-            exercises: w.exercises ? w.exercises.map((e) => ({ exerciseId: e.exerciseId, volume: e.volume, maxWeight: e.maxWeight })) : [],
-          }))}
-        />
-      </section>
     </div>
   );
 }

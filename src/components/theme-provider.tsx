@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 
 export type Theme = "dark" | "light";
-export type Accent = "lime" | "sky" | "violet" | "rose" | "amber" | "emerald";
+export type Accent = "lime" | "sky" | "violet" | "rose" | "amber" | "emerald" | "cyan" | "fuchsia" | "orange" | "teal" | "indigo" | "gold";
 
 const KEY = "gymrat:theme";
 

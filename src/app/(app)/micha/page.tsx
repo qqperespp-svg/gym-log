@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { asc, desc, eq } from "drizzle-orm";
-import { ArrowLeft, CheckCircle2, Dumbbell, FileDown, Plus, Scale, Sofa, TrendingDown, TrendingUp, UtensilsCrossed } from "lucide-react";
+import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
+import { ArrowLeft, CheckCircle2, FileDown, Plus, Scale, TrendingDown, TrendingUp, Umbrella, UtensilsCrossed } from "lucide-react";
 import { db } from "@/db";
-import { bodyMeasurements, dietGoals, dietLogs, foodProducts, recipes, userFavorites, type DietLog } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, dietVacations, foodProducts, recipes, userFavorites, workouts, type DietLog } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, formatMacro, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
-import { addFoodProductAction, addRecipeAction, deleteRecipeAction, logRecipeAction } from "@/actions/diet";
+import { WEEKDAYS, formatMacro, formatMacroTriplet, isVacationDay, kcalFromGoal, parseMealNames, startOfWeek, weekdayOf } from "@/lib/diet";
+import { dayHasScheduledTraining, resolveGoalForDay, scheduledTrainingDayKeys } from "@/lib/training-day";
+import { addFoodProductAction } from "@/actions/diet";
 import { DietGoalsForm } from "@/components/diet-goals-form";
 import { DietLogForm } from "@/components/diet-log-form";
 import { DietLogGroups, type DietLogRow } from "@/components/diet-log-groups";
@@ -17,6 +18,9 @@ import { TdeeCalculator } from "@/components/tdee-calculator";
 import { MealEstimate } from "@/components/meal-estimate";
 import { SuggestMealTile } from "@/components/suggest-meal-tile";
 import { RecipeForm, RecipeItem } from "@/components/recipe-form";
+import { VacationForm } from "@/components/vacation-form";
+import { MealPortionForm } from "@/components/meal-portion-form";
+import { TodayGoalEditor } from "@/components/today-goal-editor";
 
 
 export const dynamic = "force-dynamic";
@@ -24,11 +28,20 @@ export const dynamic = "force-dynamic";
 export default async function MichaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; scan?: string; week?: string }>;
+  searchParams: Promise<{ saved?: string; scan?: string; week?: string; tab?: string }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [goals, logs, products, measurements, recipeRows, favRows] = await Promise.all([
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const tomorrow = new Date(todayStart.getTime() + 86400000);
+  const weekParam = params.week ? new Date(`${params.week}T00:00:00`) : null;
+  const weekStart =
+    weekParam && !Number.isNaN(weekParam.getTime()) ? startOfWeek(weekParam) : startOfWeek(today);
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+  const scheduleStart = weekStart < todayStart ? weekStart : todayStart;
+  const scheduleEnd = weekEnd > tomorrow ? weekEnd : tomorrow;
+  const [goals, logs, products, measurements, recipeRows, favRows, vacationRows, scheduledWorkouts] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
     db
       .select()
@@ -48,7 +61,13 @@ export default async function MichaPage({
       .orderBy(asc(bodyMeasurements.date)),
     db.select().from(recipes).where(eq(recipes.userId, user.id)).orderBy(asc(recipes.name)).limit(50),
     db.select().from(userFavorites).where(eq(userFavorites.userId, user.id)).limit(50),
+    db.select().from(dietVacations).where(eq(dietVacations.userId, user.id)),
+    db
+      .select({ date: workouts.date, status: workouts.status })
+      .from(workouts)
+      .where(and(eq(workouts.userId, user.id), gte(workouts.date, scheduleStart), lt(workouts.date, scheduleEnd))),
   ]);
+  const trainingDays = scheduledTrainingDayKeys(scheduledWorkouts);
   const favoriteIds = new Set(favRows.map((f) => f.productId));
   const goalByWeekday = new Map(goals.map((goal) => [goal.weekday, goal]));
   const todayMeals = Math.max(1, Math.min(goalByWeekday.get(weekdayOf(new Date()))?.meals ?? 3, 10));
@@ -78,20 +97,11 @@ export default async function MichaPage({
       carbs: log.carbs,
       kcal: log.kcal,
       grams: log.grams ?? 100,
-      dayGoalKcal: goal?.kcalGoal ?? null,
+      dayGoalKcal: goal ? kcalFromGoal(goal) : null,
       note: log.note,
     };
   });
-  // Selektor tygodnia (◀ / ▶): ?week=YYYY-MM-DD przesuwa analizę na inny tydzień.
-  const weekParam = params.week ? new Date(`${params.week}T00:00:00`) : null;
-  const weekStart =
-    weekParam && !Number.isNaN(weekParam.getTime()) ? startOfWeek(weekParam) : startOfWeek(new Date());
-  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
-
   // ----- Sumy makro -----
-  const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const tomorrow = new Date(todayStart.getTime() + 86400000);
   const inRange = (log: DietLog, from: Date, to: Date) => log.date >= from && log.date < to;
 
   const sum = (items: DietLog[]) =>
@@ -106,26 +116,38 @@ export default async function MichaPage({
     );
 
   const todayLogs = logs.filter((log) => inRange(log, todayStart, tomorrow));
-  const weekLogs = logs.filter((log) => inRange(log, weekStart, weekEnd));
-  const todaySum = sum(todayLogs);
+  const weekLogs = logs.filter((log) => inRange(log, weekStart, weekEnd) && !isVacationDay(log.date, vacationRows));
+  const todayIsVacation = isVacationDay(today, vacationRows);
+  const todaySum = todayIsVacation ? { protein: 0, fat: 0, carbs: 0, kcal: 0 } : sum(todayLogs);
+  const todayEaten = sum(todayLogs);
   const weekSum = sum(weekLogs);
+  const weekDailySums = WEEKDAYS.map(({ n }) => sum(weekLogs.filter((log) => weekdayOf(log.date) === n)));
 
   // ----- Cele -----
   const todayWeekday = weekdayOf(today);
-  const todayGoal = goalByWeekday.get(todayWeekday);
+  const storedTodayGoal = goalByWeekday.get(todayWeekday);
+  const hasScheduledTraining = dayHasScheduledTraining(today, trainingDays);
+  const todayGoal = resolveGoalForDay(goals, todayWeekday, hasScheduledTraining) ?? storedTodayGoal;
   const weekGoal = WEEKDAYS.reduce(
-    (acc, { n }) => {
-      const g = goalByWeekday.get(n);
+    (acc, { n }, index) => {
+      const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + index);
+      if (isVacationDay(day, vacationRows)) return acc;
+      const g = resolveGoalForDay(goals, n, dayHasScheduledTraining(day, trainingDays)) ?? goalByWeekday.get(n);
       return {
         protein: acc.protein + (g?.protein ?? 0),
         fat: acc.fat + (g?.fat ?? 0),
         carbs: acc.carbs + (g?.carbs ?? 0),
-        kcal: acc.kcal + (g?.kcalGoal ?? 0),
+        kcal: acc.kcal + kcalFromGoal(g),
       };
     },
     { protein: 0, fat: 0, carbs: 0, kcal: 0 },
   );
   const isTrainingDay = todayGoal?.trainingDay === 1;
+  const todayTargets = todayIsVacation
+    ? { protein: 0, fat: 0, carbs: 0, kcal: 0 }
+    : { protein: todayGoal?.protein ?? 0, fat: todayGoal?.fat ?? 0, carbs: todayGoal?.carbs ?? 0, kcal: kcalFromGoal(todayGoal) };
+  const defaultTab =
+    params.scan === "1" ? "wprowadzanie" : params.tab === "liczenie" ? "liczenie" : "makro";
 
   return (
     <div className="space-y-7">
@@ -153,7 +175,7 @@ export default async function MichaPage({
       )}
 
       <MichaTabs
-        defaultTab={params.scan === "1" ? "wprowadzanie" : "makro"}
+        defaultTab={defaultTab}
         makro={
           <>
             <section className="grid gap-5 xl:grid-cols-2">
@@ -164,47 +186,60 @@ export default async function MichaPage({
                     <h2 className="font-extrabold text-white">
                       Dzisiaj · {WEEKDAYS[todayWeekday - 1]?.label}
                     </h2>
-                    <p className="mt-0.5 text-xs text-slate-500">Spożycie vs cel dzienny</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {todayIsVacation
+                        ? "Urlop — kalorie i makro nie są liczone"
+                        : hasScheduledTraining
+                          ? "Cel dnia treningowego — masz dziś trening w planie"
+                          : isTrainingDay
+                            ? "Cel dnia treningowego z planu tygodnia"
+                            : "Spożycie vs cel dnia wolnego"}
+                    </p>
                   </div>
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                      isTrainingDay
-                        ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                        : "bg-white/[.04] text-slate-400 ring-white/10"
-                    }`}
-                  >
-                    {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-                    {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-                  </span>
+                  {todayIsVacation ? (
+                    <span className="inline-flex items-center gap-2 rounded-full bg-amber-400/15 px-3 py-1.5 text-xs font-bold text-amber-200 ring-1 ring-amber-400/40">
+                      <Umbrella size={13} /> Urlop
+                    </span>
+                  ) : (
+                    todayGoal && (
+                      <TodayGoalEditor weekday={todayWeekday} goal={todayGoal} training={isTrainingDay} />
+                    )
+                  )}
                 </div>
+                {todayIsVacation && todayEaten.kcal > 0 && (
+                  <p className="mb-3 text-xs text-slate-500">
+                    Zjedzone dziś (nie wliczane): {todayEaten.kcal.toLocaleString("pl-PL")} kcal ·{" "}
+                    {formatMacroTriplet(todayEaten.protein, todayEaten.fat, todayEaten.carbs)}
+                  </p>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <MacroBar
                     label="Kalorie"
                     consumed={todaySum.kcal}
-                    target={todayGoal?.kcalGoal ?? 0}
+                    target={todayTargets.kcal}
                     unit="kcal"
                     barClass="bg-lime-400"
                   />
                   <MacroBar
-                    label="Białko"
-                    consumed={todaySum.protein}
-                    target={todayGoal?.protein ?? 0}
-                    unit="g"
-                    barClass="bg-sky-400"
-                  />
-                  <MacroBar
                     label="Tłuszcze"
                     consumed={todaySum.fat}
-                    target={todayGoal?.fat ?? 0}
+                    target={todayTargets.fat}
                     unit="g"
                     barClass="bg-amber-400"
                   />
                   <MacroBar
                     label="Węglowodany"
                     consumed={todaySum.carbs}
-                    target={todayGoal?.carbs ?? 0}
+                    target={todayTargets.carbs}
                     unit="g"
                     barClass="bg-rose-400"
+                  />
+                  <MacroBar
+                    label="Białko"
+                    consumed={todaySum.protein}
+                    target={todayTargets.protein}
+                    unit="g"
+                    barClass="bg-sky-400"
                   />
                 </div>
               </div>
@@ -215,7 +250,7 @@ export default async function MichaPage({
                   <div>
                     <h2 className="font-extrabold text-white">Ten tydzień</h2>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      Poniedziałek – niedziela · spożycie vs cele tygodniowe
+                      Poniedziałek – niedziela · spożycie vs cele (bez dni urlopu)
                     </p>
                   </div>
                   <span className="rounded-full bg-white/[.04] px-3 py-1.5 text-xs font-bold text-slate-400 ring-1 ring-white/10">
@@ -229,13 +264,7 @@ export default async function MichaPage({
                     target={weekGoal.kcal}
                     unit="kcal"
                     barClass="bg-lime-400"
-                  />
-                  <MacroBar
-                    label="Białko"
-                    consumed={weekSum.protein}
-                    target={weekGoal.protein}
-                    unit="g"
-                    barClass="bg-sky-400"
+                    dailyValues={weekDailySums.map((day) => day.kcal)}
                   />
                   <MacroBar
                     label="Tłuszcze"
@@ -243,6 +272,7 @@ export default async function MichaPage({
                     target={weekGoal.fat}
                     unit="g"
                     barClass="bg-amber-400"
+                    dailyValues={weekDailySums.map((day) => day.fat)}
                   />
                   <MacroBar
                     label="Węglowodany"
@@ -250,9 +280,29 @@ export default async function MichaPage({
                     target={weekGoal.carbs}
                     unit="g"
                     barClass="bg-rose-400"
+                    dailyValues={weekDailySums.map((day) => day.carbs)}
+                  />
+                  <MacroBar
+                    label="Białko"
+                    consumed={weekSum.protein}
+                    target={weekGoal.protein}
+                    unit="g"
+                    barClass="bg-sky-400"
+                    dailyValues={weekDailySums.map((day) => day.protein)}
                   />
                 </div>
               </div>
+            </section>
+
+            <section className="panel p-5 sm:p-7">
+              <h2 className="mb-1 flex items-center gap-2 font-extrabold text-white">
+                <Umbrella size={18} className="text-amber-300" /> Urlop
+              </h2>
+              <p className="mb-5 text-sm text-slate-500">
+                W dniach urlopu kalorie i makro nie wliczają się do celów dziennych i tygodniowych.
+                Posiłki nadal możesz logować — służą tylko jako notatka.
+              </p>
+              <VacationForm vacations={vacationRows} />
             </section>
 
             <section className="panel p-5 sm:p-7">
@@ -262,10 +312,10 @@ export default async function MichaPage({
               </p>
               <SuggestMealTile
                 remaining={{
-                  protein: Math.max(0, (todayGoal?.protein ?? 0) - todaySum.protein),
-                  fat: Math.max(0, (todayGoal?.fat ?? 0) - todaySum.fat),
-                  carbs: Math.max(0, (todayGoal?.carbs ?? 0) - todaySum.carbs),
-                  kcal: Math.max(0, (todayGoal?.kcalGoal ?? 0) - todaySum.kcal),
+                  protein: Math.max(0, todayTargets.protein - todaySum.protein),
+                  fat: Math.max(0, todayTargets.fat - todaySum.fat),
+                  carbs: Math.max(0, todayTargets.carbs - todaySum.carbs),
+                  kcal: Math.max(0, todayTargets.kcal - todaySum.kcal),
                 }}
                 products={products}
               />
@@ -386,6 +436,16 @@ export default async function MichaPage({
             </section>
           </>
         }
+        liczenie={
+          <section className="panel p-5 sm:p-7">
+            <h2 className="mb-1 font-extrabold text-white">Liczenie posiłku</h2>
+            <p className="mb-5 text-sm text-slate-500">
+              Najpierw zbierz wszystkie składniki mieszanki (ile weszło do garnka / miski).
+              Dopiero potem podaj, ile gramów z całości zjadłeś — makro przeliczy się proporcjonalnie.
+            </p>
+            <MealPortionForm products={products} meals={todayMeals} mealNames={todayMealNames} recipes={recipeRows} />
+          </section>
+        }
         wprowadzanie={
           <>
             <section className="panel p-5 sm:p-7">
@@ -420,7 +480,9 @@ export default async function MichaPage({
                 <div className="space-y-2">
                   <p className="text-xs font-black uppercase tracking-wider text-slate-500">Twoje przepisy</p>
                   {recipeRows.length ? (
-                    recipeRows.map((r) => <RecipeItem key={r.id} recipe={r} />)
+                    recipeRows.map((r) => (
+                      <RecipeItem key={r.id} recipe={r} meals={todayMeals} mealNames={todayMealNames} />
+                    ))
                   ) : (
                     <p className="rounded-xl border border-white/[.06] bg-black/15 p-4 text-sm text-slate-500">
                       Brak przepisów — stwórz pierwszy po lewej.
@@ -433,7 +495,7 @@ export default async function MichaPage({
             <section className="panel p-5 sm:p-7">
               <h2 className="font-extrabold text-white mb-1">Cele na dni tygodnia</h2>
               <p className="mb-5 text-sm text-slate-500">
-                kcal = białko × 4 + węglowodany × 4 + tłuszcze × 9 (na gram). Oznacz, czy dany dzień
+                kcal = tłuszcze × 9 + węglowodany × 4 + białko × 4 (na gram). Oznacz, czy dany dzień
                 jest treningowy czy wolny, i ustaw liczbę posiłków oraz ich nazwy.
               </p>
               <DietGoalsForm goals={goals} />
@@ -474,16 +536,16 @@ export default async function MichaPage({
                         />
                       </label>
                       <label className="field-label">
-                        Białko (g/100g)
-                        <input className="input" name="protein" type="number" min="0" step="0.1" required />
-                      </label>
-                      <label className="field-label">
                         Tłuszcze (g/100g)
                         <input className="input" name="fat" type="number" min="0" step="0.1" required />
                       </label>
                       <label className="field-label">
                         Węglowodany (g/100g)
                         <input className="input" name="carbs" type="number" min="0" step="0.1" required />
+                      </label>
+                      <label className="field-label">
+                        Białko (g/100g)
+                        <input className="input" name="protein" type="number" min="0" step="0.1" required />
                       </label>
                       <label className="field-label sm:col-span-2">
                         Kod kreskowy / QR (opcjonalnie)

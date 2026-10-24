@@ -161,21 +161,6 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
 
               <div className="grid items-end gap-3 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
                 <label className="field-label">
-                  Białko (g)
-                  <span className="input-shell !min-h-11">
-                    <Beef size={15} />
-                    <input
-                      name={`protein-${n}`}
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={values[n].protein}
-                      onFocus={(event) => event.target.select()}
-                      onChange={(event) => setField(n, "protein", event.target.value)}
-                    />
-                  </span>
-                </label>
-                <label className="field-label">
                   Tłuszcze (g)
                   <span className="input-shell !min-h-11">
                     <Droplets size={15} />
@@ -205,6 +190,21 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
                     />
                   </span>
                 </label>
+                <label className="field-label">
+                  Białko (g)
+                  <span className="input-shell !min-h-11">
+                    <Beef size={15} />
+                    <input
+                      name={`protein-${n}`}
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={values[n].protein}
+                      onFocus={(event) => event.target.select()}
+                      onChange={(event) => setField(n, "protein", event.target.value)}
+                    />
+                  </span>
+                </label>
                 <div className="rounded-xl bg-lime-400/10 px-4 py-2 text-center">
                   <p className="text-[10px] font-black uppercase tracking-wider text-lime-400/70">
                     kcal
@@ -222,7 +222,7 @@ export function DietGoalsForm({ goals }: { goals: DietGoal[] }) {
           Suma tygodniowa:{" "}
           <b className="text-white">{formatKcal(totalKcal)} kcal</b>{" "}
           <span className="text-xs text-slate-600">
-            (białko 4 · węglowodany 4 · tłuszcze 9 kcal/g)
+            (tłuszcze 9 · węglowodany 4 · białko 4 kcal/g)
           </span>
         </p>
         <SubmitButton pendingLabel="Zapisywanie…">

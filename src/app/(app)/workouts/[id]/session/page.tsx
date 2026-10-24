@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import {
   addSessionSetAction,
   removeSessionSetAction,
+  addSessionExerciseAction,
+  replaceSessionExerciseAction,
   autosaveSessionAction,
   saveWorkoutSessionAction,
 } from "@/actions/workouts";
@@ -35,6 +37,7 @@ export default async function WorkoutSessionPage({
       name: exercises.name,
       restSeconds: exercises.restSeconds,
       grp: exercises.grp,
+      notes: exercises.notes,
       position: exercises.position,
       setId: exerciseSets.id,
       setNumber: exerciseSets.setNumber,
@@ -47,7 +50,7 @@ export default async function WorkoutSessionPage({
     })
     .from(exercises)
     .innerJoin(exerciseSets, eq(exerciseSets.exerciseId, exercises.id))
-    .where(eq(exercises.workoutId, id))
+    .where(and(eq(exercises.workoutId, id), eq(exercises.skippedInSession, 0)))
     .orderBy(asc(exercises.position), asc(exerciseSets.setNumber));
   const items = Array.from(
     rows
@@ -57,6 +60,7 @@ export default async function WorkoutSessionPage({
           name: row.name,
           restSeconds: row.restSeconds,
           grp: row.grp ?? null,
+          notes: row.notes ?? "",
           position: row.position,
           sets: [] as Array<{
             id: number;
@@ -81,7 +85,7 @@ export default async function WorkoutSessionPage({
         });
         map.set(row.exerciseId, current);
         return map;
-      }, new Map<number, { id: number; name: string; restSeconds: number; grp: string | null; position: number; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: number | null; note: string | null; completed: boolean; isExtra: boolean }> }>())
+      }, new Map<number, { id: number; name: string; restSeconds: number; grp: string | null; notes: string; position: number; sets: Array<{ id: number; setNumber: number; reps: number; weight: number; rir: number | null; note: string | null; completed: boolean; isExtra: boolean }> }>())
       .values(),
   ).sort((a, b) => a.position - b.position);
   return (
@@ -111,17 +115,15 @@ export default async function WorkoutSessionPage({
           </Link>
         </div>
       </header>
-      {workout.notes && (
-        <p className="rounded-xl border border-white/[.06] bg-white/[.025] px-5 py-4 text-sm italic text-slate-400">
-          „{workout.notes}”
-        </p>
-      )}
       <WorkoutSession
         action={saveWorkoutSessionAction.bind(null, id)}
         autosave={autosaveSessionAction.bind(null, id)}
         addSet={addSessionSetAction.bind(null, id)}
         removeSet={removeSessionSetAction.bind(null, id)}
+        addExercise={addSessionExerciseAction.bind(null, id)}
+        replaceExercise={replaceSessionExerciseAction.bind(null, id)}
         initial={items}
+        initialWorkoutNotes={workout.notes ?? ""}
       />
     </div>
   );

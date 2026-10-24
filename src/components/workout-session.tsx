@@ -10,6 +10,7 @@ import {
   CloudUpload,
   Dumbbell,
   LoaderCircle,
+  MessageSquare,
   Plus,
   Save,
   Trash2,
@@ -21,6 +22,7 @@ import type {
   AutosaveResult,
   RemoveSetResult,
   SessionFormState,
+  SessionNotesPayload,
 } from "@/actions/workouts";
 
 type SetRow = {
@@ -33,7 +35,7 @@ type SetRow = {
   completed: boolean;
   isExtra: boolean;
 };
-type ExerciseRow = { id: number; name: string; restSeconds: number; grp: string | null; sets: SetRow[] };
+type ExerciseRow = { id: number; name: string; restSeconds: number; grp: string | null; notes: string; sets: SetRow[] };
 type SaveStatus =
   | { status: "idle" }
   | { status: "dirty" }
@@ -81,7 +83,10 @@ export function WorkoutSession({
   autosave,
   addSet,
   removeSet,
+  addExercise,
+  replaceExercise,
   initial,
+  initialWorkoutNotes,
 }: {
   action: (state: SessionFormState, formData: FormData) => Promise<SessionFormState>;
   autosave: (
@@ -93,17 +98,38 @@ export function WorkoutSession({
       note: string | null;
       completed: boolean;
     }>,
+    extra?: SessionNotesPayload,
   ) => Promise<AutosaveResult>;
   addSet: (exerciseId: number) => Promise<AddSetResult>;
   removeSet: (setId: number) => Promise<RemoveSetResult>;
+  addExercise?: (input: {
+    name: string;
+    sets?: number;
+    reps?: number;
+    weight?: number;
+    restSeconds?: number;
+  }) => Promise<{ error: string } | { exercise: ExerciseRow }>;
+  replaceExercise?: (
+    exerciseId: number,
+    input: { name: string; sets?: number; reps?: number; weight?: number; restSeconds?: number },
+  ) => Promise<{ error: string } | { exercise: ExerciseRow }>;
   initial: ExerciseRow[];
+  initialWorkoutNotes?: string;
 }) {
   const [state, formAction] = useActionState(action, undefined);
   const [items, setItems] = useState(initial);
+  const [workoutNotes, setWorkoutNotes] = useState(initialWorkoutNotes ?? "");
   const [saveState, setSaveState] = useState<SaveStatus>({ status: "idle" });
   const [busyExerciseId, setBusyExerciseId] = useState<number | null>(null);
   const [busySetId, setBusySetId] = useState<number | null>(null);
+  const [exerciseDialog, setExerciseDialog] = useState<{
+    mode: "add" | "replace";
+    id?: number;
+    currentName?: string;
+  } | null>(null);
+  const [exerciseDraft, setExerciseDraft] = useState({ name: "", sets: "3", reps: "", weight: "" });
   const saveSeq = useRef(0);
+  const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allSets = items.flatMap((item) => item.sets);
   const completed = allSets.filter((set) => set.completed).length;
   const progress = allSets.length ? Math.round((completed / allSets.length) * 100) : 0;
@@ -115,9 +141,9 @@ export function WorkoutSession({
     [allSets],
   );
 
-  /** Autozapis — wysyła aktualny stan wszystkich serii na serwer. */
+  /** Autozapis — wysyła aktualny stan wszystkich serii i komentarzy na serwer. */
   const runAutosave = useCallback(
-    async (rows: SetRow[]) => {
+    async (rows: SetRow[], notes: string, exercisesState: ExerciseRow[]) => {
       const seq = ++saveSeq.current;
       setSaveState({ status: "saving" });
       try {
@@ -130,6 +156,10 @@ export function WorkoutSession({
             note,
             completed: done,
           })),
+          {
+            workoutNotes: notes,
+            exerciseNotes: exercisesState.map((ex) => ({ id: ex.id, notes: ex.notes })),
+          },
         );
         if (seq !== saveSeq.current) return;
         if ("error" in result) setSaveState({ status: "error", message: result.error });
@@ -141,6 +171,18 @@ export function WorkoutSession({
     },
     [autosave],
   );
+
+  const scheduleNotesSave = (nextNotes: string, nextItems: ExerciseRow[]) => {
+    setSaveState((current) => (current.status === "saving" ? current : { status: "dirty" }));
+    if (notesTimer.current) clearTimeout(notesTimer.current);
+    notesTimer.current = setTimeout(() => {
+      void runAutosave(
+        nextItems.flatMap((exercise) => exercise.sets),
+        nextNotes,
+        nextItems,
+      );
+    }, 700);
+  };
 
   const updateSet = (exerciseId: number, setId: number, patch: Partial<SetRow>) => {
     setItems((current) =>
@@ -169,7 +211,37 @@ export function WorkoutSession({
         : exercise,
     );
     setItems(next);
-    void runAutosave(next.flatMap((exercise) => exercise.sets));
+    void runAutosave(next.flatMap((exercise) => exercise.sets), workoutNotes, next);
+  };
+
+  const openExerciseDialog = (mode: "add" | "replace", id?: number, currentName?: string) => {
+    setExerciseDraft({ name: "", sets: "3", reps: "", weight: "" });
+    setExerciseDialog({ mode, id, currentName });
+  };
+  const submitExerciseDialog = async () => {
+    const name = exerciseDraft.name.trim();
+    if (!name) return;
+    const input = {
+      name,
+      sets: Number(exerciseDraft.sets) || 3,
+      reps: Number(exerciseDraft.reps) || 0,
+      weight: Number(exerciseDraft.weight) || 0,
+    };
+    const result =
+      exerciseDialog?.mode === "replace" && replaceExercise && exerciseDialog.id
+        ? await replaceExercise(exerciseDialog.id, input)
+        : addExercise
+          ? await addExercise(input)
+          : { error: "Funkcja jest niedostępna." };
+    if ("error" in result) setSaveState({ status: "error", message: result.error });
+    else {
+      setItems((current) =>
+        exerciseDialog?.mode === "replace" && exerciseDialog.id
+          ? [...current.filter((item) => item.id !== exerciseDialog.id), result.exercise]
+          : [...current, result.exercise],
+      );
+    }
+    setExerciseDialog(null);
   };
 
   /** Dodanie serii w trakcie treningu — plan treningowy pozostaje bez zmian. */
@@ -230,6 +302,12 @@ export function WorkoutSession({
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="sessionData" value={JSON.stringify(allSets)} />
+      <input type="hidden" name="workoutNotes" value={workoutNotes} />
+      <input
+        type="hidden"
+        name="exerciseNotes"
+        value={JSON.stringify(items.map((ex) => ({ id: ex.id, notes: ex.notes })))}
+      />
       <section className="panel p-5 sm:p-6">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
@@ -259,6 +337,108 @@ export function WorkoutSession({
         </div>
       </section>
 
+      <section className="panel p-5 sm:p-6">
+        <label className="field-label">
+          <span className="flex items-center gap-2">
+            <MessageSquare size={14} className="text-lime-400" /> Komentarz do treningu
+          </span>
+          <textarea
+            className="input min-h-24 resize-y"
+            maxLength={1000}
+            placeholder="Samopoczucie, sen, energia, co poszło dobrze…"
+            value={workoutNotes}
+            onChange={(event) => {
+              const next = event.target.value;
+              setWorkoutNotes(next);
+              scheduleNotesSave(next, items);
+            }}
+          />
+        </label>
+      </section>
+
+      {exerciseDialog && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111820] p-5 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between">
+              <div>
+                <p className="eyebrow">Bieżąca sesja</p>
+                <h2 className="text-xl font-black text-white">
+                  {exerciseDialog.mode === "replace" ? `Podmień: ${exerciseDialog.currentName}` : "Dodaj ćwiczenie"}
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">Zmiana dotyczy tylko tego treningu — plan zostaje bez zmian.</p>
+              </div>
+              <button type="button" onClick={() => setExerciseDialog(null)} className="text-2xl text-slate-500 hover:text-white">
+                ×
+              </button>
+            </div>
+            <div className="grid gap-3">
+              <label className="field-label">
+                Nazwa ćwiczenia
+                <input
+                  autoFocus
+                  className="input"
+                  value={exerciseDraft.name}
+                  onChange={(e) => setExerciseDraft((d) => ({ ...d, name: e.target.value }))}
+                  placeholder="np. Wyciskanie hantli"
+                />
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <label className="field-label">
+                  Serie
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={exerciseDraft.sets}
+                    onChange={(e) => setExerciseDraft((d) => ({ ...d, sets: e.target.value }))}
+                  />
+                </label>
+                <label className="field-label">
+                  Powtórzenia
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    value={exerciseDraft.reps}
+                    onChange={(e) => setExerciseDraft((d) => ({ ...d, reps: e.target.value }))}
+                  />
+                </label>
+                <label className="field-label">
+                  Ciężar
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={exerciseDraft.weight}
+                    onChange={(e) => setExerciseDraft((d) => ({ ...d, weight: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <div className="mt-2 flex justify-end gap-2">
+                <button type="button" className="button-secondary" onClick={() => setExerciseDialog(null)}>
+                  Anuluj
+                </button>
+                <button
+                  type="button"
+                  className="button-primary"
+                  disabled={!exerciseDraft.name.trim()}
+                  onClick={() => void submitExerciseDialog()}
+                >
+                  {exerciseDialog.mode === "replace" ? "Podmień ćwiczenie" : "Dodaj ćwiczenie"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {addExercise && (
+        <button type="button" onClick={() => openExerciseDialog("add")} className="button-primary">
+          <Plus size={17} /> Dodaj ćwiczenie do tej sesji
+        </button>
+      )}
+
       {items.map((exercise, exerciseIndex) => (
         <section key={exercise.id} className="panel overflow-hidden">
           <div className="flex items-center gap-4 border-b border-white/[.06] p-5 sm:px-6">
@@ -278,9 +458,37 @@ export function WorkoutSession({
                 )}
               </h2>
             </div>
-            <span className="hidden text-xs text-slate-500 sm:block">
-              Przerwa {exercise.restSeconds}s
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-xs text-slate-500 sm:block">Przerwa {exercise.restSeconds}s</span>
+              {replaceExercise && (
+                <button
+                  type="button"
+                  onClick={() => openExerciseDialog("replace", exercise.id, exercise.name)}
+                  className="button-secondary px-3 py-1.5 text-xs"
+                >
+                  Podmień
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="border-b border-white/[.06] px-5 py-3 sm:px-6">
+            <label className="field-label">
+              Komentarz do ćwiczenia
+              <textarea
+                className="input min-h-16 resize-y text-sm"
+                maxLength={500}
+                placeholder="Technika, zakres ruchu, ból, uwagi do całego ćwiczenia…"
+                value={exercise.notes}
+                onChange={(event) => {
+                  const nextNotes = event.target.value;
+                  const next = items.map((ex) =>
+                    ex.id === exercise.id ? { ...ex, notes: nextNotes } : ex,
+                  );
+                  setItems(next);
+                  scheduleNotesSave(workoutNotes, next);
+                }}
+              />
+            </label>
           </div>
           <div className="overflow-x-auto">
             <table className="set-table">

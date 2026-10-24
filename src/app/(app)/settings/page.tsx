@@ -239,6 +239,22 @@ export default async function SettingsPage({
           </div>
         </div>
       </section>
+
+      <section className="panel p-5 sm:p-7">
+        <h2 className="mb-4 flex items-center gap-2 font-extrabold text-white"><span className="text-lime-400">✦</span> Co potrafi aplikacja?</h2>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            ["Treningi i planowanie", "Twórz plany, zapisuj serie, ciężary i ukończone sesje, aby kontrolować systematyczność."],
+            ["Progres ćwiczeń", "Porównuj objętość i maksymalne ciężary z kolejnych treningów na czytelnych wykresach."],
+            ["Micha i makro", "Kontroluj kalorie, białko, tłuszcze i węglowodany dziennie oraz tygodniowo."],
+            ["AI i skanowanie", "Oszacuj makro ze zdjęcia lub poproś AI o posiłek dopasowany do pozostałych celów."],
+            ["Sen, kroki i woda", "Śledź regenerację, aktywność i nawodnienie, żeby widzieć pełny obraz dnia."],
+            ["Google Fit", "Synchronizuj kroki, sen i wagę z urządzeń oraz aplikacji połączonych z Google Fit."],
+            ["Pomiary i zdjęcia", "Obserwuj zmiany sylwetki, zapisuj dziesiętne pomiary i porównuj zdjęcia progresu."],
+            ["Offline i bezpieczeństwo", "Korzystaj z kolejki offline, eksportu danych, motywów, responsywnego widoku i szybkich akcji."],
+          ].map(([title, description]) => <article key={title} className="rounded-xl border border-white/[.06] bg-black/15 p-4"><h3 className="text-sm font-extrabold text-white">{title}</h3><p className="mt-1 text-xs leading-5 text-slate-400">{description}</p></article>)}
+        </div>
+      </section>
     </div>
   );
 }

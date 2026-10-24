@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { dietGoals, dietLogs, foodProducts, progressPhotos, recipes, userFavorites } from "@/db/schema";
+import { dietGoals, dietLogs, dietVacations, foodProducts, progressPhotos, recipes, userFavorites } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, defaultMealName, kcalFromMacros, round1 } from "@/lib/diet";
 import { and, eq } from "drizzle-orm";
@@ -19,6 +19,25 @@ function clamp1(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(n * 10) / 10, min), max);
 }
 
+/** Suma makro z pozycji (wartości na 100 g × gramy); kcal zawsze T×9 + W×4 + B×4. */
+function sumItemMacros(
+  items: Array<{ grams?: number; protein?: number; fat?: number; carbs?: number }>,
+): { protein: number; fat: number; carbs: number; kcal: number } {
+  let protein = 0;
+  let fat = 0;
+  let carbs = 0;
+  for (const i of items) {
+    const g = (Number(i.grams) || 0) / 100;
+    protein += (Number(i.protein) || 0) * g;
+    fat += (Number(i.fat) || 0) * g;
+    carbs += (Number(i.carbs) || 0) * g;
+  }
+  protein = round1(protein);
+  fat = round1(fat);
+  carbs = round1(carbs);
+  return { protein, fat, carbs, kcal: kcalFromMacros(protein, fat, carbs) };
+}
+
 function readMealNumber(formData: FormData): number | null {
   const raw = Number(formData.get("meal") ?? 0);
   if (!Number.isFinite(raw) || raw < 1 || raw > 12) return null;
@@ -30,6 +49,43 @@ function readGrams(formData: FormData): number {
   const raw = Number(formData.get("grams"));
   if (!Number.isFinite(raw)) return 100;
   return Math.max(1, Math.round(raw));
+}
+
+/** Edycja celu na dziś + przełączenie dzień treningowy / wolny (z planu tygodniowego). */
+export async function updateTodayGoalAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const weekday = WEEKDAYS.find(({ n }) => n === Number(formData.get("weekday")))?.n;
+  if (!weekday) return;
+  const current = (
+    await db.select().from(dietGoals).where(and(eq(dietGoals.userId, user.id), eq(dietGoals.weekday, weekday)))
+  )[0];
+  if (!current) return;
+  const usePlan = String(formData.get("usePlan")) === "1";
+  const nextTraining = usePlan ? (String(formData.get("training")) === "1" ? 1 : 0) : current.trainingDay;
+  const alternate = usePlan
+    ? (
+        await db
+          .select()
+          .from(dietGoals)
+          .where(and(eq(dietGoals.userId, user.id), eq(dietGoals.trainingDay, nextTraining)))
+      ).find((goal) => goal.weekday !== weekday)
+    : null;
+  const protein = clamp1(alternate?.protein ?? (Number(formData.get("protein")) || 0), 0, 9999);
+  const fat = clamp1(alternate?.fat ?? (Number(formData.get("fat")) || 0), 0, 9999);
+  const carbs = clamp1(alternate?.carbs ?? (Number(formData.get("carbs")) || 0), 0, 9999);
+  await db
+    .update(dietGoals)
+    .set({
+      protein,
+      fat,
+      carbs,
+      kcalGoal: kcalFromMacros(protein, fat, carbs),
+      trainingDay: nextTraining,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(dietGoals.userId, user.id), eq(dietGoals.weekday, weekday)));
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
 }
 
 /** Zapisuje dzienne cele makro (i liczone z nich kcal) oraz liczbę posiłków dla każdego dnia tygodnia. */
@@ -226,7 +282,7 @@ export async function saveFoundProductAction(input: {
   const protein = clamp1(Number(input.protein) || 0, 0, 999);
   const fat = clamp1(Number(input.fat) || 0, 0, 999);
   const carbs = clamp1(Number(input.carbs) || 0, 0, 999);
-  const kcal = Math.round(Number(input.kcal) || kcalFromMacros(protein, fat, carbs));
+  const kcal = kcalFromMacros(protein, fat, carbs);
   try {
     // Nie twórz duplikatów we wspólnym katalogu: jeśli produkt o tym kodzie już
     // istnieje (globalny lub innego użytkownika), pomiń zapis.
@@ -259,37 +315,61 @@ export async function saveFoundProductAction(input: {
 
 // ---------- Przepisy / posiłki złożone ----------
 
+function michaSavedPath(formData: FormData): string {
+  return String(formData.get("tab") ?? "") === "liczenie" ? "/micha?saved=1&tab=liczenie" : "/micha?saved=1";
+}
+
 export async function addRecipeAction(formData: FormData): Promise<void> {
   const user = await requireUser();
   const name = String(formData.get("name") ?? "").trim();
   const itemsRaw = String(formData.get("items") ?? "[]");
-  if (name.length < 2) redirect("/micha?saved=1");
+  if (name.length < 2) redirect(michaSavedPath(formData));
   let items: Array<{ productId: number; grams: number; name: string; protein: number; fat: number; carbs: number; kcal: number }> = [];
   try {
     items = JSON.parse(itemsRaw);
   } catch {
-    redirect("/micha?saved=1");
+    redirect(michaSavedPath(formData));
   }
-  const sums = items.reduce(
-    (a, i) => ({
-      protein: a.protein + (i.protein || 0) * ((i.grams || 0) / 100),
-      fat: a.fat + (i.fat || 0) * ((i.grams || 0) / 100),
-      carbs: a.carbs + (i.carbs || 0) * ((i.grams || 0) / 100),
-      kcal: a.kcal + (i.kcal || 0) * ((i.grams || 0) / 100),
-    }),
-    { protein: 0, fat: 0, carbs: 0, kcal: 0 },
-  );
+  const sums = sumItemMacros(items);
   await db.insert(recipes).values({
     userId: user.id,
     name: name.slice(0, 160),
     items: JSON.stringify(items),
-    protein: Math.round(sums.protein * 10) / 10,
-    fat: Math.round(sums.fat * 10) / 10,
-    carbs: Math.round(sums.carbs * 10) / 10,
-    kcal: Math.round(sums.kcal),
+    protein: sums.protein,
+    fat: sums.fat,
+    carbs: sums.carbs,
+    kcal: sums.kcal,
   });
   revalidatePath("/micha");
-  redirect("/micha?saved=1");
+  redirect(michaSavedPath(formData));
+}
+
+export async function updateRecipeAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(formData.get("recipeId")) || 0;
+  const name = String(formData.get("name") ?? "").trim();
+  const itemsRaw = String(formData.get("items") ?? "[]");
+  if (!id || name.length < 2) redirect(michaSavedPath(formData));
+  let items: Array<{ productId: number; grams: number; name: string; protein: number; fat: number; carbs: number; kcal: number }> = [];
+  try {
+    items = JSON.parse(itemsRaw);
+  } catch {
+    redirect(michaSavedPath(formData));
+  }
+  const sums = sumItemMacros(items);
+  await db
+    .update(recipes)
+    .set({
+      name: name.slice(0, 160),
+      items: JSON.stringify(items),
+      protein: sums.protein,
+      fat: sums.fat,
+      carbs: sums.carbs,
+      kcal: sums.kcal,
+    })
+    .where(and(eq(recipes.id, id), eq(recipes.userId, user.id)));
+  revalidatePath("/micha");
+  redirect(michaSavedPath(formData));
 }
 
 export async function deleteRecipeAction(id: number): Promise<void> {
@@ -345,13 +425,31 @@ export async function logRecipeAction(formData: FormData): Promise<void> {
   const mealNumber = readMealNumber(formData);
   const [recipe] = await db.select().from(recipes).where(and(eq(recipes.id, id), eq(recipes.userId, user.id))).limit(1);
   if (!recipe) redirect("/micha?saved=1");
+  let items: Array<{ name: string; grams: number; protein: number; fat: number; carbs: number; kcal: number }> = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("items") ?? recipe.items ?? "[]"));
+    if (Array.isArray(parsed)) items = parsed;
+  } catch {
+    items = [];
+  }
+  const sums = sumItemMacros(items);
+  const hasItemMacros = sums.protein + sums.fat + sums.carbs > 0;
+  const baseGrams = items.reduce((s, i) => s + Math.max(0, Number(i.grams) || 0), 0);
+  const portionGrams = Math.max(0, Math.round(Number(formData.get("grams")) || 0));
+  const factor = portionGrams > 0 && baseGrams > 0 ? portionGrams / baseGrams : 1;
+  const protein = round1((hasItemMacros ? sums.protein : recipe.protein) * factor);
+  const fat = round1((hasItemMacros ? sums.fat : recipe.fat) * factor);
+  const carbs = round1((hasItemMacros ? sums.carbs : recipe.carbs) * factor);
+  const kcal = kcalFromMacros(protein, fat, carbs);
+  const grams = portionGrams > 0 ? portionGrams : Math.max(1, Math.round(baseGrams) || 100);
   await db.insert(dietLogs).values({
     userId: user.id,
     date: new Date(`${dateStr || new Date().toISOString().slice(0, 10)}T12:00:00`),
-    protein: recipe.protein,
-    fat: recipe.fat,
-    carbs: recipe.carbs,
-    kcal: recipe.kcal,
+    protein: clamp1(protein, 0, 9999),
+    fat: clamp1(fat, 0, 9999),
+    carbs: clamp1(carbs, 0, 9999),
+    kcal,
+    grams,
     mealNumber,
     note: recipe.name,
   });
@@ -392,6 +490,101 @@ export async function logMealEstimateAction(formData: FormData): Promise<void> {
   revalidatePath("/micha");
   revalidatePath("/dashboard");
   redirect("/micha?saved=1");
+}
+
+// ---------- Urlop (dni bez liczenia kalorii i makro) ----------
+
+function readLocalNoon(raw: string): Date | null {
+  const s = String(raw ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export async function addVacationAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  let start = readLocalNoon(String(formData.get("startDate") ?? ""));
+  let end = readLocalNoon(String(formData.get("endDate") ?? ""));
+  if (!start || !end) redirect("/micha");
+  if (end.getTime() < start.getTime()) {
+    const tmp = start;
+    start = end;
+    end = tmp;
+  }
+  const note = String(formData.get("note") ?? "").trim() || null;
+  await db.insert(dietVacations).values({
+    userId: user.id,
+    startDate: start,
+    endDate: end,
+    note,
+  });
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+  redirect("/micha?saved=1");
+}
+
+export async function deleteVacationAction(id: number): Promise<void> {
+  const user = await requireUser();
+  await db.delete(dietVacations).where(and(eq(dietVacations.id, id), eq(dietVacations.userId, user.id)));
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+}
+
+// ---------- Liczenie posiłku: porcja z sumy produktów ----------
+
+export async function logMealPortionAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const dateStr = String(formData.get("date") ?? "").trim();
+  const portionGrams = Math.max(1, Math.round(Number(formData.get("portionGrams")) || 0));
+  const cookedGramsRaw = Number(formData.get("cookedGrams"));
+  let items: Array<{ name: string; grams: number; protein: number; fat: number; carbs: number }> = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("items") ?? "[]"));
+    if (Array.isArray(parsed)) items = parsed;
+  } catch {
+    redirect("/micha?tab=liczenie");
+  }
+  if (!dateStr || !items.length) redirect("/micha?tab=liczenie");
+  const sumGrams = items.reduce((s, i) => s + Math.max(0, Number(i.grams) || 0), 0);
+  const cookedGrams = Math.max(1, Number.isFinite(cookedGramsRaw) && cookedGramsRaw > 0 ? cookedGramsRaw : sumGrams);
+  const sums = items.reduce(
+    (a, i) => {
+      const g = Math.max(0, Number(i.grams) || 0) / 100;
+      return {
+        protein: a.protein + (Number(i.protein) || 0) * g,
+        fat: a.fat + (Number(i.fat) || 0) * g,
+        carbs: a.carbs + (Number(i.carbs) || 0) * g,
+      };
+    },
+    { protein: 0, fat: 0, carbs: 0 },
+  );
+  const factor = portionGrams / cookedGrams;
+  const protein = round1(sums.protein * factor);
+  const fat = round1(sums.fat * factor);
+  const carbs = round1(sums.carbs * factor);
+  const names = items
+    .map((i) => `${String(i.name ?? "").trim()} ${Math.round(Number(i.grams) || 0)}g`)
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(", ");
+  const extra = String(formData.get("note") ?? "").trim();
+  const note =
+    extra ||
+    `Porcja ${portionGrams} g z ${Math.round(cookedGrams)} g${names ? ` (${names})` : ""}`.slice(0, 200);
+  await db.insert(dietLogs).values({
+    userId: user.id,
+    date: new Date(`${dateStr}T12:00:00`),
+    protein: clamp1(protein, 0, 9999),
+    fat: clamp1(fat, 0, 9999),
+    carbs: clamp1(carbs, 0, 9999),
+    kcal: kcalFromMacros(protein, fat, carbs),
+    grams: portionGrams,
+    mealNumber: readMealNumber(formData),
+    note,
+  });
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
+  redirect("/micha?saved=1&tab=liczenie");
 }
 
 /**

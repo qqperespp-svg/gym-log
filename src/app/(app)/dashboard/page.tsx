@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   ArrowUpRight,
   CalendarDays,
@@ -7,23 +7,25 @@ import {
   Flame,
   Play,
   Plus,
-  Sofa,
   Target,
   TrendingDown,
   TrendingUp,
   Trophy,
+  Umbrella,
   UtensilsCrossed,
 } from "lucide-react";
 import { db } from "@/db";
-import { bodyMeasurements, dietGoals, dietLogs, exercises, exerciseSets, fitnessLogs, sleepLogs, userSettings, waterLogs, workouts } from "@/db/schema";
+import { bodyMeasurements, dietGoals, dietLogs, dietVacations, exercises, exerciseSets, fitnessLogs, sleepLogs, userSettings, waterLogs, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { WEEKDAYS, startOfWeek, weekdayOf } from "@/lib/diet";
+import { WEEKDAYS, isVacationDay, kcalFromGoal, startOfWeek, weekdayOf } from "@/lib/diet";
+import { dayHasScheduledTraining, resolveGoalForDay, scheduledTrainingDayKeys } from "@/lib/training-day";
 import { Droplets } from "lucide-react";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
 import { DashboardTiles } from "@/components/dashboard-tiles";
 import { MacroBar } from "@/components/macro-bar";
 import { StepsCard } from "@/components/steps-card";
 import { SleepCard } from "@/components/sleep-card";
+import { TodayGoalEditor } from "@/components/today-goal-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +67,12 @@ export default async function DashboardPage({
   const query = await searchParams;
 
   // ---------- Treningi ----------
+  const recentWorkoutIds = await db
+    .select({ id: workouts.id })
+    .from(workouts)
+    .where(eq(workouts.userId, user.id))
+    .orderBy(desc(workouts.date))
+    .limit(30);
   const rows = await db
     .select({
       id: workouts.id,
@@ -81,7 +89,11 @@ export default async function DashboardPage({
     .from(workouts)
     .leftJoin(exercises, eq(exercises.workoutId, workouts.id))
     .leftJoin(exerciseSets, eq(exerciseSets.exerciseId, exercises.id))
-    .where(eq(workouts.userId, user.id))
+    .where(
+      recentWorkoutIds.length
+        ? and(eq(workouts.userId, user.id), inArray(workouts.id, recentWorkoutIds.map((item) => item.id)))
+        : eq(workouts.userId, user.id),
+    )
     .orderBy(desc(workouts.date), asc(exercises.position), asc(exerciseSets.setNumber));
 
   const grouped = new Map<
@@ -161,7 +173,8 @@ export default async function DashboardPage({
     .select()
     .from(bodyMeasurements)
     .where(eq(bodyMeasurements.userId, user.id))
-    .orderBy(desc(bodyMeasurements.date));
+    .orderBy(desc(bodyMeasurements.date))
+    .limit(100);
   const firstMeasurement = measurementRows[measurementRows.length - 1] ?? null;
   const latestMeasurement = measurementRows[0] ?? null;
   const bodyMetrics = [
@@ -218,13 +231,14 @@ export default async function DashboardPage({
   const hasMeasurements = measurementRows.length > 0;
 
   // ---------- Micha: cele i spożycie w bieżącym tygodniu ----------
-  const [goalRows, dietLogRows, waterRows, settingsRows, fitnessRows, sleepRows] = await Promise.all([
+  const [goalRows, dietLogRows, waterRows, settingsRows, fitnessRows, sleepRows, vacationRows] = await Promise.all([
     db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
-    db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)),
-    db.select().from(waterLogs).where(eq(waterLogs.userId, user.id)),
+    db.select().from(dietLogs).where(eq(dietLogs.userId, user.id)).orderBy(desc(dietLogs.date)).limit(400),
+    db.select().from(waterLogs).where(eq(waterLogs.userId, user.id)).orderBy(desc(waterLogs.date)).limit(400),
     db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1),
     db.select().from(fitnessLogs).where(eq(fitnessLogs.userId, user.id)).orderBy(desc(fitnessLogs.date)).limit(60),
     db.select().from(sleepLogs).where(eq(sleepLogs.userId, user.id)).orderBy(desc(sleepLogs.date)).limit(60),
+    db.select().from(dietVacations).where(eq(dietVacations.userId, user.id)),
   ]);
   const goalByWeekday = new Map(goalRows.map((goal) => [goal.weekday, goal]));
   // Spożycie dzisiejsze (makro + kcal) oraz cel dzienny z flagą treningowy/wolny.
@@ -232,7 +246,8 @@ export default async function DashboardPage({
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(todayStart.getTime() + 86400000);
   const todayLogs = dietLogRows.filter((log) => log.date >= todayStart && log.date < tomorrow);
-  const todaySum = todayLogs.reduce(
+  const todayIsVacation = isVacationDay(now, vacationRows);
+  const todaySumRaw = todayLogs.reduce(
     (acc, log) => ({
       protein: acc.protein + (log.protein ?? 0),
       fat: acc.fat + (log.fat ?? 0),
@@ -241,8 +256,12 @@ export default async function DashboardPage({
     }),
     { protein: 0, fat: 0, carbs: 0, kcal: 0 },
   );
+  const todaySum = todayIsVacation ? { protein: 0, fat: 0, carbs: 0, kcal: 0 } : todaySumRaw;
   const todayWeekday = weekdayOf(now);
-  const todayGoal = goalByWeekday.get(todayWeekday) ?? null;
+  const storedTodayGoal = goalByWeekday.get(todayWeekday) ?? null;
+  const hasScheduledTraining = dayHasScheduledTraining(now, scheduledTrainingDayKeys(sessions));
+  const plannedTodayGoal = resolveGoalForDay(goalRows, todayWeekday, hasScheduledTraining) ?? storedTodayGoal;
+  const todayGoal = todayIsVacation ? null : plannedTodayGoal;
   const waterGoal = settingsRows[0]?.waterGoal ?? 2.5;
   const todayWater = waterRows
     .filter((w) => w.date >= todayStart && w.date < tomorrow)
@@ -463,7 +482,7 @@ export default async function DashboardPage({
             label: "Micha",
             defaultSize: "l",
             node: (
-              <div className="panel p-5 sm:p-6" data-kcal-remaining={Math.max(0, (todayGoal?.kcalGoal ?? 0) - todaySum.kcal)}>
+              <div className="panel p-5 sm:p-6" data-kcal-remaining={Math.max(0, kcalFromGoal(todayGoal) - todaySum.kcal)}>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <UtensilsCrossed size={19} className="text-lime-400" />
@@ -472,16 +491,15 @@ export default async function DashboardPage({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                        isTrainingDay
-                          ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                          : "bg-white/[.04] text-slate-400 ring-white/10"
-                      }`}
-                    >
-                      {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-                      {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-                    </span>
+                    {todayIsVacation ? (
+                      <span className="inline-flex items-center gap-2 rounded-full bg-amber-400/15 px-3 py-1.5 text-xs font-bold text-amber-200 ring-1 ring-amber-400/40">
+                        <Umbrella size={13} /> Urlop — nie liczymy
+                      </span>
+                    ) : (
+                      plannedTodayGoal && (
+                        <TodayGoalEditor weekday={todayWeekday} goal={plannedTodayGoal} training={isTrainingDay} />
+                      )
+                    )}
                     <Link href="/micha" className="text-link">
                       Otwórz Michę <ArrowUpRight size={15} />
                     </Link>
@@ -492,16 +510,9 @@ export default async function DashboardPage({
                     <MacroBar
                       label="Kalorie"
                       consumed={todaySum.kcal}
-                      target={todayGoal?.kcalGoal ?? 0}
+                      target={kcalFromGoal(todayGoal)}
                       unit="kcal"
                       barClass="bg-lime-400"
-                    />
-                    <MacroBar
-                      label="Białko"
-                      consumed={todaySum.protein}
-                      target={todayGoal?.protein ?? 0}
-                      unit="g"
-                      barClass="bg-sky-400"
                     />
                     <MacroBar
                       label="Tłuszcze"
@@ -517,10 +528,17 @@ export default async function DashboardPage({
                       unit="g"
                       barClass="bg-rose-400"
                     />
+                    <MacroBar
+                      label="Białko"
+                      consumed={todaySum.protein}
+                      target={todayGoal?.protein ?? 0}
+                      unit="g"
+                      barClass="bg-sky-400"
+                    />
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500">
-                    Ustaw dzienne cele (białko, tłuszcze, węglowodany) i loguj spożycie w zakładce{" "}
+                    Ustaw dzienne cele (tłuszcze, węglowodany, białko) i loguj spożycie w zakładce{" "}
                     <b>Micha</b>.
                   </p>
                 )}

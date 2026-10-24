@@ -64,26 +64,27 @@ export default async function HistoryPage() {
     grouped.set(row.id, item);
   }
   const sessions = Array.from(grouped.values()).filter((item) => item.status === "completed");
+  const completedRows = rows.filter((row) => row.status === "completed");
   const chartData = sessions.slice(0, 8).reverse();
   const maxVolume = Math.max(...chartData.map((item) => item.volume), 1);
   const totalVolume = sessions.reduce((sum, item) => sum + item.volume, 0);
   const totalMinutes = sessions.reduce((sum, item) => sum + item.duration, 0);
   // Progres per-ćwiczenie: liczba serii + objętość/maksymalny ciężar w każdym treningu.
-  const totalSetsMap = new Map<number, number>();
+  const totalSetsMap = new Map<string, { id: number; name: string; totalSets: number }>();
   const exerciseNames = new Map<number, string>();
-  for (const row of rows) {
+  for (const row of completedRows) {
     if (row.exerciseId) {
-      exerciseNames.set(row.exerciseId, row.exerciseName ?? "Brak nazwy");
-      totalSetsMap.set(row.exerciseId, (totalSetsMap.get(row.exerciseId) ?? 0) + (row.setId ? 1 : 0));
+      const name = row.exerciseName ?? "Brak nazwy";
+      exerciseNames.set(row.exerciseId, name);
+      const key = name.trim().toLocaleLowerCase("pl-PL");
+      const current = totalSetsMap.get(key) ?? { id: totalSetsMap.size + 1, name, totalSets: 0 };
+      current.totalSets += row.setId ? 1 : 0;
+      totalSetsMap.set(key, current);
     }
   }
-  const exercisesData = Array.from(totalSetsMap.entries()).map(([id, totalSets]) => ({
-    id,
-    name: exerciseNames.get(id) ?? "Brak nazwy",
-    totalSets,
-  }));
+  const exercisesData = Array.from(totalSetsMap.values());
   const workoutsData = new Map<number, Map<number, { volume: number; maxWeight: number }>>();
-  for (const row of rows) {
+  for (const row of completedRows) {
     if (!row.exerciseId || !row.setId) continue;
     const wMap = workoutsData.get(row.id) ?? new Map<number, { volume: number; maxWeight: number }>();
     const eData = wMap.get(row.exerciseId) ?? { volume: 0, maxWeight: 0 };
@@ -102,6 +103,7 @@ export default async function HistoryPage() {
       exerciseIds: Array.from(eMap.keys()),
       exercises: Array.from(eMap.entries()).map(([exerciseId, data]) => ({
         exerciseId,
+        name: exerciseNames.get(exerciseId) ?? "Brak nazwy",
         volume: data.volume,
         maxWeight: data.maxWeight,
       })),

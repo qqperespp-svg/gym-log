@@ -3,7 +3,7 @@
 import { db } from "@/db";
 import { exerciseSets, exercises, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -23,6 +23,7 @@ type SerializedExercise = {
   name: string;
   restSeconds: number;
   grp?: string | null;
+  notes?: string | null;
   sets: SerializedSet[];
 };
 type SerializedWorkout = {
@@ -91,6 +92,7 @@ async function insertWorkoutExercises(workoutId: number, data: SerializedWorkout
         weight: row.sets[0]?.weight ?? 0,
         restSeconds: clamp(row.restSeconds, 0, 600),
         grp: row.grp ? String(row.grp).slice(0, 8) : null,
+        notes: row.notes?.trim() || null,
       })
       .returning();
     await db.insert(exerciseSets).values(
@@ -131,6 +133,8 @@ export async function createWorkoutAction(
     .returning();
   await insertWorkoutExercises(workout.id, data);
   revalidatePath("/workouts");
+  revalidatePath("/dashboard");
+  revalidatePath("/micha");
   redirect(`/workouts/${workout.id}/session`);
 }
 
@@ -160,6 +164,8 @@ export async function updateWorkoutAction(
   await db.delete(exercises).where(eq(exercises.workoutId, workoutId));
   await insertWorkoutExercises(workoutId, data);
   revalidatePath("/workouts");
+  revalidatePath("/dashboard");
+  revalidatePath("/micha");
   revalidatePath(`/workouts/${workoutId}/session`);
   redirect(`/workouts/${workoutId}/edit?saved=1`);
 }
@@ -170,6 +176,8 @@ export async function deleteWorkoutAction(workoutId: number): Promise<void> {
   await db.delete(workouts).where(eq(workouts.id, workoutId));
   revalidatePath("/workouts");
   revalidatePath("/history");
+  revalidatePath("/dashboard");
+  revalidatePath("/micha");
   redirect("/workouts");
 }
 
@@ -193,6 +201,11 @@ export async function saveWorkoutSessionAction(
 
   const intent = String(formData.get("intent") ?? "save");
   const completed = await persistSessionSets(workoutId, allSets);
+  await persistSessionNotes(
+    workoutId,
+    String(formData.get("workoutNotes") ?? ""),
+    parseExerciseNotes(formData.get("exerciseNotes")),
+  );
 
   if (intent === "finish") {
     await db
@@ -210,6 +223,7 @@ export async function saveWorkoutSessionAction(
     revalidatePath("/dashboard");
     revalidatePath("/workouts");
     revalidatePath("/history");
+    revalidatePath("/micha");
     redirect("/dashboard?finished=1");
   }
 
@@ -232,6 +246,10 @@ export type SessionSet = {
 export type AddSetResult = { error: string } | { set: SessionSet; savedAt: number };
 export type RemoveSetResult = { error: string } | { removedId: number; savedAt: number };
 export type AutosaveResult = { error: string } | { savedAt: number };
+export type SessionNotesPayload = {
+  workoutNotes?: string;
+  exerciseNotes?: Array<{ id: number; notes: string }>;
+};
 
 /**
  * Sprawdza, czy ćwiczenie należy do treningu zalogowanego użytkownika.
@@ -282,6 +300,37 @@ async function persistSessionSets(
       .where(eq(exerciseSets.id, Number(set.id)));
   }
   return completed;
+}
+
+function parseExerciseNotes(raw: FormDataEntryValue | null): Array<{ id: number; notes: string }> {
+  try {
+    const parsed = JSON.parse(String(raw ?? "[]"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function persistSessionNotes(
+  workoutId: number,
+  workoutNotes: string,
+  exerciseNotes: Array<{ id: number; notes: string }>,
+): Promise<void> {
+  await db
+    .update(workouts)
+    .set({ notes: workoutNotes.trim() || null, updatedAt: new Date() })
+    .where(eq(workouts.id, workoutId));
+  if (!exerciseNotes.length) return;
+  const owned = await db.select({ id: exercises.id }).from(exercises).where(eq(exercises.workoutId, workoutId));
+  const allowed = new Set(owned.map((row) => row.id));
+  for (const row of exerciseNotes) {
+    const id = Number(row.id);
+    if (!allowed.has(id)) continue;
+    await db
+      .update(exercises)
+      .set({ notes: String(row.notes ?? "").trim() || null })
+      .where(eq(exercises.id, id));
+  }
 }
 
 /**
@@ -392,14 +441,135 @@ export async function removeSessionSetAction(
 export async function autosaveSessionAction(
   workoutId: number,
   rows: Array<SerializedSet & { id: number }>,
+  extra?: SessionNotesPayload,
 ): Promise<AutosaveResult> {
   const user = await requireUser();
   if (!(await ownedWorkout(workoutId, user.id))) return { error: "Brak dostępu do treningu." };
   if (!Array.isArray(rows)) return { error: "Nie udało się zapisać postępu." };
   try {
     await persistSessionSets(workoutId, rows);
+    if (extra) {
+      await persistSessionNotes(workoutId, extra.workoutNotes ?? "", extra.exerciseNotes ?? []);
+    }
   } catch {
     return { error: "Nie udało się zapisać postępu." };
   }
   return { savedAt: Date.now() };
+}
+
+export type SessionExerciseInput = {
+  name: string;
+  sets?: number;
+  reps?: number;
+  weight?: number;
+  restSeconds?: number;
+};
+
+export type SessionExerciseResult =
+  | { error: string }
+  | {
+      exercise: {
+        id: number;
+        name: string;
+        restSeconds: number;
+        grp: null;
+        notes: string;
+        sets: Array<{
+          id: number;
+          setNumber: number;
+          reps: number;
+          weight: number;
+          rir: null;
+          note: null;
+          completed: boolean;
+          isExtra: boolean;
+        }>;
+      };
+    };
+
+/** Dodaje ćwiczenie wyłącznie do bieżącej sesji — nie zmienia programu. */
+export async function addSessionExerciseAction(
+  workoutId: number,
+  input: SessionExerciseInput,
+): Promise<SessionExerciseResult> {
+  const user = await requireUser();
+  const workout = await ownedWorkout(workoutId, user.id);
+  const name = input.name.trim().slice(0, 255);
+  if (!workout || !name) return { error: "Nieprawidłowa sesja lub nazwa ćwiczenia." };
+  const created = await db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ position: exercises.position })
+      .from(exercises)
+      .where(eq(exercises.workoutId, workoutId))
+      .orderBy(desc(exercises.position))
+      .limit(1);
+    const [exercise] = await tx
+      .insert(exercises)
+      .values({
+        workoutId,
+        name,
+        position: (existing[0]?.position ?? -1) + 1,
+        sets: Math.max(1, Math.min(input.sets ?? 3, 20)),
+        reps: Math.max(0, Math.min(input.reps ?? 0, 100)),
+        weight: Math.max(0, input.weight ?? 0),
+        restSeconds: Math.max(0, input.restSeconds ?? 90),
+        sessionOnly: 1,
+        notes: null,
+      })
+      .returning();
+    const setRows = [];
+    for (let i = 1; i <= exercise.sets; i++) {
+      const [set] = await tx
+        .insert(exerciseSets)
+        .values({
+          exerciseId: exercise.id,
+          setNumber: i,
+          reps: exercise.reps,
+          weight: exercise.weight,
+          completed: 0,
+          isExtra: 1,
+        })
+        .returning();
+      setRows.push({
+        id: set.id,
+        setNumber: set.setNumber,
+        reps: set.reps,
+        weight: set.weight,
+        rir: null as null,
+        note: null as null,
+        completed: false,
+        isExtra: true,
+      });
+    }
+    return {
+      id: exercise.id,
+      name: exercise.name,
+      restSeconds: exercise.restSeconds,
+      grp: null,
+      notes: "",
+      sets: setRows,
+    };
+  });
+  revalidatePath(`/workouts/${workoutId}/session`);
+  return { exercise: created };
+}
+
+/** Podmienia ćwiczenie tylko w bieżącej sesji. */
+export async function replaceSessionExerciseAction(
+  workoutId: number,
+  exerciseId: number,
+  input: SessionExerciseInput,
+): Promise<SessionExerciseResult> {
+  const user = await requireUser();
+  const original = await ownedExercise(exerciseId, workoutId, user.id);
+  if (!original) return { error: "Nie znaleziono ćwiczenia." };
+  await db.update(exercises).set({ skippedInSession: 1 }).where(eq(exercises.id, exerciseId));
+  const result = await addSessionExerciseAction(workoutId, input);
+  if ("exercise" in result) {
+    await db
+      .update(exercises)
+      .set({ replacedExerciseId: exerciseId })
+      .where(eq(exercises.id, result.exercise.id));
+  }
+  return result;
 }

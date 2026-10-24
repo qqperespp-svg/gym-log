@@ -139,6 +139,10 @@ export const exercises = pgTable(
     weight: doublePrecision("weight").notNull().default(0),
     restSeconds: integer("rest_seconds").notNull().default(90),
     grp: varchar("grp", { length: 8 }), // grupa superserii: A/B/C/...
+    notes: text("notes"), // komentarz do całego ćwiczenia (nie pojedynczej serii)
+    sessionOnly: integer("session_only").notNull().default(0),
+    skippedInSession: integer("skipped_in_session").notNull().default(0),
+    replacedExerciseId: integer("replaced_exercise_id"),
   },
   (table) => [index("exercises_workout_idx").on(table.workoutId)],
 );
@@ -172,14 +176,14 @@ export const bodyMeasurements = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    weightKg: integer("weight_kg"),
-    heightCm: integer("height_cm"),
-    chestCm: integer("chest_cm"),
-    waistCm: integer("waist_cm"),
-    hipCm: integer("hip_cm"),
-    thighCm: integer("thigh_cm"),
-    bicepsCm: integer("biceps_cm"),
-    calfCm: integer("calf_cm"),
+    weightKg: doublePrecision("weight_kg"),
+    heightCm: doublePrecision("height_cm"),
+    chestCm: doublePrecision("chest_cm"),
+    waistCm: doublePrecision("waist_cm"),
+    hipCm: doublePrecision("hip_cm"),
+    thighCm: doublePrecision("thigh_cm"),
+    bicepsCm: doublePrecision("biceps_cm"),
+    calfCm: doublePrecision("calf_cm"),
     date: timestamp("date").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -207,6 +211,21 @@ export const dietGoals = pgTable(
     index("diet_goals_user_idx").on(table.userId),
     uniqueIndex("diet_goals_user_weekday_idx").on(table.userId, table.weekday),
   ],
+);
+
+export const dietVacations = pgTable(
+  "diet_vacations",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    startDate: timestamp("start_date").notNull(),
+    endDate: timestamp("end_date").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("diet_vacations_user_idx").on(table.userId)],
 );
 
 export const dietLogs = pgTable(
@@ -411,6 +430,7 @@ export type ProgramExercise = typeof programExercises.$inferSelect;
 export type BodyMeasurement = typeof bodyMeasurements.$inferSelect;
 export type DietGoal = typeof dietGoals.$inferSelect;
 export type DietLog = typeof dietLogs.$inferSelect;
+export type DietVacation = typeof dietVacations.$inferSelect;
 export type FoodProduct = typeof foodProducts.$inferSelect;
 export type WaterLog = typeof waterLogs.$inferSelect;
 export type Recipe = typeof recipes.$inferSelect;

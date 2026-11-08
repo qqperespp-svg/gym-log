@@ -7,7 +7,6 @@ import {
   Flame,
   Play,
   Plus,
-  Sofa,
   Target,
   TrendingDown,
   TrendingUp,
@@ -22,6 +21,7 @@ import { Droplets } from "lucide-react";
 import { WeeklyGoalCard } from "@/components/weekly-goal-card";
 import { DashboardTiles } from "@/components/dashboard-tiles";
 import { MacroBar } from "@/components/macro-bar";
+import { DayTypeToggle } from "@/components/day-type-toggle";
 import { StepsCard } from "@/components/steps-card";
 import { SleepCard } from "@/components/sleep-card";
 
@@ -472,16 +472,7 @@ export default async function DashboardPage({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ${
-                        isTrainingDay
-                          ? "bg-lime-400/15 text-lime-300 ring-lime-400/40"
-                          : "bg-white/[.04] text-slate-400 ring-white/10"
-                      }`}
-                    >
-                      {isTrainingDay ? <Dumbbell size={13} /> : <Sofa size={13} />}
-                      {isTrainingDay ? "Dzień treningowy" : "Dzień wolny"}
-                    </span>
+                    <DayTypeToggle weekday={todayWeekday} training={isTrainingDay} />
                     <Link href="/micha" className="text-link">
                       Otwórz Michę <ArrowUpRight size={15} />
                     </Link>

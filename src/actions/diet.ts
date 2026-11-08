@@ -1,9 +1,24 @@
 "use server";
 
 import { db } from "@/db";
-import { dietGoals, dietLogs, foodProducts, progressPhotos, recipes, userFavorites } from "@/db/schema";
+import {
+  dietGoals,
+  dietLogs,
+  foodProducts,
+  progressPhotos,
+  recipes,
+  userFavorites,
+  userSettings,
+} from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { WEEKDAYS, defaultMealName, kcalFromMacros, round1 } from "@/lib/diet";
+import {
+  type GoalLike,
+  type MacroSet,
+  hasMacros,
+  macrosFromGoals,
+  resolveDayTypeMacros,
+} from "@/lib/day-type-macros";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -32,9 +47,41 @@ function readGrams(formData: FormData): number {
   return Math.max(1, Math.round(raw));
 }
 
+/**
+ * Zapamiętuje makro „na dzień treningowy" i „na dzień wolny" w ustawieniach
+ * użytkownika. Dzięki temu przełączenie typu dnia (w formularzu celów albo
+ * kafelkiem „Dzisiaj") podmienia makro, a nie tylko etykietę.
+ */
+async function rememberDayTypeMacros(
+  userId: number,
+  training: MacroSet | null,
+  rest: MacroSet | null,
+): Promise<void> {
+  const patch: Record<string, number> = {};
+  if (hasMacros(training) && training) {
+    patch.trainingProtein = training.protein;
+    patch.trainingFat = training.fat;
+    patch.trainingCarbs = training.carbs;
+  }
+  if (hasMacros(rest) && rest) {
+    patch.restProtein = rest.protein;
+    patch.restFat = rest.fat;
+    patch.restCarbs = rest.carbs;
+  }
+  if (!Object.keys(patch).length) return;
+  await db
+    .insert(userSettings)
+    .values({ userId, ...patch })
+    .onConflictDoUpdate({
+      target: userSettings.userId,
+      set: { ...patch, updatedAt: new Date() },
+    });
+}
+
 /** Zapisuje dzienne cele makro (i liczone z nich kcal) oraz liczbę posiłków dla każdego dnia tygodnia. */
 export async function saveDietGoalsAction(formData: FormData): Promise<void> {
   const user = await requireUser();
+  const savedDays: GoalLike[] = [];
   for (const { n } of WEEKDAYS) {
     const protein = clamp1(Number(formData.get(`protein-${n}`)) || 0, 0, 9999);
     const fat = clamp1(Number(formData.get(`fat-${n}`)) || 0, 0, 9999);
@@ -78,10 +125,96 @@ export async function saveDietGoalsAction(formData: FormData): Promise<void> {
           updatedAt: new Date(),
         },
       });
+    savedDays.push({ weekday: n, protein, fat, carbs, trainingDay });
   }
+  // Makro typu dnia z panelu „Makro wg typu dnia" — jeśli użytkownik je wpisał,
+  // mają pierwszeństwo; inaczej odtwarzamy je z zapisanych dni tygodnia.
+  const templateFrom = (type: "training" | "rest"): MacroSet | null => {
+    const keys = [`dayType-${type}-protein`, `dayType-${type}-fat`, `dayType-${type}-carbs`];
+    if (!keys.some((key) => formData.has(key))) return null;
+    const [protein, fat, carbs] = keys.map((key) => clamp1(Number(formData.get(key)) || 0, 0, 9999));
+    const macro = { protein, fat, carbs };
+    return hasMacros(macro) ? macro : null;
+  };
+  await rememberDayTypeMacros(
+    user.id,
+    templateFrom("training") ?? macrosFromGoals(savedDays, true),
+    templateFrom("rest") ?? macrosFromGoals(savedDays, false),
+  );
   revalidatePath("/micha");
   revalidatePath("/dashboard");
   redirect("/micha?saved=1");
+}
+
+/**
+ * Przełącza typ dnia tygodnia (treningowy ⇄ wolny) i **od razu podmienia makro**
+ * na przypisane do nowego typu — razem z przeliczoną kaloryką. Używane przez
+ * kafelek „Dzisiaj" w Michy i na dashboardzie.
+ */
+export async function setDayTypeAction(weekday: number, training: boolean): Promise<void> {
+  const user = await requireUser();
+  const day = Math.round(Number(weekday) || 0);
+  if (day < 1 || day > 7) return;
+  const isTraining = !!training;
+
+  const [goals, settingsRows] = await Promise.all([
+    db.select().from(dietGoals).where(eq(dietGoals.userId, user.id)),
+    db.select().from(userSettings).where(eq(userSettings.userId, user.id)).limit(1),
+  ]);
+  const current = goals.find((goal) => goal.weekday === day) ?? null;
+  const settings = settingsRows[0] ?? null;
+
+  // Makro obu typów dnia: panel „Makro wg typu dnia" > plan tygodnia > domyślna
+  // różnica treningowy/wolny. Zapisanych ręcznie szablonów tu nie nadpisujemy.
+  const macros = resolveDayTypeMacros(goals, settings);
+  const hasStoredTemplate =
+    settings != null &&
+    (isTraining
+      ? settings.trainingProtein != null || settings.trainingFat != null || settings.trainingCarbs != null
+      : settings.restProtein != null || settings.restFat != null || settings.restCarbs != null);
+  if (!hasStoredTemplate) {
+    // Uzupełnij brakujący szablon, żeby kolejne przełączenia były przewidywalne.
+    await rememberDayTypeMacros(
+      user.id,
+      isTraining ? macros.training : null,
+      isTraining ? null : macros.rest,
+    );
+  }
+
+  const target = isTraining ? macros.training : macros.rest;
+  // Brak makro dla docelowego typu — zostaw dotychczasowe wartości, zmień samą flagę.
+  const next = hasMacros(target)
+    ? target
+    : { protein: current?.protein ?? 0, fat: current?.fat ?? 0, carbs: current?.carbs ?? 0 };
+  const kcalGoal = kcalFromMacros(next.protein, next.fat, next.carbs);
+
+  await db
+    .insert(dietGoals)
+    .values({
+      userId: user.id,
+      weekday: day,
+      protein: next.protein,
+      fat: next.fat,
+      carbs: next.carbs,
+      kcalGoal,
+      trainingDay: isTraining ? 1 : 0,
+      meals: current?.meals ?? 3,
+      mealNames: current?.mealNames ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [dietGoals.userId, dietGoals.weekday],
+      set: {
+        protein: next.protein,
+        fat: next.fat,
+        carbs: next.carbs,
+        kcalGoal,
+        trainingDay: isTraining ? 1 : 0,
+        updatedAt: new Date(),
+      },
+    });
+
+  revalidatePath("/micha");
+  revalidatePath("/dashboard");
 }
 
 /** Dopisuje wpis spożycia — białko/tłuszcze/węglowodany, kcal liczone z makro, numer posiłku. */

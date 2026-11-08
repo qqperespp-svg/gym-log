@@ -373,6 +373,31 @@ async function runSchemaSync(): Promise<void> {
       "user_settings.accent",
       sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS accent varchar(12) NOT NULL DEFAULT 'lime'`,
     ],
+    // Szablony makro dla dnia treningowego / wolnego (przełącznik typu dnia).
+    [
+      "user_settings.training_protein",
+      sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS training_protein double precision`,
+    ],
+    [
+      "user_settings.training_fat",
+      sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS training_fat double precision`,
+    ],
+    [
+      "user_settings.training_carbs",
+      sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS training_carbs double precision`,
+    ],
+    [
+      "user_settings.rest_protein",
+      sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS rest_protein double precision`,
+    ],
+    [
+      "user_settings.rest_fat",
+      sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS rest_fat double precision`,
+    ],
+    [
+      "user_settings.rest_carbs",
+      sql`ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS rest_carbs double precision`,
+    ],
     [
       "user_favorites",
       sql`

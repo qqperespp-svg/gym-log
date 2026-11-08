@@ -325,6 +325,14 @@ export const userSettings = pgTable(
     accent: varchar("accent", { length: 12 }).notNull().default("lime"), // kolor motywu
     waterGoal: doublePrecision("water_goal").notNull().default(2.5), // litry dziennie
     reminders: text("reminders"), // JSON: [{type:'water'|'meal', time:'12:00'}]
+    // Szablony makro dla typu dnia — używane przy przełączaniu dnia
+    // treningowy ⇄ wolny (NULL = brak zapisanego szablonu).
+    trainingProtein: doublePrecision("training_protein"),
+    trainingFat: doublePrecision("training_fat"),
+    trainingCarbs: doublePrecision("training_carbs"),
+    restProtein: doublePrecision("rest_protein"),
+    restFat: doublePrecision("rest_fat"),
+    restCarbs: doublePrecision("rest_carbs"),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
 );

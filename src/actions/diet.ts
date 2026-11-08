@@ -84,6 +84,47 @@ export async function saveDietGoalsAction(formData: FormData): Promise<void> {
   redirect("/micha?saved=1");
 }
 
+/**
+ * Przełącza flagę „dzień treningowy / dzień wolny” dla danego dnia tygodnia
+ * (1 = poniedziałek … 7 = niedziela), nie ruszając reszty celu ani harmonogramu
+ * treningów. Zwraca nową wartość, żeby interfejs mógł zsynchronizować stan.
+ */
+export async function toggleTrainingDayAction(weekday: number): Promise<0 | 1> {
+  const user = await requireUser();
+  const n = Math.min(Math.max(Math.round(Number(weekday) || 1), 1), 7);
+  const [goal] = await db
+    .select()
+    .from(dietGoals)
+    .where(and(eq(dietGoals.userId, user.id), eq(dietGoals.weekday, n)))
+    .limit(1);
+  const next = goal?.trainingDay === 1 ? 0 : 1;
+  if (goal) {
+    await db
+      .update(dietGoals)
+      .set({ trainingDay: next, updatedAt: new Date() })
+      .where(and(eq(dietGoals.userId, user.id), eq(dietGoals.weekday, n)));
+  } else {
+    // Brak wiersza celu dla tego dnia — utwórz go z domyślnymi wartościami.
+    await db
+      .insert(dietGoals)
+      .values({
+        userId: user.id,
+        weekday: n,
+        protein: 0,
+        fat: 0,
+        carbs: 0,
+        kcalGoal: 0,
+        trainingDay: next,
+        meals: 3,
+        mealNames: JSON.stringify([defaultMealName(1), defaultMealName(2), defaultMealName(3)]),
+      })
+      .onConflictDoNothing();
+  }
+  revalidatePath("/dashboard");
+  revalidatePath("/micha");
+  return next as 0 | 1;
+}
+
 /** Dopisuje wpis spożycia — białko/tłuszcze/węglowodany, kcal liczone z makro, numer posiłku. */
 export async function logDietEntryAction(formData: FormData): Promise<void> {
   const user = await requireUser();

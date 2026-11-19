@@ -3,9 +3,46 @@
 import { db } from "@/db";
 import { exerciseDefinitions } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+
+/** Znajduje ćwiczenie w katalogu użytkownika albo dodaje je (partia/sprzęt: domyślne). */
+export async function ensureExerciseDefinition(userId: number, rawName: string): Promise<number | null> {
+  const name = rawName.trim().slice(0, 120);
+  if (name.length < 2) return null;
+  const [existing] = await db
+    .select({ id: exerciseDefinitions.id })
+    .from(exerciseDefinitions)
+    .where(and(eq(exerciseDefinitions.userId, userId), sql`lower(${exerciseDefinitions.name}) = ${name.toLowerCase()}`))
+    .limit(1);
+  if (existing) return existing.id;
+  try {
+    const [created] = await db
+      .insert(exerciseDefinitions)
+      .values({
+        userId,
+        name,
+        muscleGroup: "Całe ciało",
+        equipment: "Inne",
+        isCustom: 1,
+      })
+      .onConflictDoNothing()
+      .returning({ id: exerciseDefinitions.id });
+    if (created) {
+      revalidatePath("/exercises");
+      return created.id;
+    }
+  } catch {
+    // wyścig na unique (user_id, name) — odczytaj istniejące
+  }
+  const [again] = await db
+    .select({ id: exerciseDefinitions.id })
+    .from(exerciseDefinitions)
+    .where(and(eq(exerciseDefinitions.userId, userId), sql`lower(${exerciseDefinitions.name}) = ${name.toLowerCase()}`))
+    .limit(1);
+  return again?.id ?? null;
+}
 
 export type ExerciseFormState = { error?: string } | undefined;
 

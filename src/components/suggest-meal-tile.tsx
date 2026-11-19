@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Sparkles, LoaderCircle, X, CheckCircle2 } from "lucide-react";
-import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
+import { formatMacroTriplet, kcalFromMacros, round1 } from "@/lib/diet";
 import { logMealEstimateAction } from "@/actions/diet";
 
 export function SuggestMealTile({
@@ -69,7 +69,7 @@ export function SuggestMealTile({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={handleSuggest} disabled={loading} className="button-primary">
-          <Sparkles size={16} /> AI: Zaproponuj posiłki
+          <Sparkles size={16} /> {items.length > 0 ? "Zmień propozycję" : "AI: Zaproponuj posiłki"}
         </button>
         <span className="text-xs text-slate-500">AI (Gemini) zaproponuje dania na podstawie pozostałych makro.</span>
       </div>
@@ -105,9 +105,12 @@ export function SuggestMealTile({
                 />
                 <span className="text-[11px] text-slate-500">g</span>
                 <span className="text-[11px] text-slate-400">
-                  B {formatMacro(round1(it.protein * (Number(it.grams) || 0) / 100))} · T{" "}
-                  {formatMacro(round1(it.fat * (Number(it.grams) || 0) / 100))} · W{" "}
-                  {formatMacro(round1(it.carbs * (Number(it.grams) || 0) / 100))}
+                  {formatMacroTriplet(
+                    round1((it.protein * (Number(it.grams) || 0)) / 100),
+                    round1((it.fat * (Number(it.grams) || 0)) / 100),
+                    round1((it.carbs * (Number(it.grams) || 0)) / 100),
+                    { unit: false },
+                  )}
                 </span>
                 <button type="button" onClick={() => setItems((cur) => cur.filter((_, i) => i !== idx))} className="text-slate-500 hover:text-rose-300" aria-label="Usuń">
                   <X size={14} />
@@ -116,8 +119,8 @@ export function SuggestMealTile({
             ))}
           </div>
           <p className="mt-3 text-sm text-slate-300">
-            Razem: <b className="text-lime-300">{total.kcal.toLocaleString("pl-PL")} kcal</b> · B{" "}
-            {formatMacro(total.protein)} g · T {formatMacro(total.fat)} g · W {formatMacro(total.carbs)} g
+            Razem: <b className="text-lime-300">{total.kcal.toLocaleString("pl-PL")} kcal</b> ·{" "}
+            {formatMacroTriplet(total.protein, total.fat, total.carbs)}
           </p>
 
           <form action={logMealEstimateAction} className="mt-4 grid gap-3 sm:grid-cols-3">

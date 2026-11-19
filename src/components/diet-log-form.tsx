@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Beef, Croissant, Droplets, LoaderCircle, Plus, ScanLine, Search, Star, X } from "lucide-react";
 import { logDietEntryAction, saveFoundProductAction } from "@/actions/diet";
-import { formatMacro, kcalFromMacros, round1 } from "@/lib/diet";
+import { formatMacroCompact, formatMacroTriplet, kcalFromMacros, round1 } from "@/lib/diet";
 import { suggestMealByHour } from "@/lib/i18n";
 import { enqueue } from "@/lib/offline-queue";
 import { productLabels } from "@/lib/labels";
@@ -149,7 +149,7 @@ export function DietLogForm({
                 onClick={() => fill(p, "100")}
                 className="rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200 transition hover:bg-amber-400/20"
               >
-                {p.name.slice(0, 24)} · {p.kcal} kcal
+                {p.name.slice(0, 24)} · {kcalFromMacros(p.protein, p.fat, p.carbs)} kcal
               </button>
             ))}
           </div>
@@ -207,7 +207,7 @@ export function DietLogForm({
                       </span>
                     </span>
                     <span className="shrink-0 text-[11px] font-bold text-slate-400">
-                      {p.kcal} kcal · B{p.protein} T{p.fat} W{p.carbs}
+                      {kcalFromMacros(p.protein, p.fat, p.carbs)} kcal · {formatMacroCompact(p.protein, p.fat, p.carbs)}
                     </span>
                   </button>
                 );
@@ -287,26 +287,6 @@ export function DietLogForm({
           </span>
         </label>
         <label className="field-label">
-          Białko (g/100g)
-          <span className="input-shell !min-h-12">
-            <Beef size={16} />
-            <input
-              name="proteinPer100"
-              type="number"
-              min="0"
-              step="0.1"
-              placeholder="np. 20,5"
-              value={proteinPer100}
-              onFocus={(event) => event.target.select()}
-              onChange={(event) => setProteinPer100(event.target.value)}
-              required
-            />
-          </span>
-        </label>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="field-label">
           Tłuszcze (g/100g)
           <span className="input-shell !min-h-12">
             <Droplets size={16} />
@@ -323,6 +303,9 @@ export function DietLogForm({
             />
           </span>
         </label>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="field-label">
           Węglowodany (g/100g)
           <span className="input-shell !min-h-12">
@@ -336,6 +319,23 @@ export function DietLogForm({
               value={carbsPer100}
               onFocus={(event) => event.target.select()}
               onChange={(event) => setCarbsPer100(event.target.value)}
+              required
+            />
+          </span>
+        </label>
+        <label className="field-label">
+          Białko (g/100g)
+          <span className="input-shell !min-h-12">
+            <Beef size={16} />
+            <input
+              name="proteinPer100"
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="np. 20,5"
+              value={proteinPer100}
+              onFocus={(event) => event.target.select()}
+              onChange={(event) => setProteinPer100(event.target.value)}
               required
             />
           </span>
@@ -360,7 +360,7 @@ export function DietLogForm({
             Wpis na {Math.round(g).toLocaleString("pl-PL")} g
           </p>
           <p className="mt-0.5 text-sm text-slate-300">
-            <b className="text-lime-300">{kcal.toLocaleString("pl-PL")} kcal</b> · B {formatMacro(computed.protein)} g · T {formatMacro(computed.fat)} g · W {formatMacro(computed.carbs)} g
+            <b className="text-lime-300">{kcal.toLocaleString("pl-PL")} kcal</b> · {formatMacroTriplet(computed.protein, computed.fat, computed.carbs)}
           </p>
           {offlineNote && <p className="mt-1 text-xs text-sky-300">{offlineNote}</p>}
         </div>

@@ -14,6 +14,7 @@ export default async function LoginPage({
   if (await getSessionUser()) redirect("/dashboard");
   await ensureDemoUser();
   const query = await searchParams;
+  const motivation = ["Nie musisz być idealny. Wystarczy, że dziś zrobisz kolejny krok.", "Każda seria buduje silniejszą wersję Ciebie.", "Plan na dziś: wejść na siłownię i zrobić swoje.", "Wyniki zaczynają się od powtórzenia, którego nie chciało Ci się zrobić.", "Twoja przyszła forma podziękuje Ci za dzisiejszy trening."][new Date().getDate() % 5];
   return (
     <div className="w-full max-w-md">
       {query.reset === "1" && (
@@ -21,6 +22,7 @@ export default async function LoginPage({
           <CheckCircle2 size={18} /> Hasło zostało zmienione. Zaloguj się nowym hasłem.
         </div>
       )}
+      <p className="mb-5 text-center text-sm font-bold text-lime-300">{motivation}</p>
       <AuthForm mode="login" />
       <MagicLoginForm />
       <div className="mt-7 rounded-2xl border border-lime-400/15 bg-lime-400/[.06] px-4 py-4 text-center text-xs leading-5 text-slate-400">

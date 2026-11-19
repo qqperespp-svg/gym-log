@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
 import { CalendarDays, Clock3, Dumbbell, Edit3, Play, Plus, Trash2 } from "lucide-react";
 import { deleteWorkoutAction } from "@/actions/workouts";
+import { PlanAgainButton } from "@/components/plan-again-button";
 
 type Item = {
   id: number;
@@ -104,11 +105,18 @@ export function WorkoutList({ workouts }: { workouts: Item[] }) {
                 <span className="text-[10px] uppercase tracking-wider text-slate-600">objętości</span>
               </div>
             </div>
-            {active && (
-              <Link href={`/workouts/${item.id}/session`} className="button-primary w-full justify-center text-sm">
-                <Play size={16} /> Otwórz trening
-              </Link>
-            )}
+            <div className="flex flex-col gap-2">
+              {active && (
+                <Link href={`/workouts/${item.id}/session`} className="button-primary w-full justify-center text-sm">
+                  <Play size={16} /> Otwórz trening
+                </Link>
+              )}
+              <PlanAgainButton
+                workoutId={item.id}
+                variant={active ? "secondary" : "primary"}
+                className="w-full text-sm"
+              />
+            </div>
           </article>
         );
       })}

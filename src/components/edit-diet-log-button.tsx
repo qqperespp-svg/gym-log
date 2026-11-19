@@ -127,11 +127,11 @@ export function EditDietLogButton({ log }: { log: EditableDietLog }) {
 
       <div className="flex items-center justify-between gap-2 rounded-lg bg-black/20 px-3 py-2">
         <div className="text-xs">
-          <span className="text-slate-500">B: {formatMacro(computed.protein)} g</span>
-          <span className="mx-2 text-slate-600">|</span>
           <span className="text-slate-500">T: {formatMacro(computed.fat)} g</span>
           <span className="mx-2 text-slate-600">|</span>
           <span className="text-slate-500">W: {formatMacro(computed.carbs)} g</span>
+          <span className="mx-2 text-slate-600">|</span>
+          <span className="text-slate-500">B: {formatMacro(computed.protein)} g</span>
           <span className="mx-2 text-slate-600">|</span>
           <span className="font-bold text-amber-300">{computed.kcal.toLocaleString("pl-PL")} kcal</span>
         </div>

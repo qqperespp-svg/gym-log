@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Calculator, Dumbbell, Save, Sofa } from "lucide-react";
 import { saveTdeeAction } from "@/actions/settings";
+import { gramsFromKcalPercents } from "@/lib/diet";
 
 const PRESETS: Record<string, { p: number; c: number; f: number; label: string }> = {
   standard: { p: 30, c: 40, f: 30, label: "Standard 30/40/30" },
@@ -22,6 +23,12 @@ export function TdeeCalculator() {
   const [c, setC] = useState("40");
   const [f, setF] = useState("30");
   const [trainingBonus, setTrainingBonus] = useState("200");
+  const [restProtein, setRestProtein] = useState("");
+  const [restFat, setRestFat] = useState("");
+  const [restCarbs, setRestCarbs] = useState("");
+  const [trainingProtein, setTrainingProtein] = useState("");
+  const [trainingFat, setTrainingFat] = useState("");
+  const [trainingCarbs, setTrainingCarbs] = useState("");
 
   const result = useMemo(() => {
     const w = Number(weight) || 0;
@@ -39,12 +46,7 @@ export function TdeeCalculator() {
     const pp = Math.max(5, Math.min(70, Number(p) || 30));
     const cc = Math.max(5, Math.min(80, Number(c) || 40));
     const ff = Math.max(5, Math.min(70, Number(f) || 30));
-    const total = pp + cc + ff || 1;
-    const macros = (kcal: number) => ({
-      protein: Math.round((kcal * (pp / total)) / 4),
-      fat: Math.round((kcal * (ff / total)) / 9),
-      carbs: Math.round((kcal * (cc / total)) / 4),
-    });
+    const macros = (kcal: number) => gramsFromKcalPercents(kcal, { protein: pp, fat: ff, carbs: cc });
     return { rest, training, bonus, macrosRest: macros(rest), macrosTraining: macros(training) };
   }, [sex, age, height, weight, activity, goal, p, c, f, trainingBonus]);
 
@@ -71,6 +73,12 @@ export function TdeeCalculator() {
         <input type="hidden" name="carbsPct" value={c} />
         <input type="hidden" name="fatPct" value={f} />
         <input type="hidden" name="trainingBonus" value={trainingBonus} />
+        <input type="hidden" name="restProtein" value={restProtein} />
+        <input type="hidden" name="restFat" value={restFat} />
+        <input type="hidden" name="restCarbs" value={restCarbs} />
+        <input type="hidden" name="trainingProtein" value={trainingProtein} />
+        <input type="hidden" name="trainingFat" value={trainingFat} />
+        <input type="hidden" name="trainingCarbs" value={trainingCarbs} />
         <label className="field-label">
           Płeć
           <select className={input} value={sex} onChange={(e) => setSex(e.target.value)}>
@@ -133,16 +141,16 @@ export function TdeeCalculator() {
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="field-label">
-            Białko (%)
-            <input className={input} type="number" min="5" max="70" step="1" value={p} onFocus={(e) => e.target.select()} onChange={(e) => setP(e.target.value)} />
+            Tłuszcze (%)
+            <input className={input} type="number" min="5" max="70" step="1" value={f} onFocus={(e) => e.target.select()} onChange={(e) => setF(e.target.value)} />
           </label>
           <label className="field-label">
             Węglowodany (%)
             <input className={input} type="number" min="5" max="80" step="1" value={c} onFocus={(e) => e.target.select()} onChange={(e) => setC(e.target.value)} />
           </label>
           <label className="field-label">
-            Tłuszcze (%)
-            <input className={input} type="number" min="5" max="70" step="1" value={f} onFocus={(e) => e.target.select()} onChange={(e) => setF(e.target.value)} />
+            Białko (%)
+            <input className={input} type="number" min="5" max="70" step="1" value={p} onFocus={(e) => e.target.select()} onChange={(e) => setP(e.target.value)} />
           </label>
         </div>
       </div>
@@ -159,9 +167,14 @@ export function TdeeCalculator() {
         <p className="mt-2 text-xs text-slate-500">
           Dni oznaczone jako „treningowe" w celach dostaną podwyższoną kalorykę — reszta bazową.
         </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <MacroOverride title="Ręczne makro — dzień wolny" values={[restFat, restCarbs, restProtein]} setters={[setRestFat, setRestCarbs, setRestProtein]} />
+          <MacroOverride title="Ręczne makro — dzień treningowy" values={[trainingFat, trainingCarbs, trainingProtein]} setters={[setTrainingFat, setTrainingCarbs, setTrainingProtein]} />
+        </div>
       </div>
 
       {result && (
+
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-lime-400/25 bg-lime-400/[.07] p-4">
             <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-lime-300">
@@ -171,7 +184,7 @@ export function TdeeCalculator() {
               {result.training.toLocaleString("pl-PL")} <span className="text-sm text-slate-500">kcal</span>
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              B {result.macrosTraining.protein} g · T {result.macrosTraining.fat} g · W {result.macrosTraining.carbs} g
+              T {result.macrosTraining.fat} g · W {result.macrosTraining.carbs} g · B {result.macrosTraining.protein} g
             </p>
           </div>
           <div className="rounded-2xl border border-sky-400/25 bg-sky-400/[.07] p-4">
@@ -182,7 +195,7 @@ export function TdeeCalculator() {
               {result.rest.toLocaleString("pl-PL")} <span className="text-sm text-slate-500">kcal</span>
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              B {result.macrosRest.protein} g · T {result.macrosRest.fat} g · W {result.macrosRest.carbs} g
+              T {result.macrosRest.fat} g · W {result.macrosRest.carbs} g · B {result.macrosRest.protein} g
             </p>
           </div>
           <button type="submit" className="button-primary sm:col-span-2 justify-center">
@@ -192,8 +205,12 @@ export function TdeeCalculator() {
       )}
 
       <p className="text-xs text-slate-600">
-        <Calculator size={13} className="inline" /> Białko i tłuszcze w gramach liczone z proporcji: B = kcal×P%/4, T = kcal×T%/9, W = kcal×W%/4.
+        <Calculator size={13} className="inline" /> Gramy z proporcji kcal: T = kcal×T%/9, W = kcal×W%/4, B = kcal×B%/4.
       </p>
     </form>
   );
+}
+
+function MacroOverride({ title, values, setters }: { title: string; values: string[]; setters: Array<(value: string) => void> }) {
+  return <div className="rounded-xl border border-white/[.06] p-3"><p className="mb-2 text-xs font-bold text-slate-400">{title}</p><div className="grid grid-cols-3 gap-2">{["Tłuszcze", "Węglowodany", "Białko"].map((label, i) => <label key={label} className="text-[10px] text-slate-500">{label}<input className="input mt-1 !min-h-9 !px-2" type="number" min="0" step="0.1" value={values[i]} onChange={e => setters[i](e.target.value)} /></label>)}</div></div>;
 }

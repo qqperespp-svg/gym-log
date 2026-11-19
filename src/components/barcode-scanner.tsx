@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { logScannedEntryAction } from "@/actions/diet";
-import { formatMacro, round1 } from "@/lib/diet";
+import { formatMacroTriplet, kcalFromMacros, round1 } from "@/lib/diet";
 import type { FoodProduct } from "@/db/schema";
 
 type Product = {
@@ -137,11 +137,15 @@ export function BarcodeScanner({
   const [meal, setMeal] = useState("1");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const autoStartedRef = useRef(false);
   useEffect(() => {
-    if (autoScan && !scanning) {
-      void startCamera("barcode");
+    if (!autoScan) {
+      autoStartedRef.current = false;
+      return;
     }
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    void startCamera("barcode");
   }, [autoScan]);
 
   useEffect(() => {
@@ -208,7 +212,7 @@ export function BarcodeScanner({
           protein: local.protein,
           fat: local.fat,
           carbs: local.carbs,
-          kcal: local.kcal,
+          kcal: kcalFromMacros(local.protein, local.fat, local.carbs),
         });
         setLoading(false);
         return;
@@ -222,9 +226,9 @@ export function BarcodeScanner({
         throw new Error("Nie znaleziono produktu o tym kodzie.");
       }
       const n = data.product.nutriments ?? {};
-      const kcal =
-        n["energy-kcal_100g"] ??
-        (n["energy-kj_100g"] != null ? Math.round((n["energy-kj_100g"] / 4.184) * 10) / 10 : 0);
+      const protein = round1Raw(n.proteins_100g ?? n.protein_100g);
+      const fat = round1Raw(n.fat_100g ?? n.fats_100g);
+      const carbs = round1Raw(n.carbohydrates_100g ?? n.carbs_100g);
       setProduct({
         code: clean,
         name:
@@ -232,10 +236,10 @@ export function BarcodeScanner({
           data.product.generic_name ||
           data.product.brands ||
           `Produkt (${clean})`,
-        protein: round1Raw(n.proteins_100g ?? n.protein_100g),
-        fat: round1Raw(n.fat_100g ?? n.fats_100g),
-        carbs: round1Raw(n.carbohydrates_100g ?? n.carbs_100g),
-        kcal: Math.round(Number(kcal) || 0),
+        protein,
+        fat,
+        carbs,
+        kcal: kcalFromMacros(protein, fat, carbs),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Nie udało się pobrać produktu");
@@ -373,12 +377,12 @@ export function BarcodeScanner({
 
   const g = Math.max(0, Number(grams) || 0);
   const computed = product
-    ? {
-        protein: round1(product.protein * (g / 100)),
-        fat: round1(product.fat * (g / 100)),
-        carbs: round1(product.carbs * (g / 100)),
-        kcal: Math.round(product.kcal * (g / 100)),
-      }
+    ? (() => {
+        const protein = round1(product.protein * (g / 100));
+        const fat = round1(product.fat * (g / 100));
+        const carbs = round1(product.carbs * (g / 100));
+        return { protein, fat, carbs, kcal: kcalFromMacros(protein, fat, carbs) };
+      })()
     : null;
 
   const mealOptions = Array.from({ length: Math.max(1, Math.min(meals, 10)) }, (_, i) => i + 1);
@@ -539,8 +543,7 @@ export function BarcodeScanner({
               </p>
               <h3 className="mt-0.5 font-extrabold text-white">{product.name}</h3>
               <p className="mt-1 text-xs text-slate-400">
-                Na 100 g: {product.kcal} kcal · B {product.protein} g · T {product.fat} g · W{" "}
-                {product.carbs} g
+                Na 100 g: {kcalFromMacros(product.protein, product.fat, product.carbs)} kcal · {formatMacroTriplet(product.protein, product.fat, product.carbs)}
               </p>
             </div>
             <button
@@ -595,9 +598,8 @@ export function BarcodeScanner({
             </label>
             <div className="flex items-end rounded-xl bg-black/20 px-4 py-2.5">
               <p className="text-sm text-slate-300">
-                Wpis: <b className="text-lime-300">{computed.kcal} kcal</b> · B{" "}
-                {formatMacro(computed.protein)} g · T {formatMacro(computed.fat)} g · W{" "}
-                {formatMacro(computed.carbs)} g
+                Wpis: <b className="text-lime-300">{computed.kcal} kcal</b> ·{" "}
+                {formatMacroTriplet(computed.protein, computed.fat, computed.carbs)}
               </p>
             </div>
             <div className="sm:col-span-4">

@@ -35,6 +35,7 @@ export default async function EditWorkoutPage({
         name: exercises.name,
         restSeconds: exercises.restSeconds,
         grp: exercises.grp,
+        notes: exercises.notes,
         position: exercises.position,
         setId: exerciseSets.id,
         setNumber: exerciseSets.setNumber,
@@ -69,6 +70,7 @@ export default async function EditWorkoutPage({
           name: row.name,
           restSeconds: row.restSeconds,
           grp: row.grp ?? null,
+          notes: row.notes ?? "",
           position: row.position,
           sets: [] as Array<{ reps: number; weight: number; rir: number | null; note: string; completed: boolean }>,
         };
@@ -82,7 +84,7 @@ export default async function EditWorkoutPage({
           });
         map.set(row.exerciseId, current);
         return map;
-      }, new Map<number, { definitionId: number; name: string; restSeconds: number; grp: string | null; position: number; sets: Array<{ reps: number; weight: number; rir: number | null; note: string; completed: boolean }> }>())
+      }, new Map<number, { definitionId: number; name: string; restSeconds: number; grp: string | null; notes: string; position: number; sets: Array<{ reps: number; weight: number; rir: number | null; note: string; completed: boolean }> }>())
       .values(),
   ).sort((a, b) => a.position - b.position);
   const action = updateWorkoutAction.bind(null, workout.id);

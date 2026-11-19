@@ -179,7 +179,7 @@ export function WorkoutForm({
   }
   const serialized = rows.map(({ query: _q, ...row }) => ({
     definitionId: row.definitionId || null,
-    name: row.name,
+    name: row.name.trim() || row.query.trim(),
     restSeconds: row.restSeconds,
     grp: row.grp,
     notes: row.notes,
@@ -332,9 +332,12 @@ export function WorkoutForm({
                 </div>
 
                 {/* Wybrane ćwiczenie */}
-                {!row.query && row.definitionId > 0 && (
+                {!row.query && row.name && (
                   <p className="mt-2 flex items-center gap-2 rounded-lg bg-lime-400/[.06] px-3 py-2 text-sm font-bold text-lime-300">
                     <Check size={14} /> {row.name}
+                    {row.definitionId <= 0 && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-lime-400/70">nowe</span>
+                    )}
                   </p>
                 )}
 
@@ -362,6 +365,24 @@ export function WorkoutForm({
                       ))}
                     {library.filter((item) => matchesWords(item.name, row.query)).length === 0 && (
                       <p className="px-3 py-2 text-sm text-slate-500">Brak ćwiczeń pasujących do zapytania.</p>
+                    )}
+                    {row.query.trim().length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateExercise(row.key, {
+                            definitionId: 0,
+                            name: row.query.trim(),
+                            query: "",
+                          })
+                        }
+                        className="flex w-full items-center justify-between gap-2 rounded-lg bg-lime-400/10 px-3 py-2 text-left transition hover:bg-lime-400/20"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-bold text-lime-200">{row.query.trim()}</span>
+                          <span className="text-[10px] text-lime-400/80">Dodaj do katalogu i użyj</span>
+                        </span>
+                      </button>
                     )}
                   </div>
                 )}

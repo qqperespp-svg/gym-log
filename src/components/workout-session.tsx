@@ -365,7 +365,9 @@ export function WorkoutSession({
                 <h2 className="text-xl font-black text-white">
                   {exerciseDialog.mode === "replace" ? `Podmień: ${exerciseDialog.currentName}` : "Dodaj ćwiczenie"}
                 </h2>
-                <p className="mt-1 text-xs text-slate-500">Zmiana dotyczy tylko tego treningu — plan zostaje bez zmian.</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Ćwiczenia spoza katalogu trafią do bazy automatycznie. Plan tygodnia zostaje bez zmian.
+                </p>
               </div>
               <button type="button" onClick={() => setExerciseDialog(null)} className="text-2xl text-slate-500 hover:text-white">
                 ×

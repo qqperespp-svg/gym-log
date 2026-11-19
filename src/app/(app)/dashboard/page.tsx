@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import {
   ArrowUpRight,
   CalendarDays,
@@ -68,12 +68,20 @@ export default async function DashboardPage({
   const query = await searchParams;
 
   // ---------- Treningi ----------
-  const recentWorkoutIds = await db
-    .select({ id: workouts.id })
-    .from(workouts)
-    .where(eq(workouts.userId, user.id))
-    .orderBy(desc(workouts.date))
-    .limit(30);
+  // Szczegóły (serie, objętość) tylko z ostatnich sesji — licznik „łącznie” z całej historii.
+  const [recentWorkoutIds, completedCountRow] = await Promise.all([
+    db
+      .select({ id: workouts.id })
+      .from(workouts)
+      .where(eq(workouts.userId, user.id))
+      .orderBy(desc(workouts.date))
+      .limit(30),
+    db
+      .select({ value: count() })
+      .from(workouts)
+      .where(and(eq(workouts.userId, user.id), eq(workouts.status, "completed"))),
+  ]);
+  const totalCompleted = Number(completedCountRow[0]?.value ?? 0);
   const rows = await db
     .select({
       id: workouts.id,
@@ -329,7 +337,7 @@ export default async function DashboardPage({
           {
             icon: Dumbbell,
             label: "Treningi łącznie",
-            value: completedSessions.length.toString(),
+            value: totalCompleted.toString(),
             meta: `${weeklyCount} w tym tygodniu (pon.–niedz.)`,
             color: "lime",
           },

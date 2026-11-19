@@ -177,9 +177,9 @@ export function WorkoutForm({
     }
     updateExercise(key, { sets: next });
   }
-  const serialized = rows.map(({ query: _q, ...row }) => ({
+  const serialized = rows.map(({ query, ...row }) => ({
     definitionId: row.definitionId || null,
-    name: row.name.trim() || row.query.trim(),
+    name: row.name.trim() || query.trim(),
     restSeconds: row.restSeconds,
     grp: row.grp,
     notes: row.notes,

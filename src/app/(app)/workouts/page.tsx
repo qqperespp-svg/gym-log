@@ -74,9 +74,9 @@ export default async function WorkoutsPage() {
             Otwieraj sesje, zapisuj serie i śledź wykonanie.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 self-start sm:self-auto"><Link href="/workouts/print" className="button-secondary">Raport PDF</Link><Link href="/workouts/new" className="button-primary">
+        <Link href="/workouts/new" className="button-primary self-start sm:self-auto">
           <Plus size={18} /> Nowy trening
-        </Link></div>
+        </Link>
       </header>
       <WorkoutList workouts={items} />
 

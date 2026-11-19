@@ -49,8 +49,8 @@ export default async function WorkoutPrintPage({
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="print-hide flex items-center justify-between">
-        <Link href="/workouts" className="text-sm text-slate-500">
-          ← Wróć
+        <Link href="/raporty" className="text-sm text-slate-500">
+          ← Wróć do raportów
         </Link>
         <PrintButton />
       </div>

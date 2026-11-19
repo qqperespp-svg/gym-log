@@ -68,8 +68,8 @@ export default async function PrintMichaPage({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="print-hide flex items-center justify-between">
-        <Link href="/micha" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-white">
-          <ArrowLeft size={16} /> Wróć
+        <Link href="/raporty" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-white">
+          <ArrowLeft size={16} /> Wróć do raportów
         </Link>
         <PrintButton label="Drukuj / Zapisz PDF" />
       </div>

@@ -8,6 +8,7 @@ import {
   ChartNoAxesColumnIncreasing,
   Droplets,
   Dumbbell,
+  FileText,
   History,
   Layers3,
   LayoutDashboard,
@@ -77,6 +78,7 @@ export function SidebarNav({
     { href: "/body", label: t(lang, "nav.body"), icon: Ruler },
     { href: "/nawodnienie", label: t(lang, "nav.hydration"), icon: Droplets },
     { href: "/history", label: t(lang, "nav.history"), icon: History },
+    { href: "/raporty", label: t(lang, "nav.reports"), icon: FileText },
     { href: "/settings", label: t(lang, "nav.settings"), icon: Settings },
   ];
 

@@ -11,6 +11,7 @@ import {
   saveWorkoutSessionAction,
 } from "@/actions/workouts";
 import { WorkoutSession } from "@/components/workout-session";
+import { PlanAgainButton } from "@/components/plan-again-button";
 import { db } from "@/db";
 import { exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -110,9 +111,12 @@ export default async function WorkoutSessionPage({
               })}
             </p>
           </div>
-          <Link href={`/workouts/${id}/edit`} className="button-secondary self-start">
-            <Edit3 size={17} /> Edytuj plan
-          </Link>
+          <div className="flex flex-wrap gap-2 self-start">
+            <PlanAgainButton workoutId={id} variant={workout.status === "completed" ? "primary" : "secondary"} />
+            <Link href={`/workouts/${id}/edit`} className="button-secondary">
+              <Edit3 size={17} /> Edytuj plan
+            </Link>
+          </div>
         </div>
       </header>
       <WorkoutSession

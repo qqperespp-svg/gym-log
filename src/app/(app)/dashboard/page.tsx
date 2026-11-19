@@ -26,6 +26,7 @@ import { MacroBar } from "@/components/macro-bar";
 import { StepsCard } from "@/components/steps-card";
 import { SleepCard } from "@/components/sleep-card";
 import { TodayGoalEditor } from "@/components/today-goal-editor";
+import { PlanAgainButton } from "@/components/plan-again-button";
 
 export const dynamic = "force-dynamic";
 
@@ -603,31 +604,35 @@ export default async function DashboardPage({
                 {recent.length ? (
                   <div className="divide-y divide-white/[.05]">
                     {recent.map((item) => (
-                      <Link
+                      <div
                         key={item.id}
-                        href={`/workouts/${item.id}/session`}
-                        className="flex items-center gap-4 p-4 transition hover:bg-white/[.025] sm:px-6"
+                        className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:px-6"
                       >
-                        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[.04] text-lime-400">
-                          <Dumbbell size={19} />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="truncate text-sm font-bold text-white">{item.title}</h3>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {item.date.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} ·{" "}
-                            {item.exerciseIds.size} ćw. · {item.sets} serii
-                          </p>
-                        </div>
-                        <div className="hidden text-right sm:block">
-                          <b className="text-sm text-white">
-                            {item.volume.toLocaleString("pl-PL")} kg
-                          </b>
-                          <p className="text-[10px] uppercase tracking-wider text-slate-600">
-                            objętość
-                          </p>
-                        </div>
-                        <ArrowUpRight size={17} className="text-slate-700" />
-                      </Link>
+                        <Link
+                          href={`/workouts/${item.id}/session`}
+                          className="flex min-w-0 flex-1 items-center gap-4 transition hover:opacity-90"
+                        >
+                          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/[.04] text-lime-400">
+                            <Dumbbell size={19} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="truncate text-sm font-bold text-white">{item.title}</h3>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {item.date.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} ·{" "}
+                              {item.exerciseIds.size} ćw. · {item.sets} serii
+                            </p>
+                          </div>
+                          <div className="hidden text-right sm:block">
+                            <b className="text-sm text-white">
+                              {item.volume.toLocaleString("pl-PL")} kg
+                            </b>
+                            <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                              objętość
+                            </p>
+                          </div>
+                        </Link>
+                        <PlanAgainButton workoutId={item.id} variant="compact" className="shrink-0 sm:ml-2" />
+                      </div>
                     ))}
                   </div>
                 ) : (

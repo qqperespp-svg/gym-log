@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { exercises, exerciseSets, workouts } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { ExerciseProgressTile } from "@/components/exercise-progress-tile";
+import { PlanAgainButton } from "@/components/plan-again-button";
 
 export const dynamic = "force-dynamic";
 
@@ -221,9 +222,12 @@ export default async function HistoryPage() {
                     </td>
                     <td>{item.best} kg</td>
                     <td>
-                      <Link href={`/workouts/${item.id}/session`} className="icon-button">
-                        <ArrowUpRight size={16} />
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        <PlanAgainButton workoutId={item.id} variant="compact" />
+                        <Link href={`/workouts/${item.id}/session`} className="icon-button" aria-label="Otwórz trening">
+                          <ArrowUpRight size={16} />
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
-import { CalendarDays, Clock3, Dumbbell, Edit3, Play, Plus, Repeat, Trash2 } from "lucide-react";
-import { cloneWorkoutAction, deleteWorkoutAction } from "@/actions/workouts";
+import { CalendarDays, Clock3, Dumbbell, Edit3, Play, Plus, Trash2 } from "lucide-react";
+import { deleteWorkoutAction } from "@/actions/workouts";
+import { PlanAgainButton } from "@/components/plan-again-button";
 
 type Item = {
   id: number;
@@ -20,17 +21,12 @@ export function WorkoutList({ workouts }: { workouts: Item[] }) {
   const [optimistic, removeOptimistic] = useOptimistic(workouts, (items, id: number) =>
     items.filter((item) => item.id !== id),
   );
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   function remove(id: number) {
     if (!window.confirm("Usunąć ten trening? Tej operacji nie można cofnąć.")) return;
     startTransition(async () => {
       removeOptimistic(id);
       await deleteWorkoutAction(id);
-    });
-  }
-  function planAgain(id: number) {
-    startTransition(async () => {
-      await cloneWorkoutAction(id);
     });
   }
   if (!optimistic.length)
@@ -115,14 +111,11 @@ export function WorkoutList({ workouts }: { workouts: Item[] }) {
                   <Play size={16} /> Otwórz trening
                 </Link>
               )}
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => planAgain(item.id)}
-                className="button-secondary w-full justify-center text-sm"
-              >
-                <Repeat size={16} /> Zaplanuj ponownie
-              </button>
+              <PlanAgainButton
+                workoutId={item.id}
+                variant={active ? "secondary" : "primary"}
+                className="w-full text-sm"
+              />
             </div>
           </article>
         );

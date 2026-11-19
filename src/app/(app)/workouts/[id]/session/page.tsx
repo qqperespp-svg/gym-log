@@ -120,6 +120,7 @@ export default async function WorkoutSessionPage({
         </div>
       </header>
       <WorkoutSession
+        key={id}
         action={saveWorkoutSessionAction.bind(null, id)}
         autosave={autosaveSessionAction.bind(null, id)}
         addSet={addSessionSetAction.bind(null, id)}

@@ -584,79 +584,102 @@ export async function replaceSessionExerciseAction(
   return result;
 }
 
+function copyText(value: string | null | undefined): string | null {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
 /**
- * Kopiuje trening (ćwiczenia i serie z sesji, w tym extra) jako nowy plan
- * na dziś — bez statusu ukończenia, gotowy do kolejnego treningu.
+ * Kopiuje trening (ćwiczenia, serie extra, komentarz treningu,
+ * komentarze ćwiczeń i notatki serii) jako nowy plan na dziś.
  */
 export async function cloneWorkoutAction(workoutId: number): Promise<void> {
   const user = await requireUser();
   const source = await ownedWorkout(workoutId, user.id);
   if (!source) redirect("/workouts");
   const exerciseRows = await db
-    .select()
+    .select({
+      id: exercises.id,
+      name: exercises.name,
+      exerciseDefinitionId: exercises.exerciseDefinitionId,
+      sets: exercises.sets,
+      reps: exercises.reps,
+      weight: exercises.weight,
+      restSeconds: exercises.restSeconds,
+      grp: exercises.grp,
+      notes: exercises.notes,
+    })
     .from(exercises)
     .where(and(eq(exercises.workoutId, workoutId), eq(exercises.skippedInSession, 0)))
     .orderBy(asc(exercises.position));
   if (!exerciseRows.length) redirect("/workouts");
   const now = new Date();
   const date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0);
-  const [clone] = await db
-    .insert(workouts)
-    .values({
-      userId: user.id,
-      programId: source.programId,
-      title: source.title,
-      date,
-      notes: source.notes,
-      durationMinutes: source.durationMinutes,
-      status: "planned",
-    })
-    .returning();
-  if (!clone) redirect("/workouts");
-  for (const [position, row] of exerciseRows.entries()) {
-    const sets = await db
-      .select()
-      .from(exerciseSets)
-      .where(eq(exerciseSets.exerciseId, row.id))
-      .orderBy(asc(exerciseSets.setNumber));
-    const definitionId =
-      row.exerciseDefinitionId ?? (await ensureExerciseDefinition(user.id, row.name));
-    const [exercise] = await db
-      .insert(exercises)
+  const cloneId = await db.transaction(async (tx) => {
+    const [clone] = await tx
+      .insert(workouts)
       .values({
-        workoutId: clone.id,
-        exerciseDefinitionId: definitionId,
-        name: row.name,
-        position,
-        sets: sets.length || row.sets,
-        reps: sets[0]?.reps ?? row.reps,
-        weight: sets[0]?.weight ?? row.weight,
-        restSeconds: row.restSeconds,
-        grp: row.grp,
-        notes: row.notes,
-        sessionOnly: 0,
-        skippedInSession: 0,
-        replacedExerciseId: null,
+        userId: user.id,
+        programId: source.programId,
+        title: source.title,
+        date,
+        notes: copyText(source.notes),
+        durationMinutes: source.durationMinutes,
+        status: "planned",
       })
-      .returning();
-    if (!sets.length) continue;
-    await db.insert(exerciseSets).values(
-      sets.map((set, index) => ({
-        exerciseId: exercise.id,
-        setNumber: index + 1,
-        reps: set.reps,
-        weight: set.weight,
-        rir: set.rir,
-        note: set.note,
-        completed: 0,
-        isExtra: 0,
-      })),
-    );
-  }
+      .returning({ id: workouts.id });
+    if (!clone) throw new Error("clone-failed");
+    for (const [position, row] of exerciseRows.entries()) {
+      const sets = await tx
+        .select({
+          reps: exerciseSets.reps,
+          weight: exerciseSets.weight,
+          rir: exerciseSets.rir,
+          note: exerciseSets.note,
+        })
+        .from(exerciseSets)
+        .where(eq(exerciseSets.exerciseId, row.id))
+        .orderBy(asc(exerciseSets.setNumber));
+      const definitionId =
+        row.exerciseDefinitionId ?? (await ensureExerciseDefinition(user.id, row.name));
+      const [exercise] = await tx
+        .insert(exercises)
+        .values({
+          workoutId: clone.id,
+          exerciseDefinitionId: definitionId,
+          name: row.name,
+          position,
+          sets: sets.length || row.sets,
+          reps: sets[0]?.reps ?? row.reps,
+          weight: sets[0]?.weight ?? row.weight,
+          restSeconds: row.restSeconds,
+          grp: row.grp,
+          notes: copyText(row.notes),
+          sessionOnly: 0,
+          skippedInSession: 0,
+          replacedExerciseId: null,
+        })
+        .returning({ id: exercises.id });
+      if (!exercise || !sets.length) continue;
+      await tx.insert(exerciseSets).values(
+        sets.map((set, index) => ({
+          exerciseId: exercise.id,
+          setNumber: index + 1,
+          reps: set.reps,
+          weight: set.weight,
+          rir: set.rir,
+          note: copyText(set.note),
+          completed: 0,
+          isExtra: 0,
+        })),
+      );
+    }
+    return clone.id;
+  });
   revalidatePath("/workouts");
   revalidatePath("/dashboard");
   revalidatePath("/history");
   revalidatePath("/exercises");
   revalidatePath("/micha");
-  redirect(`/workouts/${clone.id}/session`);
+  redirect(`/workouts/${cloneId}/session`);
 }

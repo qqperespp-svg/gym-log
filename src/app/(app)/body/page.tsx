@@ -1,6 +1,6 @@
 import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { Ruler, TrendingDown, TrendingUp } from "lucide-react";
+import { FileDown, Ruler, TrendingDown, TrendingUp } from "lucide-react";
 import { db } from "@/db";
 import { bodyMeasurements } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -60,10 +60,15 @@ export default async function BodyPage({
 
   return (
     <div className="space-y-7">
-      <header>
-        <p className="eyebrow">Pomiar ciała</p>
-        <h1 className="page-title">Ciało</h1>
-        <p className="mt-2 text-sm text-slate-500">Wzrost, waga i wymiary. Śledź progres z każdą sesją.</p>
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="eyebrow">Pomiar ciała</p>
+          <h1 className="page-title">Ciało</h1>
+          <p className="mt-2 text-sm text-slate-500">Wzrost, waga i wymiary. Śledź progres z każdą sesją.</p>
+        </div>
+        <Link href="/body/print" className="button-secondary self-start sm:self-auto">
+          <FileDown size={16} /> Raport PDF
+        </Link>
       </header>
 
       {params.saved === "1" && (

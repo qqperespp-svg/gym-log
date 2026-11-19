@@ -452,6 +452,8 @@ textarea.input { line-height: 1.6; }
 @media print {
   aside, nav, form, button, .print-hide { display: none !important; }
   main { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+  img { max-width: 100% !important; break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .break-inside-avoid { break-inside: avoid; }
   body { background: #ffffff !important; color: #000000 !important; }
   .panel, .stat-card { border: 1px solid #d1d5db !important; box-shadow: none !important; background: #ffffff !important; }
   .text-white, .text-slate-100, .text-slate-200, .text-slate-300 { color: #111827 !important; }
